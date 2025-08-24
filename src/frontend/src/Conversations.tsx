@@ -36,7 +36,7 @@ const isThreadFinalized = (t?: ConversationThread | null) => {
   if (!t) return false;
   if ((t as any).finalized === true) return true;
   const st = (t as any).status;
-  return st === 'finalized' || st === 'expired';
+  return st === 'finalized';
 };
 
 // Infer a display kind for a WorkspaceItem (MIME/tags-first, mirrors Results.tsx)
@@ -354,7 +354,6 @@ export default function Conversations() {
                     label={t(`conversations.filters.statusOptions.${c.status}` as any)}
                     color={
                       c.status === 'failed' ? 'error' :
-                      c.status === 'expired' ? 'default' :
                       isThreadFinalized(c) ? 'success' :
                       c.status === 'ongoing' ? 'warning' :
                       'success'
@@ -421,7 +420,6 @@ export default function Conversations() {
                 label={t(`conversations.filters.statusOptions.${detail.thread.status}` as any)}
                 color={
                   detail.thread.status === 'failed' ? 'error' :
-                  detail.thread.status === 'expired' ? 'default' :
                   isThreadFinalized(detail.thread) ? 'success' :
                   detail.thread.status === 'ongoing' ? 'warning' :
                   'success'
@@ -442,7 +440,6 @@ export default function Conversations() {
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
             {detail.thread.lastActiveAt ? `${t('conversations.detail.labels.lastActive')}=${detail.thread.lastActiveAt} • ` : ''}
-            {detail.thread.expiresAt ? `${t('conversations.detail.labels.expiresAt')}=${detail.thread.expiresAt} • ` : ''}
             {detail.thread.endedAt ? `${t('conversations.detail.labels.endedAt')}=${detail.thread.endedAt}` : ''}
           </Typography>
           <Divider sx={{ my: 1 }} />

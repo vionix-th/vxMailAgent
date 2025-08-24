@@ -24,10 +24,7 @@ export interface FetcherDeps {
   logProviderEvent: (e: ProviderEvent) => void;
 
   // lifecycle helpers
-  calcExpiresFrom: (nowIso: string) => string;
-  isExpired: (thread: ConversationThread) => boolean;
   isDirectorFinalized: (dirId: string) => boolean;
-  markExpiredById: (id: string, reason?: string) => void;
 }
 
 export interface FetcherService {
@@ -313,14 +310,13 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                       emailEnvelope,
                       deps.getPrompts(),
                       settings.apiConfigs,
-                      { isDirectorFinalized: deps.isDirectorFinalized, isExpired: deps.isExpired, markExpiredById: deps.markExpiredById, calcExpiresFrom: deps.calcExpiresFrom },
+                      { isDirectorFinalized: deps.isDirectorFinalized },
                       new Date().toISOString(),
                       () => newId(),
-                      args.sessionId,
                       traceId,
                     );
                     if ('error' in ensured) {
-                      appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: ensured.error, reason: ensured.reason, sessionId: args.sessionId }) });
+                      appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: ensured.error, reason: ensured.reason }) });
                       conversations = ensured.conversations;
                       deps.setConversations(conversations);
                       endSpan(traceId, sTool, { status: 'error', error: ensured.error });
@@ -331,7 +327,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                     const agentThread = ensured.agentThread;
                     const isNew = ensured.isNew;
 
-                    deps.logOrch({ timestamp: new Date().toISOString(), director: director.id, directorName: director.name, agent: agent.id, agentName: agent.name, emailSummary: subject || snippet || msgId, accountId: account.id, email: emailEnvelope as any, result: { content: `sessionId=${agentThread.id}; isNew=${isNew}`, attachments: [], notifications: [] }, detail: { tool: 'agent', agentId: agent.id, agentName: agent.name, sessionId: agentThread.id, isNew }, fetchCycleId: fetchStart, dirThreadId, phase: 'tool' });
+                    deps.logOrch({ timestamp: new Date().toISOString(), director: director.id, directorName: director.name, agent: agent.id, agentName: agent.name, emailSummary: subject || snippet || msgId, accountId: account.id, email: emailEnvelope as any, result: { content: `agentThreadId=${agentThread.id}; isNew=${isNew}`, attachments: [], notifications: [] }, detail: { tool: 'agent', agentId: agent.id, agentName: agent.name, agentThreadId: agentThread.id, isNew }, fetchCycleId: fetchStart, dirThreadId, agentThreadId: agentThread.id, phase: 'tool' });
 
                     let agMsgs: any[] = [...(deps.getPrompts().find(p => p.id === agent.promptId)?.messages || [])];
                     if (!isNew) { agMsgs = [...(agentThread.messages || [])]; }
@@ -407,6 +403,22 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                   conversations = [...conversations.slice(0, di), updated, ...conversations.slice(di + 1)];
                   deps.setConversations(conversations);
                   try { if (sFinalize) endSpan(traceId, sFinalize, { status: 'ok' }); } catch {}
+
+                  // Cascade finalization to child agent threads of this director
+                  const childAgents = conversations
+                    .filter(c => c.kind === 'agent' && c.parentId === dirThreadId && !c.finalized);
+                  if (childAgents.length > 0) {
+                    let sCascade = '';
+                    try { sCascade = beginSpan(traceId, { type: 'conversation_update', name: 'finalize_child_agent_threads', emailId: msgId, directorId: director.id }); } catch {}
+                    const now = new Date().toISOString();
+                    conversations = conversations.map(c => (
+                      c.kind === 'agent' && c.parentId === dirThreadId && !c.finalized
+                        ? ({ ...c, status: 'completed', endedAt: now, finalized: true } as any)
+                        : c
+                    ));
+                    deps.setConversations(conversations);
+                    try { if (sCascade) endSpan(traceId, sCascade, { status: 'ok', response: { count: childAgents.length } }); } catch {}
+                  }
                 }
               }
               endTrace(traceId, 'ok');

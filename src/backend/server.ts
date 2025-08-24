@@ -3,7 +3,7 @@ import cors from 'cors';
 
 import authRouter from './auth';
 import { loadSettings } from './services/settings';
-import { calcExpiresFrom as svcCalcExpiresFrom, isExpired as svcIsExpired, markExpiredById as svcMarkExpiredById, isDirectorFinalized as svcIsDirectorFinalized, sweepExpiredSessions as svcSweepExpiredSessions } from './services/conversations';
+import { isDirectorFinalized as svcIsDirectorFinalized } from './services/conversations';
 import { initLogging, setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent } from './services/logging';
 
 import { Filter, Director, Agent, Prompt, Imprint, MemoryEntry, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent } from '../shared/types';
@@ -51,15 +51,8 @@ export function createServer() {
   function getConversationsLive(): ConversationThread[] { return conversationsRepo.getAll(); }
   function getSettingsLive() { settings = loadSettings(); return settings; }
 
-  // Session lifecycle helpers
-  function calcExpiresFrom(nowIso: string): string {
-    return svcCalcExpiresFrom(nowIso, Number(settings.sessionTimeoutMinutes || 15));
-  }
-  function isExpired(thread: ConversationThread): boolean { return svcIsExpired(thread); }
-  function markExpiredById(id: string, reason?: string) { svcMarkExpiredById(id, conversations, CONVERSATIONS_FILE, reason); }
+  // Session lifecycle helpers (expiration removed); only director finalization remains
   function isDirectorFinalized(dirId: string): boolean { return svcIsDirectorFinalized(conversations, dirId); }
-  function sweepExpiredSessions() { svcSweepExpiredSessions(conversations, CONVERSATIONS_FILE); }
-  setInterval(sweepExpiredSessions, 60 * 1000);
 
   // Middleware
   app.use((req, res, next) => {
@@ -102,8 +95,8 @@ export function createServer() {
   registerDirectorsRoutes(app, { getDirectors: () => getDirectorsLive(), setDirectors: (next: Director[]) => { directorsRepo.setAll(next); } });
   registerPromptsRoutes(app, { getPrompts: () => getPromptsLive(), setPrompts: (next: Prompt[]) => { promptsRepo.setAll(next); }, getSettings: () => getSettingsLive(), getAgents: () => getAgentsLive(), getDirectors: () => getDirectorsLive() });
   registerTemplatesRoutes(app);
-  registerConversationsRoutes(app, { getConversations: () => getConversationsLive(), setConversations: (next: ConversationThread[]) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); }, getSettings: () => getSettingsLive(), calcExpiresFrom, isExpired, isDirectorFinalized, logProviderEvent: (e: ProviderEvent) => { svcLogProviderEvent(e); }, newId, getDirectors: () => getDirectorsLive(), getAgents: () => getAgentsLive() });
-  registerWorkspacesRoutes(app, { getConversations: () => getConversationsLive(), setConversations: (next: ConversationThread[]) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); }, calcExpiresFrom });
+  registerConversationsRoutes(app, { getConversations: () => getConversationsLive(), setConversations: (next: ConversationThread[]) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); }, getSettings: () => getSettingsLive(), isDirectorFinalized, logProviderEvent: (e: ProviderEvent) => { svcLogProviderEvent(e); }, newId, getDirectors: () => getDirectorsLive(), getAgents: () => getAgentsLive() });
+  registerWorkspacesRoutes(app, { getConversations: () => getConversationsLive(), setConversations: (next: ConversationThread[]) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); } });
   registerImprintsRoutes(app, { getImprints: () => getImprintsLive(), setImprints: (next: Imprint[]) => { imprintsRepo.setAll(next); } });
   registerAccountsRoutes(app);
   registerDiagnosticsRoutes(app, { getOrchestrationLog: () => orchRepo.getAll(), getConversations: () => getConversationsLive() });
@@ -127,10 +120,7 @@ export function createServer() {
     setConversations: (next: ConversationThread[]) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); },
     logOrch: (e: OrchestrationDiagnosticEntry) => { svcLogOrch(e); },
     logProviderEvent: (e: ProviderEvent) => { svcLogProviderEvent(e); },
-    calcExpiresFrom,
-    isExpired,
     isDirectorFinalized,
-    markExpiredById,
   });
 
   registerFetcherRoutes(app, { getStatus: () => fetcher.getStatus(), startFetcherLoop: () => fetcher.startFetcherLoop(), stopFetcherLoop: () => fetcher.stopFetcherLoop(), fetchEmails: () => fetcher.fetchEmails(), getSettings: () => getSettingsLive(), getFetcherLog: () => fetcher.getFetcherLog(), setFetcherLog: (next) => fetcher.setFetcherLog(next) });

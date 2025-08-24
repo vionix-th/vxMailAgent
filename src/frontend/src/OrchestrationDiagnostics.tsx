@@ -129,17 +129,6 @@ export default function OrchestrationDiagnostics() {
         for (const a of agentsArray) {
           a.entries.sort((x: OrchestrationDiagnosticEntry, y: OrchestrationDiagnosticEntry) => toMs(x.timestamp) - toMs(y.timestamp));
         }
-        // Build anchor map from director entries: agent invocation with sessionId
-        const anchorTsBySession = new Map<string, number>();
-        for (const en of (d.directorEntries || [])) {
-          const sessionId = (en as any)?.detail?.tool === 'agent' && typeof (en as any)?.detail?.sessionId === 'string'
-            ? String((en as any).detail.sessionId)
-            : null;
-          if (!sessionId) continue;
-          const ts = toMs(en.timestamp);
-          const prev = anchorTsBySession.get(sessionId);
-          if (prev === undefined || ts < prev) anchorTsBySession.set(sessionId, ts);
-        }
         // Compose unified flow: director entries + agent anchors interleaved by timestamp
         const flow: FlowItem[] = [];
         for (const en of (d.directorEntries || [])) {
@@ -147,7 +136,7 @@ export default function OrchestrationDiagnostics() {
         }
         for (const a of agentsArray) {
           const firstEventTs = a.entries.length ? toMs(a.entries[0].timestamp) : Number.MAX_SAFE_INTEGER;
-          const anchorTs = anchorTsBySession.get(a.agentThreadId) ?? firstEventTs;
+          const anchorTs = firstEventTs;
           flow.push({ kind: 'agent', ts: anchorTs, agent: a });
         }
         flow.sort((a: FlowItem, b: FlowItem) => {

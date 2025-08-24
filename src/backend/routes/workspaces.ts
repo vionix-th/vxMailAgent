@@ -5,7 +5,6 @@ import { newId } from '../utils/id';
 export interface WorkspacesRoutesDeps {
   getConversations: () => ConversationThread[];
   setConversations: (next: ConversationThread[]) => void;
-  calcExpiresFrom: (nowIso: string) => string;
 }
 
 export default function registerWorkspacesRoutes(app: express.Express, deps: WorkspacesRoutesDeps) {
@@ -49,7 +48,6 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
       ...t,
       workspaceItems: [...(t.workspaceItems || []), item],
       lastActiveAt: now,
-      expiresAt: deps.calcExpiresFrom(now),
     };
     const next = conversations.slice();
     next[threadIdx] = updated;
@@ -105,7 +103,6 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
       ...t,
       workspaceItems: nextItems,
       lastActiveAt: now,
-      expiresAt: deps.calcExpiresFrom(now),
     };
     deps.setConversations(nextConvs);
     console.log(`[${now}] PUT /api/workspaces/${id}/items/${itemId} -> updated (rev ${nextItem.revision})`);
@@ -130,7 +127,6 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
         ...t,
         workspaceItems: nextItems,
         lastActiveAt: now,
-        expiresAt: deps.calcExpiresFrom(now),
       };
       deps.setConversations(nextConvs);
       console.log(`[${now}] DELETE /api/workspaces/${id}/items/${itemId}?hard=true -> removed`);
@@ -151,7 +147,6 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
       ...t,
       workspaceItems: nextItems,
       lastActiveAt: now,
-      expiresAt: deps.calcExpiresFrom(now),
     };
     deps.setConversations(nextConvs);
     console.log(`[${now}] DELETE /api/workspaces/${id}/items/${itemId} -> soft-deleted`);

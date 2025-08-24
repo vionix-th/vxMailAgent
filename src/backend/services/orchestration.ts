@@ -57,9 +57,6 @@ export function shouldFinalizeDirector(): boolean {
 // --- Agent session helpers ---
 export interface AgentSessionDeps {
   isDirectorFinalized: (dirId: string) => boolean;
-  isExpired: (thread: ConversationThread) => boolean;
-  markExpiredById: (id: string, reason?: string) => void;
-  calcExpiresFrom: (nowIso: string) => string;
 }
 
 export function ensureAgentThread(
@@ -73,42 +70,48 @@ export function ensureAgentThread(
   deps: AgentSessionDeps,
   nowIso: string,
   newIdFn: () => string,
-  requestedSessionId?: string,
   traceId?: string,
-): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'finalized' | 'expired' } {
+): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'finalized' | 'invalid' } {
   const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }) : '';
   if (deps.isDirectorFinalized(dirThreadId)) {
-    const existing = conversations.find(c => c.id === requestedSessionId);
-    if (existing) deps.markExpiredById(existing.id, 'director finalized');
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'error', error: 'director conversation finalized; no further agent messages accepted' });
     return { conversations, error: 'director conversation finalized; no further agent messages accepted', reason: 'finalized' } as const;
   }
 
-  let agentThread = conversations.find(c => c.id === requestedSessionId && c.kind === 'agent' && c.parentId === dirThreadId && c.agentId === agent.id);
+  let agentThread = undefined as ConversationThread | undefined;
+  // Backend-enforced session reuse: if no valid requestedSessionId, reuse an existing active agent thread
+  if (!agentThread) {
+    const reusable = conversations.find(c =>
+      c.kind === 'agent' &&
+      c.parentId === dirThreadId &&
+      c.agentId === agent.id &&
+      c.status === 'ongoing' &&
+      !c.finalized
+    );
+    if (reusable) {
+      agentThread = reusable;
+      if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: false, agentThreadId: agentThread.id, reused: true } });
+      return { conversations, agentThread, isNew: false } as const;
+    }
+  }
   const agentPrompt = prompts.find(p => p.id === agent.promptId);
   const agentApi = apiConfigs.find((c: any) => c.id === agent.apiConfigId);
   if (!agentApi || !agentPrompt) {
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'error', error: 'missing agent api/prompt' });
-    return { conversations, error: 'missing agent api/prompt', reason: 'expired' } as any;
+    return { conversations, error: 'missing agent api/prompt', reason: 'invalid' } as const;
   }
 
   const isNew = !agentThread;
   if (!agentThread) {
     const agentThreadId = newIdFn();
     const nowIso2 = nowIso;
-    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, expiresAt: deps.calcExpiresFrom(nowIso2), messages: [...(agentPrompt.messages || [])], errors: [], workspaceItems: [], finalized: false } as ConversationThread;
+    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, messages: [...(agentPrompt.messages || [])], errors: [], workspaceItems: [], finalized: false } as ConversationThread;
     conversations = [...conversations, agentThread];
-    if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, sessionId: agentThreadId } });
+    if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, agentThreadId } });
     return { conversations, agentThread, isNew };
   }
 
-  if (deps.isExpired(agentThread)) {
-    deps.markExpiredById(agentThread.id, 'inactivity');
-    if (traceId && spanId) endSpan(traceId, spanId, { status: 'error', error: 'agent session expired due to inactivity' });
-    return { conversations, error: 'agent session expired due to inactivity', reason: 'expired' } as const;
-  }
-
-  if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: false, sessionId: agentThread.id } });
+  if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: false, agentThreadId: agentThread.id } });
   return { conversations, agentThread, isNew } as const;
 }
 

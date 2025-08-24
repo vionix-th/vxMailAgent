@@ -34,7 +34,6 @@ export const conversationEngine: ConversationEngine = {
               type: 'object',
               properties: {
                 input: { type: 'string', description: 'Instruction for the agent' },
-                sessionId: { type: 'string', description: 'Existing agent session id to continue (optional)' },
               },
               required: ['input'],
             },

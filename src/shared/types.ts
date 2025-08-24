@@ -300,7 +300,7 @@ export interface MemoryEntry {
 }
 
 // Conversations debug types
-export type ConversationStatus = 'ongoing' | 'completed' | 'failed' | 'expired';
+export type ConversationStatus = 'ongoing' | 'completed' | 'failed';
 
 export interface ConversationThread {
   id: string;
@@ -318,7 +318,6 @@ export interface ConversationThread {
   status: ConversationStatus;
   // Lifecycle timing
   lastActiveAt?: string;
-  expiresAt?: string;
   // Lifecycle terminal flag (preferred over legacy status === 'finalized')
   finalized?: boolean;
   // Canonical OpenAI-aligned transcript of the conversation

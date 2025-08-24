@@ -9,8 +9,6 @@ export interface ConversationsRoutesDeps {
   getConversations: () => ConversationThread[];
   setConversations: (next: ConversationThread[]) => void;
   getSettings: () => any;
-  calcExpiresFrom: (nowIso: string) => string;
-  isExpired: (thread: ConversationThread) => boolean;
   isDirectorFinalized: (dirId: string) => boolean;
   logProviderEvent: (ev: ProviderEvent) => void;
   newId: () => string;
@@ -85,16 +83,12 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     if (deps.isDirectorFinalized(t.directorId) || (t as any).status === 'finalized' || t.finalized === true) {
       return res.status(400).json({ error: 'Conversation is finalized' });
     }
-    if (deps.isExpired(t)) {
-      return res.status(400).json({ error: 'Conversation expired' });
-    }
     const now = new Date().toISOString();
     const msg: PromptMessage = { role: 'user', content };
     const updated: ConversationThread = {
       ...t,
       messages: [...(t.messages || []), msg],
       lastActiveAt: now,
-      expiresAt: deps.calcExpiresFrom(now),
     };
     const next = conversations.slice();
     next[idx] = updated;
@@ -113,9 +107,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
       const t = conversations[idx];
       if (deps.isDirectorFinalized(t.directorId) || (t as any).status === 'finalized' || t.finalized === true) {
         return res.status(400).json({ error: 'Conversation is finalized' });
-      }
-      if (deps.isExpired(t)) {
-        return res.status(400).json({ error: 'Conversation expired' });
       }
       const settings = deps.getSettings();
       const api = Array.isArray(settings?.apiConfigs) && settings.apiConfigs.find((c: any) => c.id === t.apiConfigId);
@@ -173,7 +164,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
           ...((stepCount === 1) ? t : deps.getConversations()[deps.getConversations().findIndex((c) => c.id === id)]),
           messages: [...(((stepCount === 1) ? t : deps.getConversations()[deps.getConversations().findIndex((c) => c.id === id)]).messages || []), assistant],
           lastActiveAt: now,
-          expiresAt: deps.calcExpiresFrom(now),
           provider: 'openai',
         } as any;
         {
@@ -227,7 +217,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
               ...cur[i2],
               messages: [...(cur[i2].messages || []), toolMsg],
               lastActiveAt: now2,
-              expiresAt: deps.calcExpiresFrom(now2),
             } as any;
             const next = cur.slice();
             next[i2] = updated2;

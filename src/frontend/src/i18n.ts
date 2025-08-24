@@ -745,7 +745,6 @@ const resources = {
             ongoing: 'ongoing',
             completed: 'completed',
             failed: 'failed',
-            expired: 'expired',
             finalized: 'finalized'
           },
           kindOptions: {
@@ -771,7 +770,6 @@ const resources = {
           noMessages: 'No messages',
           labels: {
             lastActive: 'Last Active',
-            expiresAt: 'Expires At',
             endedAt: 'Ended At'
           }
         },
@@ -1347,7 +1345,6 @@ const resources = {
             ongoing: 'กำลังดำเนินการ',
             completed: 'เสร็จสิ้น',
             failed: 'ล้มเหลว',
-            expired: 'หมดอายุ',
             finalized: 'ปิดงาน'
           },
           kindOptions: {
@@ -1373,7 +1370,6 @@ const resources = {
           noMessages: 'ไม่มีข้อความ',
           labels: {
             lastActive: 'ครั้งสุดท้ายที่ใช้งาน',
-            expiresAt: 'หมดอายุ',
             endedAt: 'สิ้นสุด'
           }
         },
