@@ -234,7 +234,7 @@ async function handleWorkspaceToolCall(payload: any): Promise<ToolCallResult> {
         mimeType: payload.mimeType || 'text/plain',
         encoding: payload.encoding || 'utf8',
         data: payload.data || '',
-        provenance: { by: 'agent' }, // Default to agent since this is called from agent conversations
+        provenance: { by: 'agent', conversationId: payload.conversationId }, // Default to agent since this is called from agent conversations
         tags: payload.tags || [],
         created: now,
         updated: now,

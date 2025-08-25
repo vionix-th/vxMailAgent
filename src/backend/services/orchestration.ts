@@ -243,7 +243,9 @@ export async function runAgentConversation(
         }
         
         try {
-          const exec = await handleToolByName(tc.name, args);
+          // Pass conversationId to workspace tools
+          const argsWithContext = { ...args, conversationId: agentThread.id };
+          const exec = await handleToolByName(tc.name, argsWithContext);
           const toolMsg = { 
             role: 'tool', 
             name: tc.name, 

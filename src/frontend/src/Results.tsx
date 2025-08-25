@@ -37,6 +37,7 @@ import { useTranslation } from 'react-i18next';
 export default function Results() {
   const { t, i18n } = useTranslation();
   const [threads, setThreads] = useState<ConversationThread[]>([]);
+  const [workspaceItems, setWorkspaceItems] = useState<WorkspaceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Selection is at group-level (grouped by email id); stores group keys
@@ -108,10 +109,13 @@ export default function Results() {
 
   const fetchThreads = () => {
     setLoading(true);
-    fetch('/api/conversations?kind=director&limit=1000')
-      .then(r => r.json())
-      .then((data: any) => {
-        setThreads(Array.isArray(data?.items) ? data.items : []);
+    Promise.all([
+      fetch('/api/conversations?kind=director&limit=1000').then(r => r.json()),
+      fetch('/api/workspaces/default/items').then(r => r.json())
+    ])
+      .then(([conversationData, workspaceData]) => {
+        setThreads(Array.isArray(conversationData?.items) ? conversationData.items : []);
+        setWorkspaceItems(Array.isArray(workspaceData) ? workspaceData : []);
         setLoading(false);
       })
       .catch(() => { setError(t('results.failedLoad')); setLoading(false); });
@@ -179,17 +183,9 @@ export default function Results() {
 
   // Active single workspace item (when a director child node is clicked)
   const activeItem = useMemo(() => {
-    if (!activeItemId || !activeGroup) return null;
-    const dirId = activeDirectorId;
-    if (dirId !== 'all') {
-      const items = (activeGroup.threads || [])
-        .filter((x: ConversationThread) => x.directorId === dirId)
-        .flatMap((t: ConversationThread) => t.workspaceItems || []);
-      const found = items.find((i: WorkspaceItem) => i.id === activeItemId);
-      if (found) return found;
-    }
-    return null;
-  }, [activeItemId, activeDirectorId, activeGroup]);
+    if (!activeItemId) return null;
+    return workspaceItems.find((i: WorkspaceItem) => i.id === activeItemId) || null;
+  }, [activeItemId, workspaceItems]);
 
   // No chat/thread loading in simplified browser
 
@@ -278,8 +274,8 @@ export default function Results() {
                               const isDirectorSelected = activeGroupKey === g.key && activeDirectorId === dirId && !activeItemId;
                               const name = directorNameMap[dirId] || dirId;
                               const dirThreads = (g.threads || []).filter((t: any) => t.directorId === dirId);
-                              const items: WorkspaceItem[] = dirThreads
-                                .flatMap((t: any) => (t.workspaceItems || []))
+                              const items: WorkspaceItem[] = workspaceItems
+                                .filter((i: WorkspaceItem) => i.provenance?.by === 'agent' && dirThreads.some(t => t.id === i.provenance?.conversationId))
                                 .filter((i: any) => !i.deleted) as any;
                               const dirKey = `${g.key}:${dirId}`;
                               const dirExpanded = expandedDirs[dirKey] ?? true;

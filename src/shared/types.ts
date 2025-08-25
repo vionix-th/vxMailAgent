@@ -112,7 +112,7 @@ export interface WorkspaceItem {
   mimeType?: string;
   encoding?: 'utf8' | 'base64' | 'binary';
   data?: string;
-  provenance: { by: 'director' | 'agent' | 'tool'; agentId?: string; tool?: ToolCallKind | string };
+  provenance: { by: 'director' | 'agent' | 'tool'; agentId?: string; tool?: ToolCallKind | string; conversationId?: string };
   tags?: string[];
   created: string;
   updated: string;

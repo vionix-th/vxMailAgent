@@ -45,6 +45,12 @@ const getKey = (): Buffer | undefined => {
 };
 
 export function encryptAndPersist(obj: any, filePath: string) {
+  // Ensure directory exists
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  
   const key = getKey();
   if (!key) {
     fs.writeFileSync(filePath, JSON.stringify(obj), { encoding: 'utf8' });
