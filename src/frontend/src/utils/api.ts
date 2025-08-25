@@ -1,5 +1,7 @@
-// Simple frontend API client for diagnostics endpoints
-// Provides typed helpers and consistent error handling
+/**
+ * Frontend API client for diagnostics and cleanup endpoints.
+ * Provides typed helpers and consistent error handling.
+ */
 
 export type SortDir = 'asc' | 'desc';
 
@@ -19,6 +21,7 @@ export interface OrchestrationListResponse<T = any> {
   items: T[];
 }
 
+/** Fetch orchestration diagnostics. */
 export async function getOrchestrationDiagnostics(params: OrchestrationListParams = {}): Promise<OrchestrationListResponse> {
   const qs = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {
@@ -30,11 +33,13 @@ export async function getOrchestrationDiagnostics(params: OrchestrationListParam
   return res.json();
 }
 
+/** Delete a single orchestration diagnostic entry. */
 export async function deleteOrchestrationDiagnosticOne(id: string): Promise<void> {
   const res = await fetch(`/api/orchestration/diagnostics/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to delete orchestration diagnostic: ${res.status}`);
 }
 
+/** Delete multiple orchestration diagnostics. */
 export async function deleteOrchestrationDiagnosticsBulk(ids: string[]): Promise<void> {
   const res = await fetch('/api/orchestration/diagnostics', {
     method: 'DELETE',
@@ -44,7 +49,6 @@ export async function deleteOrchestrationDiagnosticsBulk(ids: string[]): Promise
   if (!res.ok) throw new Error(`Failed bulk delete orchestration diagnostics: ${res.status}`);
 }
 
-// Traces diagnostics
 export interface TracesListParams {
   limit?: number;
   offset?: number;
@@ -66,6 +70,7 @@ export interface TracesListResponse {
   items: TraceSummaryItem[];
 }
 
+/** Fetch trace summaries. */
 export async function getDiagnosticsTraces(params: TracesListParams = {}): Promise<TracesListResponse> {
   const qs = new URLSearchParams();
   if (typeof params.limit === 'number') qs.set('limit', String(params.limit));
@@ -76,19 +81,20 @@ export async function getDiagnosticsTraces(params: TracesListParams = {}): Promi
   return res.json();
 }
 
+/** Fetch details for a single trace. */
 export async function getDiagnosticsTrace(id: string): Promise<any> {
   const res = await fetch(`/api/diagnostics/trace/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Failed trace detail: ${res.status}`);
   return res.json();
 }
 
+/** Retrieve runtime diagnostics information. */
 export async function getDiagnosticsRuntime(): Promise<any> {
   const res = await fetch('/api/diagnostics/runtime');
   if (!res.ok) throw new Error(`Failed runtime diagnostics: ${res.status}`);
   return res.json();
 }
 
-// Cleanup API
 export interface CleanupStats {
   fetcherLogs: number;
   orchestrationLogs: number;
@@ -98,49 +104,55 @@ export interface CleanupStats {
   total: number;
 }
 
+/** Retrieve cleanup statistics. */
 export async function getCleanupStats(): Promise<CleanupStats> {
   const res = await fetch('/api/cleanup/stats');
   if (!res.ok) throw new Error(`Failed to get cleanup stats: ${res.status}`);
   return res.json();
 }
 
+/** Remove all diagnostics and related data. */
 export async function cleanupAll(): Promise<{ success: boolean; deleted: CleanupStats; message: string }> {
   const res = await fetch('/api/cleanup/all', { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to cleanup all: ${res.status}`);
   return res.json();
 }
 
+/** Delete fetcher log entries. */
 export async function cleanupFetcherLogs(): Promise<{ success: boolean; deleted: number; message: string }> {
   const res = await fetch('/api/cleanup/fetcher-logs', { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to cleanup fetcher logs: ${res.status}`);
   return res.json();
 }
 
+/** Delete orchestration log entries. */
 export async function cleanupOrchestrationLogs(): Promise<{ success: boolean; deleted: number; message: string }> {
   const res = await fetch('/api/cleanup/orchestration-logs', { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to cleanup orchestration logs: ${res.status}`);
   return res.json();
 }
 
+/** Delete stored conversations. */
 export async function cleanupConversations(): Promise<{ success: boolean; deleted: number; message: string }> {
   const res = await fetch('/api/cleanup/conversations', { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to cleanup conversations: ${res.status}`);
   return res.json();
 }
 
+/** Delete provider event logs. */
 export async function cleanupProviderEvents(): Promise<{ success: boolean; deleted: number; message: string }> {
   const res = await fetch('/api/cleanup/provider-events', { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to cleanup provider events: ${res.status}`);
   return res.json();
 }
 
+/** Delete trace records. */
 export async function cleanupTraces(): Promise<{ success: boolean; deleted: number; message: string }> {
   const res = await fetch('/api/cleanup/traces', { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to cleanup traces: ${res.status}`);
   return res.json();
 }
 
-// Unified diagnostics
 export interface DiagnosticNode {
   id: string;
   type: 'fetchCycle' | 'account' | 'email' | 'director' | 'agent' | 'conversation' | 'providerEvent';
@@ -168,25 +180,28 @@ export interface UnifiedDiagnosticsResponse {
   };
 }
 
+/** Fetch aggregated diagnostics tree. */
 export async function getUnifiedDiagnostics(): Promise<UnifiedDiagnosticsResponse> {
   const res = await fetch('/api/diagnostics/unified');
   if (!res.ok) throw new Error(`Failed unified diagnostics: ${res.status}`);
   return res.json();
 }
 
+/** Fetch a node from the diagnostics tree. */
 export async function getUnifiedDiagnosticsNode(nodeId: string): Promise<any> {
   const res = await fetch(`/api/diagnostics/unified/${encodeURIComponent(nodeId)}`);
   if (!res.ok) throw new Error(`Failed to get diagnostic node: ${res.status}`);
   return res.json();
 }
 
-// Delete diagnostics traces
+/** Delete a single diagnostics trace. */
 export async function deleteDiagnosticsTrace(id: string): Promise<{ deleted: number }> {
   const res = await fetch(`/api/diagnostics/trace/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to delete trace: ${res.status}`);
   return res.json();
 }
 
+/** Delete multiple diagnostics traces. */
 export async function deleteDiagnosticsTracesBulk(ids?: string[]): Promise<{ deleted: number }> {
   const init: RequestInit = { method: 'DELETE' };
   if (ids && ids.length) {

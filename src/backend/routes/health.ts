@@ -1,5 +1,6 @@
 import express from 'express';
 
+/** Register a simple health check endpoint. */
 export default function registerHealthRoutes(app: express.Express) {
   app.get('/api/health', (_req, res) => {
     console.log(`[${new Date().toISOString()}] Health check request received`);

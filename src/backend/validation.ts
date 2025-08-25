@@ -1,6 +1,15 @@
-// Minimal JSON Schema validator (subset)
-// Shared utility for backend schema validation.
-export function validateAgainstSchema(schema: any, params: any, path: string = ''): string[] {
+/**
+ * Validates parameters against a minimal subset of JSON Schema.
+ * @param schema Schema definition to validate against.
+ * @param params Data to validate.
+ * @param path Path used to prefix error messages.
+ * @returns Array of validation error messages.
+ */
+export function validateAgainstSchema(
+  schema: any,
+  params: any,
+  path: string = '',
+): string[] {
   const errors: string[] = [];
   if (!schema || typeof schema !== 'object') return errors;
   const type = schema.type;

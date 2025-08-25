@@ -1,7 +1,6 @@
 import { CleanupStats } from '../../shared/types';
 
-// Centralized, ids-only cleanup service operating strictly via repository accessors.
-
+/** Accessors for repositories used by the cleanup service. */
 export interface RepositoryHub<TConv = any, TOrch = any, TProv = any, TTrace = any, TFetch = any> {
   getConversations: () => TConv[];
   setConversations: (next: TConv[]) => void;
@@ -15,6 +14,7 @@ export interface RepositoryHub<TConv = any, TOrch = any, TProv = any, TTrace = a
   setFetcherLog: (next: TFetch[]) => void;
 }
 
+/** Operations exposed by the cleanup service. */
 export interface CleanupService {
   removeConversationsByIds: (ids: string[]) => { deleted: number };
   removeOrchestrationByIds: (ids: string[]) => { deleted: number };
@@ -26,6 +26,9 @@ export interface CleanupService {
   purge: (type: 'fetcher' | 'orchestration' | 'conversations' | 'providerEvents' | 'traces') => { deleted: number; message: string };
 }
 
+/**
+ * Builds an ids-only cleanup service that operates via the provided repository accessors.
+ */
 export function createCleanupService(hub: RepositoryHub): CleanupService {
   const isoNow = () => new Date().toISOString();
 

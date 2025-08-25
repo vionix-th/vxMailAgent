@@ -1,3 +1,10 @@
+/**
+ * Performs an HTTP request to the Microsoft Graph API and returns the parsed JSON body.
+ * @param pathWithQuery Graph path including query string.
+ * @param accessToken OAuth access token for authorization.
+ * @param method HTTP method to use.
+ * @param body Optional JSON payload string.
+ */
 export async function graphRequest<T = any>(
   pathWithQuery: string,
   accessToken: string,

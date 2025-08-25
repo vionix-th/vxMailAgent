@@ -1,10 +1,12 @@
 import { ConversationEngine, ConversationEngineRunInput, ConversationEngineRunResult, ToolDescriptor } from '../../shared/types';
 import { chatCompletion } from '../providers/openai';
 
+/** Convert a tool descriptor to the OpenAI tool specification. */
 function toOpenAiToolSpec(desc: ToolDescriptor): any {
   return { type: 'function', function: { name: desc.name, description: desc.description, parameters: desc.inputSchema } };
 }
 
+/** Filter tool descriptors based on the actor role. */
 function filterDescriptorsByRole(descs: ToolDescriptor[], role: 'director' | 'agent'): ToolDescriptor[] {
   return descs.filter((d) => {
     const f = d.flags || {};
@@ -15,13 +17,14 @@ function filterDescriptorsByRole(descs: ToolDescriptor[], role: 'director' | 'ag
   });
 }
 
+/** Conversation engine driving chat completions and tool exposure. */
 export const conversationEngine: ConversationEngine = {
+  /** Run a single conversation turn. */
   async run(input: ConversationEngineRunInput): Promise<ConversationEngineRunResult> {
     const { messages, apiConfig, role, roleCaps, toolRegistry } = input;
     const enabled = filterDescriptorsByRole(toolRegistry || [], role);
     let tools: any[] = enabled.map(toOpenAiToolSpec);
 
-    // Dynamic synthesis: expose per-agent tools only if director can spawn agents
     if (role === 'director' && roleCaps?.canSpawnAgents) {
       const agents = Array.isArray((input as any).context?.agents) ? (input as any).context.agents : [];
       if (agents.length) {
@@ -29,7 +32,7 @@ export const conversationEngine: ConversationEngine = {
           type: 'function',
           function: {
             name: `agent__${a.id}`,
-            description: `Call agent ${a.name || a.id} with input` ,
+            description: `Call agent ${a.name || a.id} with input`,
             parameters: {
               type: 'object',
               properties: {
@@ -42,8 +45,6 @@ export const conversationEngine: ConversationEngine = {
         tools = [...tools, ...dynamicAgentTools];
       }
     }
-
-    // No explicit override; engine is sole authority on tool exposure
 
     const result = await chatCompletion(apiConfig.apiKey, apiConfig.model, messages as any, {
       tools,

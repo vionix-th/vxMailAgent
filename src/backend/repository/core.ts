@@ -1,7 +1,9 @@
-// Generic repository interfaces
+/**
+ * Basic repository interface for entities persisted on disk.
+ */
 export interface Repository<T> {
-  // Always read fresh from disk
+  /** Retrieve all records from storage. */
   getAll(): T[];
-  // Persist entire collection
+  /** Replace the entire collection in storage. */
   setAll(next: T[]): void;
 }
