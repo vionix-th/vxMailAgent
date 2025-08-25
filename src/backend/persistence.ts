@@ -3,8 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import { VX_MAILAGENT_KEY } from './config';
 
-// Persistent data directory
-// Prefer VX_MAILAGENT_DATA_DIR; otherwise probe common locations so it works in both ts-node and compiled dist runtimes.
+/**
+ * Resolve the data directory for persistent storage. Uses `VX_MAILAGENT_DATA_DIR`
+ * when set, otherwise probes common locations for both source and compiled
+ * runtimes.
+ */
 const resolveDataDir = (): string => {
   const envDir = process.env.VX_MAILAGENT_DATA_DIR;
   if (envDir && envDir.trim()) return path.resolve(envDir);
@@ -44,8 +47,10 @@ const getKey = (): Buffer | undefined => {
   return Buffer.from(key, 'hex');
 };
 
+/**
+ * Encrypt an object with AES-256-GCM and write it to disk.
+ */
 export function encryptAndPersist(obj: any, filePath: string) {
-  // Ensure directory exists
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -65,14 +70,16 @@ export function encryptAndPersist(obj: any, filePath: string) {
   fs.writeFileSync(filePath, payload, { encoding: 'utf8' });
 }
 
+/**
+ * Load and decrypt a previously persisted object. Falls back to plaintext JSON
+ * if encryption is not configured or decryption fails.
+ */
 export function loadAndDecrypt(filePath: string): any {
   const key = getKey();
   const payload = fs.readFileSync(filePath, { encoding: 'utf8' });
-  // If no key, or payload appears to be JSON, parse plaintext JSON
   if (!key) {
     return JSON.parse(payload);
   }
-  // Try decrypt-first with the provided key
   try {
     const buf = Buffer.from(payload, ENCODING);
     const iv = buf.slice(0, IV_LENGTH);
@@ -83,7 +90,6 @@ export function loadAndDecrypt(filePath: string): any {
     const json = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
     return JSON.parse(json);
   } catch {
-    // Fallback: tolerate legacy plaintext JSON files when key is now set
     return JSON.parse(payload);
   }
 }

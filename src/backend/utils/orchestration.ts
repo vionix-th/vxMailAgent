@@ -2,7 +2,7 @@ import { OrchestrationDiagnosticEntry, EmailEnvelope, ConversationThread, Worksp
 import * as persistence from '../persistence';
 import { newId } from './id';
 
-// Minimal base input required to build an orchestration diagnostic envelope
+/** Minimal base input required to build an orchestration diagnostic envelope. */
 export type OrchBaseInput = {
   director: string;
   directorName?: string;
@@ -16,9 +16,13 @@ export type OrchBaseInput = {
   agentThreadId?: string;
 };
 
-// Build a consistent base for OrchestrationDiagnosticEntry
-// Consumers can spread this and add { detail, result, error, phase } as needed
-export function buildOrchBase(input: OrchBaseInput): Omit<OrchestrationDiagnosticEntry, 'detail' | 'result' | 'error' | 'phase'> {
+/**
+ * Constructs a consistent base for an orchestration diagnostic entry.
+ * Consumers can spread the result and add { detail, result, error, phase } as needed.
+ */
+export function buildOrchBase(
+  input: OrchBaseInput
+): Omit<OrchestrationDiagnosticEntry, 'detail' | 'result' | 'error' | 'phase'> {
   return {
     timestamp: new Date().toISOString(),
     director: input.director,
@@ -34,8 +38,11 @@ export function buildOrchBase(input: OrchBaseInput): Omit<OrchestrationDiagnosti
   };
 }
 
-// --- Conversation/workspace helpers ---
-export function resolveDirThread(conversations: ConversationThread[], dirThreadId: string): { index: number; thread: ConversationThread } {
+/** Finds a director thread by id or throws if it does not exist. */
+export function resolveDirThread(
+  conversations: ConversationThread[],
+  dirThreadId: string
+): { index: number; thread: ConversationThread } {
   const index = conversations.findIndex(c => c.id === dirThreadId);
   if (index === -1) throw new Error('director thread not found');
   return { index, thread: conversations[index] };
@@ -45,6 +52,9 @@ export function getWorkspace(thread: ConversationThread): WorkspaceItem[] {
   return thread.workspaceItems || [];
 }
 
+/**
+ * Replaces the workspace items for a conversation and persists the updated list.
+ */
 export function setWorkspace(
   conversations: ConversationThread[],
   index: number,
@@ -58,7 +68,7 @@ export function setWorkspace(
   } catch {}
 }
 
-// Normalize any thrown error into a structured value suitable for diagnostics
+/** Normalizes any thrown value into a structured error suitable for diagnostics. */
 export function normalizeError(e: any, detail?: any) {
   const asAny = e as any;
   return {
@@ -68,12 +78,13 @@ export function normalizeError(e: any, detail?: any) {
   };
 }
 
-// A thin logger interface to decouple from concrete logOrch implementation
+/** Logger interface used for orchestration diagnostics. */
 export type OrchLogger = (entry: OrchestrationDiagnosticEntry) => void;
 
-// Wrap a tool operation with standardized diagnostics logging for start/success/error.
-// The `run` function should return an object with an optional `result` to be assigned to the
-// diagnostics entry, and optional `detail` that will be merged into the success detail payload.
+/**
+ * Wraps a tool operation with standardized diagnostics logging for start, success and error.
+ * The `run` callback may return a result, extra detail, and an output value.
+ */
 export async function withOrchToolLogging<TOutput = any>(
   logger: OrchLogger,
   base: OrchBaseInput,
@@ -81,14 +92,12 @@ export async function withOrchToolLogging<TOutput = any>(
   run: () => Promise<{ result?: OrchestrationDiagnosticEntry['result']; detail?: any; output?: TOutput } | void>
 ): Promise<TOutput | void> {
   const baseEntry = buildOrchBase(base);
-  // Start
   logger({ ...baseEntry, detail: { ...detail, action: 'start' }, phase: 'tool' });
   try {
     const out = await run();
     const result = (out as any)?.result ?? null;
     const extraDetail = (out as any)?.detail;
     const output = (out as any)?.output as TOutput | undefined;
-    // Success
     logger({
       ...baseEntry,
       detail: { ...detail, ...(extraDetail || {}), action: 'success' },
@@ -97,7 +106,6 @@ export async function withOrchToolLogging<TOutput = any>(
     });
     return output as any;
   } catch (e: any) {
-    // Error
     logger({
       ...baseEntry,
       detail: { ...detail, action: 'error' },
@@ -109,9 +117,12 @@ export async function withOrchToolLogging<TOutput = any>(
   }
 }
 
-// Unified workspace operation wrapper to DRY agent/director branches
+/** Supported workspace operations. */
 export type WorkspaceOp = 'add_item' | 'list_items' | 'get_item' | 'update_item' | 'remove_item';
 
+/**
+ * Executes a workspace operation with diagnostic logging and transcript streaming.
+ */
 export async function runWorkspaceOp<TOut = any>(
   logger: OrchLogger,
   base: OrchBaseInput,
@@ -142,7 +153,6 @@ export async function runWorkspaceOp<TOut = any>(
     { tool: 'workspace', op, request: args },
     async () => {
       const out = await perform(runApi);
-      // Stream the tool message back to the transcript with the raw object
       appendToolMessage(out);
       return {
         result: {

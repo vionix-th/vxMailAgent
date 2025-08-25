@@ -16,6 +16,7 @@ export interface FilterEvaluation {
   fieldValue: string;
 }
 
+/** Evaluates filters against the provided email context. */
 export function evaluateFilters(filters: Filter[], ctx: EmailContext): FilterEvaluation[] {
   return filters.map(f => {
     let match = false;
@@ -34,6 +35,7 @@ export function evaluateFilters(filters: Filter[], ctx: EmailContext): FilterEva
   });
 }
 
+/** Derives director ids that should trigger based on filter evaluations. */
 export function selectDirectorTriggers(evals: FilterEvaluation[]): string[] {
   const directorTriggers: string[] = [];
   const nonDupSeen = new Set<string>();
@@ -46,19 +48,21 @@ export function selectDirectorTriggers(evals: FilterEvaluation[]): string[] {
   return directorTriggers;
 }
 
-// Removed legacy buildDirectorToolSpecs; engine handles tool exposure and dynamic agent tools.
-
-// Finalization policy for director conversations.
-// Today we finalize after the tool-call loop; extracted for future configurability.
+/**
+ * Determines whether a director conversation should be finalized.
+ * Currently finalizes after the tool-call loop; extracted for future configurability.
+ */
 export function shouldFinalizeDirector(): boolean {
   return true;
 }
 
-// --- Agent session helpers ---
 export interface AgentSessionDeps {
   isDirectorFinalized: (dirId: string) => boolean;
 }
 
+/**
+ * Ensures an agent thread exists for the director conversation, creating or reusing one.
+ */
 export function ensureAgentThread(
   conversations: ConversationThread[],
   dirThreadId: string,
@@ -79,7 +83,6 @@ export function ensureAgentThread(
   }
 
   let agentThread = undefined as ConversationThread | undefined;
-  // Backend-enforced session reuse: if no valid requestedSessionId, reuse an existing active agent thread
   if (!agentThread) {
     const reusable = conversations.find(c =>
       c.kind === 'agent' &&
@@ -115,6 +118,9 @@ export function ensureAgentThread(
   return { conversations, agentThread, isNew } as const;
 }
 
+/**
+ * Appends a message to the specified conversation thread.
+ */
 export function appendMessageToThread(
   conversations: ConversationThread[],
   threadId: string,
@@ -122,7 +128,11 @@ export function appendMessageToThread(
 ): ConversationThread[] {
   const idx = conversations.findIndex(c => c.id === threadId);
   if (idx === -1) return conversations;
-  const updated = { ...conversations[idx], lastActiveAt: new Date().toISOString(), messages: [...(conversations[idx].messages || []), message] } as any;
+  const updated = {
+    ...conversations[idx],
+    lastActiveAt: new Date().toISOString(),
+    messages: [...(conversations[idx].messages || []), message],
+  } as any;
   return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
 }
 
@@ -134,6 +144,9 @@ export interface AgentConversationResult {
   error?: string;
 }
 
+/**
+ * Runs the agent's conversation loop, handling tool calls and optional provider logging.
+ */
 export async function runAgentConversation(
   agentThread: ConversationThread,
   initialUserMessage: string,
@@ -149,8 +162,6 @@ export async function runAgentConversation(
   let currentMessages: any[] = [...(agentThread.messages || [])];
   let updatedConversations = [...conversations];
   let lastAssistant: any = null;
-
-  // Add initial user message if provided
   if (initialUserMessage) {
     const userMsg = { role: 'user', content: initialUserMessage, context: { traceId } };
     currentMessages.push(userMsg);
@@ -162,12 +173,10 @@ export async function runAgentConversation(
     while (stepCount < LOOP_MAX) {
       stepCount++;
       
-      // Import conversationEngine and handleToolByName
       const { conversationEngine } = require('./engine');
       const { handleToolByName } = require('../toolCalls');
 
       const t0 = Date.now();
-      // Agent LLM call
       const result = await conversationEngine.run({
         messages: currentMessages,
         apiConfig,
@@ -180,7 +189,6 @@ export async function runAgentConversation(
       const latencyMs = Date.now() - t0;
       const now = new Date().toISOString();
 
-      // Log provider events if logger provided
       if (logProviderEvent) {
         try {
           if (result.request) {
@@ -211,29 +219,23 @@ export async function runAgentConversation(
         } catch {}
       }
 
-      // Append assistant message
       const assistant = result.assistantMessage;
       lastAssistant = assistant;
       currentMessages.push(assistant);
       updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, assistant);
       setConversations(updatedConversations);
-
-      // If no tool calls, agent is done
       if (!result.toolCalls || result.toolCalls.length === 0) {
         break;
       }
-
-      // Execute tools and append responses
       for (const tc of result.toolCalls) {
         let args: any = {};
-        try { 
-          args = tc.arguments ? JSON.parse(tc.arguments) : {}; 
+        try {
+          args = tc.arguments ? JSON.parse(tc.arguments) : {};
         } catch (e: any) {
-          // Log tool argument parsing error
-          const toolErrorMsg = { 
-            role: 'tool', 
-            name: tc.name, 
-            tool_call_id: tc.id, 
+          const toolErrorMsg = {
+            role: 'tool',
+            name: tc.name,
+            tool_call_id: tc.id,
             content: JSON.stringify({ error: 'invalid tool arguments', details: String(e?.message || e) })
           };
           currentMessages.push(toolErrorMsg);
@@ -241,14 +243,13 @@ export async function runAgentConversation(
           setConversations(updatedConversations);
           continue;
         }
-        
+
         try {
-          // Pass conversationId to workspace tools
           const argsWithContext = { ...args, conversationId: agentThread.id };
           const exec = await handleToolByName(tc.name, argsWithContext);
-          const toolMsg = { 
-            role: 'tool', 
-            name: tc.name, 
+          const toolMsg = {
+            role: 'tool',
+            name: tc.name,
             tool_call_id: tc.id, 
             content: JSON.stringify(exec) 
           };
@@ -257,11 +258,10 @@ export async function runAgentConversation(
           updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, toolMsg);
           setConversations(updatedConversations);
         } catch (e: any) {
-          // Log tool execution error
-          const toolErrorMsg = { 
-            role: 'tool', 
-            name: tc.name, 
-            tool_call_id: tc.id, 
+          const toolErrorMsg = {
+            role: 'tool',
+            name: tc.name,
+            tool_call_id: tc.id,
             content: JSON.stringify({ error: 'tool execution failed', details: String(e?.message || e) })
           };
           currentMessages.push(toolErrorMsg);
@@ -278,7 +278,6 @@ export async function runAgentConversation(
       success: true,
     };
   } catch (e: any) {
-    // Log agent conversation failure if logger provided
     if (logProviderEvent) {
       try {
         const now = new Date().toISOString();

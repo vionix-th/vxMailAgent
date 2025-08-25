@@ -1,5 +1,7 @@
-// Canonical tool registry shared by backend and frontend
-// Single source of truth for names, categories, descriptions, and parameter schemas.
+/**
+ * Canonical tool registry shared by backend and frontend.
+ * Provides a single source of truth for tool metadata and schemas.
+ */
 import { ToolDescriptor } from './types';
 
 export type ToolCategory = 'mandatory' | 'optional';
@@ -8,7 +10,6 @@ export interface ToolSpec {
   name: string;
   category: ToolCategory;
   description: string;
-  // JSON Schema for parameters
   parameters: any;
 }
 
@@ -39,8 +40,9 @@ export const TOOL_REGISTRY: ToolSpec[] = [
 
 export const CORE_TOOL_NAMES: string[] = TOOL_REGISTRY.filter(t => t.category === 'mandatory').map(t => t.name);
 export const OPTIONAL_TOOL_NAMES: string[] = TOOL_REGISTRY.filter(t => t.category === 'optional').map(t => t.name);
-
-// New: flags-based descriptors derived from TOOL_REGISTRY (KISS flags)
+/**
+ * Flags-based descriptors derived from the registry for selective tool exposure.
+ */
 export const TOOL_DESCRIPTORS: ToolDescriptor[] = TOOL_REGISTRY.map((t) => ({
   name: t.name,
   description: t.description,
@@ -48,7 +50,6 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = TOOL_REGISTRY.map((t) => ({
   flags: {
     mandatory: t.category === 'mandatory',
     defaultEnabled: t.category === 'optional',
-    // No directorOnly tools in base registry; can be set ad-hoc where needed by wrapper logic
   },
 }));
 

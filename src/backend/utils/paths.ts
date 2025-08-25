@@ -1,6 +1,7 @@
 import path from 'path';
 import { DATA_DIR } from '../persistence';
 
+/** Resolves a file path within the persistent data directory. */
 export const dataPath = (name: string) => path.join(DATA_DIR, name);
 
 export const ACCOUNTS_FILE = dataPath('accounts.json');
