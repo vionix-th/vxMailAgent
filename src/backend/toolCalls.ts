@@ -49,8 +49,29 @@ export async function handleToolByName(name: string, params: any): Promise<ToolC
         const r = await handleMemoryToolCall({ ...params, action: 'edit' });
         return { ...r, kind: name };
       }
+      // Workspace tools
+      case 'workspace_add_item': {
+        const r = await handleWorkspaceToolCall({ ...params, action: 'add' });
+        return { ...r, kind: name };
+      }
+      case 'workspace_list_items': {
+        const r = await handleWorkspaceToolCall({ ...params, action: 'list' });
+        return { ...r, kind: name };
+      }
+      case 'workspace_get_item': {
+        const r = await handleWorkspaceToolCall({ ...params, action: 'get' });
+        return { ...r, kind: name };
+      }
+      case 'workspace_update_item': {
+        const r = await handleWorkspaceToolCall({ ...params, action: 'update' });
+        return { ...r, kind: name };
+      }
+      case 'workspace_remove_item': {
+        const r = await handleWorkspaceToolCall({ ...params, action: 'remove' });
+        return { ...r, kind: name };
+      }
       default:
-        return { kind: name, success: false, result: null, error: 'Unhandled tool name' };
+        return { kind: name, success: false, result: null, error: 'tool not implemented' };
     }
   } catch (e: any) {
     return { kind: name, success: false, result: null, error: e?.message || String(e) };
@@ -86,13 +107,18 @@ async function handleFilesystemToolCall(payload: any): Promise<ToolCallResult> {
   return { kind: 'filesystem', success: false, result: null, error: 'Invalid filesystem action' };
 }
 
-import { MemoryEntry, MemoryScope } from '../shared/types';
+import { MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
 
 import { newId } from './utils/id';
 import { Repository } from './repository/core';
 let memoryRepo: Repository<MemoryEntry> | null = null;
 export function setMemoryRepo(repo: Repository<MemoryEntry>) {
   memoryRepo = repo;
+}
+
+let workspaceRepo: Repository<WorkspaceItem> | null = null;
+export function setWorkspaceRepo(repo: Repository<WorkspaceItem>) {
+  workspaceRepo = repo;
 }
 
 export async function handleMemoryToolCall(payload: any): Promise<ToolCallResult> {
@@ -190,6 +216,67 @@ export async function handleMemoryToolCall(payload: any): Promise<ToolCallResult
 
 function validScope(s: any): s is MemoryScope {
   return s === 'global' || s === 'shared' || s === 'local';
+}
+
+async function handleWorkspaceToolCall(payload: any): Promise<ToolCallResult> {
+  console.log('[TOOLCALL] workspace', payload);
+  try {
+    if (!workspaceRepo) {
+      return { kind: 'workspace', success: false, result: null, error: 'Workspace repository not initialized' };
+    }
+
+    if (payload.action === 'add') {
+      const now = new Date().toISOString();
+      const item: WorkspaceItem = {
+        id: newId(),
+        label: payload.label || 'Untitled',
+        description: payload.description,
+        mimeType: payload.mimeType || 'text/plain',
+        encoding: payload.encoding || 'utf8',
+        data: payload.data || '',
+        provenance: { by: 'agent' }, // Default to agent since this is called from agent conversations
+        tags: payload.tags || [],
+        created: now,
+        updated: now,
+        revision: 1
+      };
+      const current = workspaceRepo.getAll();
+      workspaceRepo.setAll([...current, item]);
+      return { kind: 'workspace', success: true, result: { added: true, item }, error: undefined };
+    } else if (payload.action === 'list') {
+      const items = workspaceRepo.getAll();
+      return { kind: 'workspace', success: true, result: items, error: undefined };
+    } else if (payload.action === 'get') {
+      const items = workspaceRepo.getAll();
+      const item = items.find((i: WorkspaceItem) => i.id === payload.id);
+      if (!item) {
+        return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
+      }
+      return { kind: 'workspace', success: true, result: item, error: undefined };
+    } else if (payload.action === 'update') {
+      const items = workspaceRepo.getAll();
+      const idx = items.findIndex((i: WorkspaceItem) => i.id === payload.id);
+      if (idx === -1) {
+        return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
+      }
+      const updated = { ...items[idx], ...payload.patch, updated: new Date().toISOString(), revision: (items[idx].revision || 0) + 1 };
+      const next = items.slice();
+      next[idx] = updated;
+      workspaceRepo.setAll(next);
+      return { kind: 'workspace', success: true, result: { updated: true, item: updated }, error: undefined };
+    } else if (payload.action === 'remove') {
+      const items = workspaceRepo.getAll();
+      const filtered = items.filter((i: WorkspaceItem) => i.id !== payload.id);
+      if (filtered.length === items.length) {
+        return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
+      }
+      workspaceRepo.setAll(filtered);
+      return { kind: 'workspace', success: true, result: { removed: true }, error: undefined };
+    }
+    return { kind: 'workspace', success: false, result: null, error: 'Invalid workspace action' };
+  } catch (err: any) {
+    return { kind: 'workspace', success: false, result: null, error: err?.message || String(err) };
+  }
 }
 
 function sanitize(obj: any) {

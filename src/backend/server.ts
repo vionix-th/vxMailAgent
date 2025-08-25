@@ -6,10 +6,10 @@ import { loadSettings } from './services/settings';
 import { isDirectorFinalized as svcIsDirectorFinalized } from './services/conversations';
 import { initLogging, setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent } from './services/logging';
 
-import { Filter, Director, Agent, Prompt, Imprint, MemoryEntry, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent } from '../shared/types';
+import { Filter, Director, Agent, Prompt, Imprint, MemoryEntry, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, WorkspaceItem } from '../shared/types';
 import { PROMPTS_FILE, IMPRINTS_FILE, CONVERSATIONS_FILE, ORCHESTRATION_LOG_FILE, MEMORY_FILE, AGENTS_FILE, DIRECTORS_FILE, FILTERS_FILE } from './utils/paths';
 import { newId } from './utils/id';
-import { setMemoryRepo } from './toolCalls';
+import { setMemoryRepo, setWorkspaceRepo } from './toolCalls';
 import { createJsonRepository, FileProviderEventsRepository, FileTracesRepository } from './repository/fileRepositories';
 
 import registerTestRoutes from './routes/test';
@@ -72,6 +72,10 @@ export function createServer() {
   // Initialize repositories
   const memoryRepo = createJsonRepository<MemoryEntry>(MEMORY_FILE);
   setMemoryRepo(memoryRepo);
+  
+  // Initialize workspace repository (using conversations file as workspace items are part of conversations)
+  const workspaceRepo = createJsonRepository<WorkspaceItem>(path.join(__dirname, '../data/workspaceItems.json'));
+  setWorkspaceRepo(workspaceRepo);
   const orchRepo = createJsonRepository<OrchestrationDiagnosticEntry>(ORCHESTRATION_LOG_FILE);
   const promptsRepo = createJsonRepository<Prompt>(PROMPTS_FILE);
   const imprintsRepo = createJsonRepository<Imprint>(IMPRINTS_FILE);
