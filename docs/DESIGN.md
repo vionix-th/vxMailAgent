@@ -1,7 +1,7 @@
 # Design Specification
 
 ## 1. Overview
-The application is a single, web-based system running on localhost for processing customer support emails, designed for a single user (e.g., a quality assurance manager) in a corporate environment. It uses a Node.js backend with TypeScript, serving a React frontend (bundled with Vite) via an integrated web server (Express.js), and leverages Node.js for OS functions (e.g., file system access). The system supports multiple Gmail/Outlook accounts via OAuth 2.0, with a fetcher applying regex filters on From, To, CC, BCC, Subject, Body, Date to route emails to a variable number of director agents. The director’s LLM (model) controls orchestration via function-calling: it may invoke tools (calendar, to-do, filesystem, memory) and delegate to specialized agents via function calls. Agents are not invoked independently; the director sequences all actions. Results (plain text, markdown, rich text, images) are displayed in a React UI with text inline, images in an attachment panel with previews, customizable notifications, and direct reply sending with provider or user-defined signatures. Configurations are persisted in encrypted JSON, editable at runtime. The design is detailed, descriptive, and clear, minimizing ambiguity for LLM implementation while leaving code-level details to the implementer.
+The application is a single, web-based system running on localhost for processing customer support emails, designed for a single user (e.g., a quality assurance manager) in a corporate environment. It uses a Node.js backend with TypeScript and a React frontend (bundled with Vite). In development, the frontend runs via Vite (http://localhost:3000) with a proxy to the backend (http://localhost:3001); Express serves the API only. The system supports multiple Gmail/Outlook accounts via OAuth 2.0, with a fetcher applying regex filters on From, To, CC, BCC, Subject, Body, Date to route emails to a variable number of director agents. The director’s LLM (model) controls orchestration via function-calling: it may invoke tools (calendar, to-do, filesystem, memory) and delegate to specialized agents via function calls. Agents are not invoked independently; the director sequences all actions. Results (plain text, markdown, rich text, images) are displayed in a React UI with text inline, images in an attachment panel with previews, customizable notifications, and direct reply sending with provider or user-defined signatures. Configurations are persisted in encrypted JSON, editable at runtime. The design is detailed, descriptive, and clear, minimizing ambiguity for LLM implementation while leaving code-level details to the implementer.
 
 ### Current Implementation Snapshot
 
@@ -125,7 +125,7 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Coverage (no omissions)**
   - Workspace tools: `workspace_add_item`, `workspace_list_items`, `workspace_get_item`, `workspace_update_item`, `workspace_remove_item`.
   - Agent messaging tools: `agent__<slugOrId>`.
-  - Live tools: `calendar`, `todo`, `filesystem`, `memory` (planned; wiring and scopes may vary by provider and are not fully exposed as HTTP routes yet).
+  - Live tools: `calendar_read`, `calendar_add`, `todo_add`, `filesystem_search`, `filesystem_retrieve`, `memory_search`, `memory_add`, `memory_edit` (handlers currently stubbed in `src/backend/toolCalls.ts`; not exposed as HTTP routes).
   - Discovery/meta tools SHOULD also be logged: `list_agents`, `list_tools`, `describe_tool`, `validate_tool_params`, `read_api_docs`.
 
 - **Identifiability and ordering**
@@ -173,7 +173,7 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
   - **File System**: Search/retrieve files by name/content within virtual root (e.g., `/home/jane/client_docs`), using Node.js `fs` (e.g., `readdir`, `readFile`).
   - **Memory**: Search/add/edit semi-structured memories (e.g., `{ id: string, content: string, scope: "global" | "shared" | "local", timestamp: string }`); search cascades (local→shared→global), additions specify scope.
 - **Output**: Text (plain, markdown, rich text) or images; tool outputs (e.g., file content, memory entries) included only if agent specifies (e.g., in reply text or as attachments).
-- **Configuration**: Stored in JSON (e.g., `{ id: "agent1", directorId: "director1", name: "Psychologist", prompt: "...", tools: ["calendar-read", "memory-add"] }`).
+- **Configuration**: Stored in JSON (e.g., `{ id: "agent1", directorId: "director1", name: "Psychologist", prompt: "...", tools: ["calendar_read", "memory_add"] }`).
 - **Implementation**: Uses OpenAI’s function-calling API for tasks/tools. Tool outputs are processed by the agent’s prompt logic.
 
 #### 3.2.5 Processing Pipeline
@@ -242,9 +242,10 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
   - Discovery: `list_agents` (assigned roster), `list_tools` (currently available tools, reflecting dynamic exclusions).
   - Agent messaging: per-agent tools exposed as `agent__<slugOrId>`.
   - Workspace tools: `workspace_add_item`, `workspace_list_items`, `workspace_get_item`, `workspace_update_item`, `workspace_remove_item`.
-  - Live tools: `calendar`, `todo`, `filesystem`, `memory`.
-- **Conditional availability**: If a director has no assigned agents, there are no agent tools. Discovery tools still return an empty roster.
-- **Agent messaging (conversational, session-based)**: The director manages agent conversations by calling a per-agent tool with a message and optional `sessionId`.
+  - Live tools: `calendar_read`, `calendar_add`, `todo_add`, `filesystem_search`, `filesystem_retrieve`, `memory_search`, `memory_add`, `memory_edit`.
+  - Tool names and schemas are defined in `src/shared/tools.ts`; live provider actions are handled via stub implementations in `src/backend/toolCalls.ts` (no separate HTTP routes yet).
+  - **Conditional availability**: If a director has no assigned agents, there are no agent tools. Discovery tools still return an empty roster.
+  - **Agent messaging (conversational, session-based)**: The director manages agent conversations by calling a per-agent tool with a message and optional `sessionId`.
   - If `sessionId` is absent, a new agent session (child `ConversationThread`) is created and returned.
   - Each call appends the director’s message to the agent session and runs the agent turn. The agent may call tools; the application resolves those tool calls and feeds results back to the agent until the agent emits an assistant message or a step-limit is reached.
   - The tool result returned to the director includes `{ sessionId, output, toolCalls[], done? }`. The director decides whether to continue messaging the agent, manipulate the workspace, or complete the run.
@@ -279,20 +280,23 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 
 - **Workspace (Common and Director-only)**
   - Common (director + agents):
-    - `workspace_add_item(type, content|ref, tags?)` → `{ item }`
-    - `workspace_list_items(filter?)` → `{ items[] }`
+    - `workspace_add_item(label?, description?, mimeType?, encoding?, data?, tags?)` → `{ item }`
+    - `workspace_list_items()` → `{ items[] }`
     - `workspace_get_item(id)` → `{ item }`
-    - `workspace_update_item(id, patch, expectedRevision)` → `{ item }`
+    - `workspace_update_item(id, patch, expectedRevision?)` → `{ item }`
     - `workspace_remove_item(id, hardDelete?)` → `{ removed: true }`
     - Access: All participants (director and agents) may add, list, update, and remove any workspace item. `hardDelete` is available to all participants.
 
 - **Live Tools (Director and Agent)**
-  - `calendar(action: 'read'|'add', provider: 'gmail'|'outlook', accountId, dateRange?, event?)`.
-  - `todo(action: 'add', provider: 'gmail'|'outlook', accountId, task)`.
-  - `filesystem(action: 'search'|'retrieve', virtualRoot?, query?, filePath?)`.
-    - Defaults: if `virtualRoot` is omitted, the configured Virtual Root in Settings is used.
-    - v1 behavior: search is name-based; content search may be added in a future iteration.
-  - `memory(action: 'search'|'add'|'edit', scope: 'global'|'shared'|'local', query?, owner?, tag?, entry?)`.
+  - `calendar_read(provider, accountId, dateRange)` → returns events. Required: `provider`, `accountId`, `dateRange: { start, end }`.
+  - `calendar_add(provider, accountId, event)` → adds event. Required: `provider`, `accountId`, `event: { title, start, end, ... }`.
+  - `todo_add(provider, accountId, task)` → adds a to-do. Required: `provider`, `accountId`, `task: { title, ... }`.
+  - `filesystem_search(virtualRoot, query)` → name-based search within virtual root. Required: `virtualRoot`, `query`. No default virtual root.
+  - `filesystem_retrieve(virtualRoot, filePath)` → retrieve a file. Required: `virtualRoot`, `filePath`.
+  - `memory_search(scope?, owner?, tag?, query?)`.
+  - `memory_add(scope?, entry? | content?)`.
+  - `memory_edit(entry { id, ... })`.
+  - Notes: parameter schemas are enforced from `src/shared/tools.ts`; implementations are currently stubs in `src/backend/toolCalls.ts`.
 
 
 
