@@ -8,7 +8,6 @@ export interface MemoryRoutesDeps {
 }
 
 export default function registerMemoryRoutes(app: express.Express, deps: MemoryRoutesDeps) {
-  // GET /api/memory
   app.get('/api/memory', (req, res) => {
     const { scope, query, owner, tag, q } = req.query as Record<string, string>;
     let result = deps.getMemory();
@@ -20,7 +19,6 @@ export default function registerMemoryRoutes(app: express.Express, deps: MemoryR
     res.json(result);
   });
 
-  // POST /api/memory
   app.post('/api/memory', (req, res) => {
     const entry = req.body as MemoryEntry;
     entry.id = entry.id || newId();
@@ -32,7 +30,6 @@ export default function registerMemoryRoutes(app: express.Express, deps: MemoryR
     res.json({ success: true, entry });
   });
 
-  // PUT /api/memory/:id
   app.put('/api/memory/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getMemory();
@@ -46,7 +43,6 @@ export default function registerMemoryRoutes(app: express.Express, deps: MemoryR
     res.json({ success: true, entry: updated });
   });
 
-  // DELETE /api/memory/:id
   app.delete('/api/memory/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getMemory();
@@ -58,7 +54,6 @@ export default function registerMemoryRoutes(app: express.Express, deps: MemoryR
     res.json({ success: true });
   });
 
-  // DELETE /api/memory (batch)
   app.delete('/api/memory', (req, res) => {
     const ids = (req.body?.ids || []) as string[];
     if (!Array.isArray(ids) || ids.length === 0) {

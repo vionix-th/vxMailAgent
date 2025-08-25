@@ -1,10 +1,8 @@
-// OAuth logic for Gmail/Outlook
 import express from 'express';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI } from './config';
 
 const router = express.Router();
 
-// Gmail OAuth2 endpoints (standardized via shared provider)
 import { buildGoogleAuthUrl, exchangeGoogleCode } from './oauth/google';
 import { computeExpiryISO } from './oauth/common';
 
@@ -73,7 +71,6 @@ router.get('/oauth2/google/callback', async (req: express.Request, res: express.
   }
 });
 
-// Outlook OAuth2 endpoints
 import { getOutlookAuthUrl, getOutlookTokens } from './oauth-outlook';
 
 const OUTLOOK_ENV = {

@@ -73,13 +73,11 @@ function saveTemplates(items: TemplateItem[]) {
 }
 
 export default function registerTemplatesRoutes(app: express.Express) {
-  // List templates
   app.get('/api/prompt-templates', (_req, res) => {
     console.log(`[${new Date().toISOString()}] GET /api/prompt-templates`);
     res.json(loadTemplates());
   });
 
-  // Create
   app.post('/api/prompt-templates', (req, res) => {
     const item: TemplateItem = req.body;
     if (!item || !item.id || !item.name || !Array.isArray(item.messages)) {
@@ -92,7 +90,6 @@ export default function registerTemplatesRoutes(app: express.Express) {
     res.json({ success: true });
   });
 
-  // Update
   app.put('/api/prompt-templates/:id', (req, res) => {
     const id = req.params.id;
     const current = loadTemplates();
@@ -103,7 +100,6 @@ export default function registerTemplatesRoutes(app: express.Express) {
     res.json({ success: true });
   });
 
-  // Delete
   app.delete('/api/prompt-templates/:id', (req, res) => {
     const id = req.params.id;
     if (id === 'prompt_optimizer') {

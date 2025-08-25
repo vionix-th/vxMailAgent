@@ -8,7 +8,6 @@ export interface DiagnosticsRoutesDeps {
 }
 
 export default function registerDiagnosticsRoutes(app: express.Express, deps: DiagnosticsRoutesDeps) {
-  // Runtime diagnostics (display-only): encryption mode, counts, environment
   app.get('/api/diagnostics/runtime', (_req, res) => {
     const raw = VX_MAILAGENT_KEY || '';
     const isHex64 = /^[0-9a-fA-F]{64}$/.test(raw);

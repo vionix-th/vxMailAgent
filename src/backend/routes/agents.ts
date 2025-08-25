@@ -1,7 +1,6 @@
 import express from 'express';
 import { Agent } from '../../shared/types';
 import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
-// persistence is handled by injected deps.setAgents
 
 export interface AgentsRoutesDeps {
   getAgents: () => Agent[];
@@ -18,13 +17,11 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     }
     return out.length ? out : [];
   };
-  // GET /api/agents
   app.get('/api/agents', (_req, res) => {
     console.log(`[${new Date().toISOString()}] GET /api/agents`);
     res.json(deps.getAgents());
   });
 
-  // POST /api/agents
   app.post('/api/agents', (req, res) => {
     const agent: Agent = req.body;
     if (!agent.apiConfigId) {
@@ -37,7 +34,6 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     res.json({ success: true });
   });
 
-  // PUT /api/agents/:id
   app.put('/api/agents/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getAgents();
@@ -56,7 +52,6 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     res.json({ success: true });
   });
 
-  // DELETE /api/agents/:id
   app.delete('/api/agents/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getAgents();

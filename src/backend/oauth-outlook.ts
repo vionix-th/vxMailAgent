@@ -12,21 +12,21 @@ const SCOPES = [
   'Tasks.ReadWrite',
 ];
 
+/** Build the Outlook OAuth authorization URL. */
 export async function getOutlookAuthUrl(clientId: string, _clientSecret: string, redirectUri: string, state: string): Promise<string> {
-  // Build raw v2.0 authorize URL for consistency with raw token exchange
   const authBase = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
   const scope = encodeURIComponent(SCOPES.join(' '));
   const url = `${authBase}?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&state=${encodeURIComponent(state)}&prompt=consent`;
   return url;
 }
 
+/** Exchange an authorization code for Outlook OAuth tokens. */
 export async function getOutlookTokens(clientId: string, clientSecret: string, redirectUri: string, code: string): Promise<{
   access_token: string;
   refresh_token?: string;
   expires_in?: number;
   id_token?: string;
 }> {
-  // Use raw v2.0 token endpoint to ensure refresh_token is returned and manageable by app
   const tokenUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
   const params = {
     client_id: clientId,
@@ -37,7 +37,6 @@ export async function getOutlookTokens(clientId: string, clientSecret: string, r
     scope: SCOPES.join(' '),
   } as Record<string, string>;
   const json = await postForm<any>(tokenUrl, params);
-  // Normalize minimal fields expected by callers; leave full json to caller if needed
   return {
     access_token: String(json.access_token || ''),
     refresh_token: json.refresh_token ? String(json.refresh_token) : undefined,

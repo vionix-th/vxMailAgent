@@ -274,7 +274,6 @@ function buildHierarchicalTree(
 }
 
 export default function registerUnifiedDiagnosticsRoutes(app: express.Express, deps: UnifiedDiagnosticsRoutesDeps) {
-  // GET unified hierarchical diagnostics tree
   app.get('/api/diagnostics/unified', (_req, res) => {
     try {
       const orchestrationEntries = deps.getOrchestrationLog();
@@ -284,7 +283,6 @@ export default function registerUnifiedDiagnosticsRoutes(app: express.Express, d
 
       const tree = buildHierarchicalTree(orchestrationEntries, conversations, providerEvents, traces);
 
-      // Calculate summary statistics
       const summary = {
         totalFetchCycles: tree.length,
         totalEmails: tree.reduce((sum, cycle) => 
@@ -306,7 +304,6 @@ export default function registerUnifiedDiagnosticsRoutes(app: express.Express, d
     }
   });
 
-  // GET detailed view for specific node
   app.get('/api/diagnostics/unified/:nodeId', (req, res) => {
     try {
       const nodeId = req.params.nodeId;

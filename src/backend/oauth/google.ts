@@ -9,6 +9,7 @@ const SCOPES = [
   'profile',
 ];
 
+/** Build the Google OAuth authorization URL. */
 export function buildGoogleAuthUrl(cfg: OAuthProviderConfig, state: string): string {
   const base = 'https://accounts.google.com/o/oauth2/v2/auth';
   const params = new URLSearchParams({
@@ -24,6 +25,7 @@ export function buildGoogleAuthUrl(cfg: OAuthProviderConfig, state: string): str
   return `${base}?${params.toString()}`;
 }
 
+/** Exchange an authorization code for Google OAuth tokens. */
 export async function exchangeGoogleCode(cfg: OAuthProviderConfig, code: string): Promise<OAuthTokens> {
   const tokenUrl = 'https://oauth2.googleapis.com/token';
   const json = await postForm<any>(tokenUrl, {
@@ -39,6 +41,7 @@ export async function exchangeGoogleCode(cfg: OAuthProviderConfig, code: string)
   return { accessToken, refreshToken, expiryISO, raw: json };
 }
 
+/** Refresh an existing Google OAuth token. */
 export async function refreshGoogleToken(cfg: OAuthProviderConfig, refreshToken: string): Promise<OAuthTokens> {
   const tokenUrl = 'https://oauth2.googleapis.com/token';
   const json = await postForm<any>(tokenUrl, {

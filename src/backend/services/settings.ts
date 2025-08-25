@@ -14,8 +14,7 @@ export interface Settings {
   [key: string]: any;
 }
 
- 
-
+/** Load settings from disk or return defaults if unavailable. */
 export function loadSettings(): Settings {
   let settings: Settings;
   try {
@@ -38,6 +37,7 @@ export function loadSettings(): Settings {
   return settings;
 }
 
+/** Default settings used when none are persisted. */
 function defaultSettings(): Settings {
   return {
     virtualRoot: '',

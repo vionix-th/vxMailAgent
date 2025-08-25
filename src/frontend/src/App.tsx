@@ -30,6 +30,7 @@ import Memory from './Memory';
 import AdminConsole from './AdminConsole';
 
 
+/** Root application component providing navigation and theme controls. */
 export default function App() {
   const { t } = useTranslation();
   const { themePreference, setThemePreference, language, setLanguage } = useSettings();
@@ -39,7 +40,6 @@ export default function App() {
   const themeIcon = themePreference === 'light' ? <LightModeIcon fontSize="small" /> : themePreference === 'dark' ? <DarkModeIcon fontSize="small" /> : <SettingsBrightnessIcon fontSize="small" />;
   const theme = useTheme();
 
-  // Ultra-discreet single shape: off-canvas radial to keep it subtle
   const bgGradient = React.useMemo(() => {
     const c = theme.palette.mode === 'dark'
       ? 'rgba(122,162,247,0.08)'

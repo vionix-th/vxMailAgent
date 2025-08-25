@@ -1,6 +1,5 @@
 import express from 'express';
 import { Filter } from '../../shared/types';
-// persistence is handled by injected deps.setFilters
 
 export interface FiltersRoutesDeps {
   getFilters: () => Filter[];
@@ -10,13 +9,11 @@ export interface FiltersRoutesDeps {
 const allowedFields = ['from', 'to', 'cc', 'bcc', 'subject', 'body', 'date'] as const;
 
 export default function registerFiltersRoutes(app: express.Express, deps: FiltersRoutesDeps) {
-  // GET /api/filters
   app.get('/api/filters', (_req, res) => {
     console.log(`[${new Date().toISOString()}] GET /api/filters`);
     res.json(deps.getFilters());
   });
 
-  // POST /api/filters
   app.post('/api/filters', (req, res) => {
     const filter: Filter = req.body;
     if (!allowedFields.includes(filter.field as any)) {
@@ -36,7 +33,6 @@ export default function registerFiltersRoutes(app: express.Express, deps: Filter
     res.json({ success: true });
   });
 
-  // PUT /api/filters/reorder
   app.put('/api/filters/reorder', (req, res) => {
     const body = req.body || {};
     const orderedIds: string[] = Array.isArray(body.orderedIds) ? body.orderedIds : [];
@@ -58,7 +54,6 @@ export default function registerFiltersRoutes(app: express.Express, deps: Filter
     res.json({ success: true });
   });
 
-  // PUT /api/filters/:id
   app.put('/api/filters/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getFilters();
@@ -86,7 +81,6 @@ export default function registerFiltersRoutes(app: express.Express, deps: Filter
     res.json({ success: true });
   });
 
-  // DELETE /api/filters/:id
   app.delete('/api/filters/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getFilters();

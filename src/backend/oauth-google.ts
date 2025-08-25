@@ -9,13 +9,13 @@ const SCOPES = [
   'profile',
 ];
 
+/** Create a Google OAuth2 client configured with the given credentials. */
 export function getGoogleOAuth2Client(clientId: string, clientSecret: string, redirectUri: string) {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
+/** Attempt to revoke a previously issued Google OAuth token. */
 export async function revokeGoogleToken(token: string): Promise<boolean> {
-  // Google's token revocation endpoint: https://oauth2.googleapis.com/revoke
-  // Accepts either access_token or refresh_token
   try {
     const fetch = require('node-fetch');
     const res = await fetch('https://oauth2.googleapis.com/revoke', {
@@ -30,6 +30,7 @@ export async function revokeGoogleToken(token: string): Promise<boolean> {
   }
 }
 
+/** Generate the Google OAuth authorization URL for user consent. */
 export function getGoogleAuthUrl(clientId: string, clientSecret: string, redirectUri: string, state: string) {
   const oauth2Client = getGoogleOAuth2Client(clientId, clientSecret, redirectUri);
   return oauth2Client.generateAuthUrl({

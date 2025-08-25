@@ -1,7 +1,6 @@
 import express from 'express';
 import { Director } from '../../shared/types';
 import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
-// persistence is handled by injected deps.setDirectors
 
 export interface DirectorsRoutesDeps {
   getDirectors: () => Director[];
@@ -18,14 +17,12 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     }
     return out.length ? out : [];
   };
-  // GET /api/directors
   app.get('/api/directors', (_req, res) => {
     console.log(`[${new Date().toISOString()}] GET /api/directors`);
     const list = deps.getDirectors().map(d => ({ ...d, promptId: (d as any).promptId || '' }));
     res.json(list);
   });
 
-  // POST /api/directors
   app.post('/api/directors', (req, res) => {
     const director: Director = req.body;
     if (!director.apiConfigId) {
@@ -37,7 +34,6 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     res.json({ success: true });
   });
 
-  // PUT /api/directors/:id
   app.put('/api/directors/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getDirectors();
@@ -54,7 +50,6 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     res.json({ success: true });
   });
 
-  // DELETE /api/directors/:id
   app.delete('/api/directors/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getDirectors();

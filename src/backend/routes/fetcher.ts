@@ -30,13 +30,11 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     setTraces: () => {},
   };
   const cleanup = createCleanupService(hub);
-  // GET /api/fetcher/status
   app.get('/api/fetcher/status', (_req, res) => {
     const status = deps.getStatus();
     res.json(status);
   });
 
-  // POST /api/fetcher/start
   app.post('/api/fetcher/start', (_req, res) => {
     deps.startFetcherLoop();
     // Persist desired state
@@ -46,7 +44,6 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     res.json({ success: true, active: deps.getStatus().active });
   });
 
-  // POST /api/fetcher/stop
   app.post('/api/fetcher/stop', (_req, res) => {
     deps.stopFetcherLoop();
     // Persist desired state
@@ -56,20 +53,17 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     res.json({ success: true, active: deps.getStatus().active });
   });
 
-  // POST /api/fetcher/trigger (non-blocking)
   app.post('/api/fetcher/trigger', (_req, res) => {
     deps.fetchEmails();
     res.json({ success: true });
   });
 
-  // POST /api/fetcher/run (awaits completion)
   app.post('/api/fetcher/run', async (_req, res) => {
     console.log(`[${new Date().toISOString()}] [FETCHER] Manual fetch triggered`);
     await deps.fetchEmails();
     res.json({ success: true });
   });
 
-  // GET /api/fetcher/logs (display-only): via repository
   app.get('/api/fetcher/logs', (_req, res) => {
     try {
       const log = deps.getFetcherLog();
@@ -80,7 +74,6 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     }
   });
 
-  // DELETE single log by id (delegates to cleanup service)
   app.delete('/api/fetcher/logs/:id', (req, res) => {
     try {
       const id = req.params.id;
@@ -91,7 +84,6 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     }
   });
 
-  // DELETE bulk logs by ids array (delegates to cleanup service)
   app.delete('/api/fetcher/logs', (req, res) => {
     try {
       const ids = Array.isArray(req.body.ids) ? (req.body.ids as string[]) : [];

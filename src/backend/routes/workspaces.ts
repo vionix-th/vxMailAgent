@@ -10,7 +10,6 @@ export interface WorkspacesRoutesDeps {
 }
 
 export default function registerWorkspacesRoutes(app: express.Express, deps: WorkspacesRoutesDeps) {
-  // List all workspace items
   app.get('/api/workspaces/:id/items', (req, res) => {
     const includeDeleted = String(req.query.includeDeleted || 'false').toLowerCase() === 'true';
     const items = deps.workspaceRepo.getAll();
@@ -99,7 +98,6 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
       console.log(`[${now}] DELETE /api/workspaces/items/${itemId}?hard=true -> removed`);
       return res.json({ success: true });
     }
-    // Soft delete -> mark deleted and bump revision
     const current = items[itemIdx];
     const nextItem: WorkspaceItem = {
       ...current,

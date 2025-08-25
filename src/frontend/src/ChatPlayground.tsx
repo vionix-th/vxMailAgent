@@ -19,16 +19,15 @@ export interface ChatPlaygroundProps {
 
 const emptyMessage: PromptMessage = { role: 'user', content: '' } as any;
 
+/** Dialog for experimenting with chat prompts and tool calls. */
 export default function ChatPlayground({ open, title, apiConfigId, initialMessages, onClose }: ChatPlaygroundProps) {
   const [messages, setMessages] = React.useState<PromptMessage[]>(initialMessages || []);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  // Raw views live on dedicated tabs
   const [lastResponse, setLastResponse] = React.useState<any | null>(null);
   const [includeTools, setIncludeTools] = React.useState<string[]>([]);
   const [includeCoreTools, setIncludeCoreTools] = React.useState<string[]>(() => Array.from(CORE_TOOL_NAMES as readonly string[]));
   const [toolChoice, setToolChoice] = React.useState<'auto'|'none'|''>('auto');
-  // Single add button; role can be changed inline per message
   const [tab, setTab] = React.useState<number>(0); // 0=Thread, 1=Functions, 2=Last Response, 3=Raw
 
   React.useEffect(() => {

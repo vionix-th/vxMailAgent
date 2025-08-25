@@ -14,6 +14,7 @@ const defaultOptions: Required<Pick<CookieOptions, 'path' | 'sameSite'>> = {
   sameSite: 'Lax',
 };
 
+/** Write a cookie with optional attributes. */
 export function setCookie(name: string, value: string, options: CookieOptions = {}): void {
   if (typeof document === 'undefined') return;
   const parts: string[] = [];
@@ -30,6 +31,7 @@ export function setCookie(name: string, value: string, options: CookieOptions = 
   document.cookie = parts.join('; ');
 }
 
+/** Read a cookie value by name. */
 export function getCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
   const cookies = document.cookie ? document.cookie.split('; ') : [];
@@ -44,6 +46,7 @@ export function getCookie(name: string): string | null {
   return null;
 }
 
+/** Delete a cookie by name. */
 export function deleteCookie(name: string, options: CookieOptions = {}): void {
   setCookie(name, '', { ...options, maxAge: 0 });
 }

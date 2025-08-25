@@ -19,11 +19,13 @@ export interface OAuthProvider {
   refresh(refreshToken: string): Promise<OAuthTokens>;
 }
 
+/** Compute an ISO timestamp for the given expiration offset in seconds. */
 export function computeExpiryISO(expiresInSec?: number): string {
   const sec = typeof expiresInSec === 'number' && expiresInSec > 0 ? expiresInSec : 55 * 60;
   return new Date(Date.now() + sec * 1000).toISOString();
 }
 
+/** POST URL-encoded form data and parse the JSON response. */
 export async function postForm<T = any>(urlStr: string, params: Record<string, string>): Promise<T> {
   const url = new URL(urlStr);
   const body = new URLSearchParams(params).toString();

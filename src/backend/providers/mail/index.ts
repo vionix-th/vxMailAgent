@@ -8,6 +8,7 @@ const registry: Record<string, IMailProvider> = {
   gmail: gmailProvider,
 };
 
+/** Look up a mail provider implementation by id. */
 export function getMailProvider(id: Account['provider']): IMailProvider | undefined {
   return registry[id];
 }

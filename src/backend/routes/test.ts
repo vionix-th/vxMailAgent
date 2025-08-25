@@ -12,7 +12,6 @@ export interface TestRoutesDeps {
 
 export default function registerTestRoutes(app: express.Express, deps: TestRoutesDeps) {
 
-  // /api/test/director/:id
   app.get('/api/test/director/:id', async (req, res) => {
     const id = req.params.id;
     const director = deps.getDirectors().find((d: any) => d.id === id);
@@ -26,7 +25,6 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     res.json(result);
   });
 
-  // /api/test/agent/:id
   app.get('/api/test/agent/:id', async (req, res) => {
     const id = req.params.id;
     const agent = deps.getAgents().find((a: any) => a.id === id);
@@ -40,7 +38,6 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     res.json(result);
   });
 
-  // /api/test/apiconfig/:id
   app.get('/api/test/apiconfig/:id', async (req, res) => {
     const id = req.params.id;
     const apiConfig = deps.getSettings().apiConfigs.find((c: any) => c.id === id);
@@ -49,7 +46,6 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     res.json(result);
   });
 
-  // POST /api/test/chat — playground endpoint to chat with an ApiConfig using arbitrary messages
   app.post('/api/test/chat', async (req, res) => {
     try {
       const apiConfigId = String(req.body?.apiConfigId || '');

@@ -7,7 +7,6 @@ export default function registerDiagnosticTracesRoutes(app: express.Express, dep
 }) {
   const router = express.Router();
 
-  // List traces in canonical order with optional pagination only (no filters, no sorting)
   router.get('/diagnostics/traces', (req, res) => {
     const { limit, offset } = req.query as Record<string, string>;
     const lim = Math.min(Math.max(parseInt(String(limit || '100'), 10) || 100, 1), 1000);
@@ -37,7 +36,6 @@ export default function registerDiagnosticTracesRoutes(app: express.Express, dep
     res.json({ total, items });
   });
 
-  // Get a single trace by id
   router.get('/diagnostics/trace/:id', (req, res) => {
     const id = req.params.id;
     const t = deps.getTraces().find(x => x.id === id);
@@ -45,7 +43,6 @@ export default function registerDiagnosticTracesRoutes(app: express.Express, dep
     res.json(t);
   });
 
-  // Delete a single trace by id
   router.delete('/diagnostics/trace/:id', (req, res) => {
     const id = req.params.id;
     const before = deps.getTraces();
@@ -55,7 +52,6 @@ export default function registerDiagnosticTracesRoutes(app: express.Express, dep
     res.json({ deleted });
   });
 
-  // Bulk delete traces by ids, or clear all if no ids provided
   router.delete('/diagnostics/traces', (req, res) => {
     const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];
     const before = deps.getTraces();

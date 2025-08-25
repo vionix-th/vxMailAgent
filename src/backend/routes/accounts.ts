@@ -6,7 +6,6 @@ import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CL
 
 
 export default function registerAccountsRoutes(app: express.Express) {
-  // GET /api/accounts
   app.get('/api/accounts', (_req, res) => {
     try {
       if (!require('fs').existsSync(ACCOUNTS_FILE)) {
@@ -22,7 +21,6 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 
-  // GET /api/accounts/:id/outlook-test
   app.get('/api/accounts/:id/outlook-test', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     console.log(`[${new Date().toISOString()}] GET /api/accounts/${id}/outlook-test invoked`);
@@ -114,7 +112,6 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 
-  // POST /api/accounts
   app.post('/api/accounts', (req, res) => {
     try {
       const newAccount: Account = req.body;
@@ -139,7 +136,6 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 
-  // PUT /api/accounts/:id
   app.put('/api/accounts/:id', (req: express.Request, res: express.Response) => {
     try {
       const id = req.params.id;
@@ -161,7 +157,6 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 
-  // DELETE /api/accounts/:id
   app.delete('/api/accounts/:id', async (req: express.Request, res: express.Response) => {
     console.log(`[DEBUG] DELETE /api/accounts/${req.params.id} invoked`);
     try {
@@ -210,7 +205,6 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 
-  // POST /api/accounts/:id/refresh (Gmail)
   app.post('/api/accounts/:id/refresh', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     console.log(`[${new Date().toISOString()}] POST /api/accounts/${id}/refresh invoked`);
@@ -292,7 +286,6 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 
-  // GET /api/accounts/:id/gmail-test
   app.get('/api/accounts/:id/gmail-test', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     console.log(`[${new Date().toISOString()}] GET /api/accounts/${id}/gmail-test invoked`);

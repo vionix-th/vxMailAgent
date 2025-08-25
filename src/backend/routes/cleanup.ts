@@ -31,7 +31,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
   };
   const svc = createCleanupService(hub);
 
-  // Get cleanup statistics (counts of each log type)
   router.get('/cleanup/stats', (_req, res) => {
     try {
       const stats: CleanupStats = svc.getStats();
@@ -41,7 +40,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
     }
   });
 
-  // Purge all logs and data
   router.delete('/cleanup/all', (_req, res) => {
     try {
       const { deleted, message } = svc.purgeAll();
@@ -51,7 +49,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
     }
   });
 
-  // Purge specific log types
   router.delete('/cleanup/fetcher-logs', (_req, res) => {
     try {
       const result = svc.purge('fetcher');

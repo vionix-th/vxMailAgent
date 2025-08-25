@@ -4,6 +4,7 @@ import { ToolCallResult } from '../shared/types';
 import { validateAgainstSchema } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
 
+/** Validate parameters and invoke the named tool implementation. */
 export async function handleToolByName(name: string, params: any): Promise<ToolCallResult> {
   const spec = TOOL_REGISTRY.find(t => t.name === name) || null;
   if (!spec) return { kind: name, success: false, result: null, error: 'Unknown tool name' };
@@ -112,15 +113,18 @@ import { MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
 import { newId } from './utils/id';
 import { Repository } from './repository/core';
 let memoryRepo: Repository<MemoryEntry> | null = null;
+/** Assign the repository backing memory tool operations. */
 export function setMemoryRepo(repo: Repository<MemoryEntry>) {
   memoryRepo = repo;
 }
 
 let workspaceRepo: Repository<WorkspaceItem> | null = null;
+/** Assign the repository backing workspace tool operations. */
 export function setWorkspaceRepo(repo: Repository<WorkspaceItem>) {
   workspaceRepo = repo;
 }
 
+/** Execute memory tool operations such as search, add or edit. */
 export async function handleMemoryToolCall(payload: any): Promise<ToolCallResult> {
   console.log('[TOOLCALL] memory', payload);
   try {

@@ -6,6 +6,7 @@ export interface UseCookieStateOptions<T> extends CookieOptions {
   deserialize?: (raw: string) => T;
 }
 
+/** React state hook that syncs a value to a browser cookie. */
 export function useCookieState<T>(
   name: string,
   defaultValue: T,

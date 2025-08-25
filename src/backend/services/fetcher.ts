@@ -36,6 +36,7 @@ export interface FetcherService {
   setFetcherLog: (next: FetcherLogEntry[]) => void;
 }
 
+/** Initialize the background email fetcher service. */
 export function initFetcher(deps: FetcherDeps): FetcherService {
   let fetcherActive = false;
   let fetcherInterval: NodeJS.Timeout | null = null;

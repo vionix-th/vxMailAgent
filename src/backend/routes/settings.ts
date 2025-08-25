@@ -7,7 +7,6 @@ export interface SettingsRoutesDeps {
 }
 
 export default function registerSettingsRoutes(app: express.Express, deps: SettingsRoutesDeps) {
-  // GET /api/settings
   app.get('/api/settings', (_req, res) => {
     const settings = deps.getSettings();
     console.log(`[${new Date().toISOString()}] GET /api/settings`);
@@ -20,10 +19,8 @@ export default function registerSettingsRoutes(app: express.Express, deps: Setti
     });
   });
 
-  // PUT /api/settings
   app.put('/api/settings', (req, res) => {
     const settings = deps.getSettings();
-    // Accept and persist all advanced fields
     settings.virtualRoot = req.body.virtualRoot || '';
     settings.apiConfigs = Array.isArray(req.body.apiConfigs) ? req.body.apiConfigs : [];
     settings.signatures = req.body.signatures || {};

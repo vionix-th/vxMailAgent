@@ -29,8 +29,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     setTraces: () => {},
   };
   const cleanup = createCleanupService(hub);
-  // LIST conversations (canonical). Supports optional pagination only; no filters, no sorting.
-  // GET /api/conversations?limit=&offset=
   app.get('/api/conversations', (req, res) => {
     try {
       const q = req.query as Record<string, string>;
@@ -44,7 +42,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     }
   });
 
-  // GET single conversation by id (canonical)
   app.get('/api/conversations/:id', (req, res) => {
     try {
       const id = req.params.id;
@@ -56,7 +53,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     }
   });
 
-  // GET /api/conversations/byDirectorEmail?directorId=...&emailId=...
   app.get('/api/conversations/byDirectorEmail', (req, res) => {
     const directorId = String(req.query.directorId || '').trim();
     const emailId = String(req.query.emailId || '').trim();
@@ -70,7 +66,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     return res.json(thread);
   });
 
-  // POST /api/conversations/:id/messages  { content: string }
   app.post('/api/conversations/:id/messages', (req, res) => {
     const id = req.params.id;
     const content = String(req.body?.content || '');
@@ -96,7 +91,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     return res.json({ success: true });
   });
 
-  // POST /api/conversations/:id/assistant -> trigger assistant response via provider
   app.post('/api/conversations/:id/assistant', async (req, res) => {
     try {
       const id = req.params.id;
@@ -223,7 +217,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     }
   });
 
-  // DELETE single conversation by id (delegates to cleanup service)
   app.delete('/api/conversations/:id', (req, res) => {
     try {
       const id = req.params.id;
@@ -235,7 +228,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     }
   });
 
-  // BULK DELETE conversations by ids array (delegates to cleanup service)
   app.delete('/api/conversations', (req, res) => {
     try {
       const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];

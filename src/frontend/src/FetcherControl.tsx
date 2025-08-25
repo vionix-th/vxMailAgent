@@ -17,13 +17,13 @@ interface FetcherStatus {
   accountStatus: Record<string, { lastRun: string | null; lastError: string | null }>;
 }
 
+/** Admin panel for controlling and inspecting the fetcher service. */
 const FetcherControl: React.FC = () => {
   const { t } = useTranslation();
   const [status, setStatus] = useState<FetcherStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
-  // Fetcher logs state
   const [entries, setEntries] = useState<FetcherLogEntry[]>([]);
   const [selected, setSelected] = useCookieState<Set<string>>(
     'vx_ui.fetcher.selectedIds',
@@ -37,16 +37,12 @@ const FetcherControl: React.FC = () => {
     }
   );
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Auto-refresh toggle (persisted in cookie)
   const [autoRefresh, setAutoRefresh] = useCookieState<boolean>('vx_ui.fetcher.autoRefresh', true, { maxAge: 60 * 60 * 24 * 365 });
-  // Copy feedback
   const [copyOpen, setCopyOpen] = useState<boolean>(false);
-  // Menus
   const [logMenuAnchor, setLogMenuAnchor] = useState<null | HTMLElement>(null);
   const [logMenuEntry, setLogMenuEntry] = useState<FetcherLogEntry | null>(null);
   const [acctMenuAnchor, setAcctMenuAnchor] = useState<null | HTMLElement>(null);
   const [acctMenu, setAcctMenu] = useState<{ id: string; s: { lastRun: string | null; lastError: string | null } } | null>(null);
-  // Filters
   const [levelFilter, setLevelFilter] = useState<FetcherLogLevel | 'all'>('all');
   const [providerFilter, setProviderFilter] = useState<AccountProvider | 'all'>('all');
   const [eventFilter, setEventFilter] = useState<string>('');
@@ -112,7 +108,6 @@ const FetcherControl: React.FC = () => {
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
       } else {
-        // Fallback
         const ta = document.createElement('textarea');
         ta.value = text;
         ta.style.position = 'fixed';

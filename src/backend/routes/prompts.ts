@@ -246,13 +246,11 @@ function loadTemplatesArray(): TemplateItem[] {
 }
 
 export default function registerPromptsRoutes(app: express.Express, deps: PromptsRoutesDeps) {
-  // GET /api/prompts
   app.get('/api/prompts', (_req, res) => {
     console.log(`[${new Date().toISOString()}] GET /api/prompts`);
     res.json(deps.getPrompts());
   });
 
-  // POST /api/prompts
   app.post('/api/prompts', (req, res) => {
     const prompt: Prompt = req.body;
     const next = [...deps.getPrompts(), prompt];
@@ -261,7 +259,6 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     res.json({ success: true });
   });
 
-  // PUT /api/prompts/:id
   app.put('/api/prompts/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getPrompts();
@@ -277,7 +274,6 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     res.json({ success: true });
   });
 
-  // DELETE /api/prompts/:id
   app.delete('/api/prompts/:id', (req, res) => {
     const id = req.params.id;
     const current = deps.getPrompts();
@@ -289,7 +285,6 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     res.json({ success: true });
   });
 
-  // POST /api/prompts/assist - optimize a prompt with application context
   app.post('/api/prompts/assist', async (req, res) => {
     try {
       const payload = req.body || {};

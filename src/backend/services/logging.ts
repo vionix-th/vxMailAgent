@@ -8,6 +8,7 @@ let orchRepo: Repository<OrchestrationDiagnosticEntry> | null = null;
 let providerRepo: ProviderEventsRepository | null = null;
 let tracesRepo: TracesRepository | null = null;
 
+/** Configure repositories used for logging. */
 export function initLogging(input: {
   orchRepo: Repository<OrchestrationDiagnosticEntry>;
   providerRepo: ProviderEventsRepository;
@@ -18,6 +19,7 @@ export function initLogging(input: {
   tracesRepo = input.tracesRepo;
 }
 
+/** Persist an orchestration diagnostic entry. */
 export function logOrch(e: OrchestrationDiagnosticEntry) {
   if (!orchRepo) return;
   const list = orchRepo.getAll();
@@ -25,15 +27,18 @@ export function logOrch(e: OrchestrationDiagnosticEntry) {
   orchRepo.setAll(list);
 }
 
+/** Record a provider event. */
 export function logProviderEvent(e: ProviderEvent) {
   if (!providerRepo) return;
   providerRepo.append(e);
 }
 
+/** Retrieve all orchestration diagnostic entries. */
 export function getOrchestrationLog() {
   return orchRepo ? orchRepo.getAll() : [];
 }
 
+/** Replace the orchestration diagnostic log. */
 export function setOrchestrationLog(next: OrchestrationDiagnosticEntry[]) {
   if (!orchRepo) return;
   orchRepo.setAll(next);
@@ -71,6 +76,7 @@ function redact(obj: any): any {
   }
 }
 
+/** Begin a new trace and return its id. */
 export function beginTrace(seed?: Partial<Trace>): string {
   const id = seed?.id || newId();
   const t: Trace = {
@@ -86,6 +92,7 @@ export function beginTrace(seed?: Partial<Trace>): string {
   return id;
 }
 
+/** Mark a trace as complete. */
 export function endTrace(id: string, status?: 'ok' | 'error', error?: string) {
   if (!TRACE_PERSIST || !tracesRepo) return;
   tracesRepo.update(id, (t) => {
@@ -95,6 +102,7 @@ export function endTrace(id: string, status?: 'ok' | 'error', error?: string) {
   });
 }
 
+/** Begin a span within a trace and return its id. */
 export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }): string {
   if (!TRACE_PERSIST || !tracesRepo) return '';
   const sid = span.id || newId();
@@ -122,6 +130,7 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
   return sid;
 }
 
+/** Complete a span within a trace. */
 export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }) {
   if (!TRACE_PERSIST || !tracesRepo) return;
   tracesRepo.update(traceId, (t) => {
@@ -138,6 +147,7 @@ export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok'
   });
 }
 
+/** Merge annotations into an existing span. */
 export function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>) {
   if (!TRACE_PERSIST || !tracesRepo) return;
   tracesRepo.update(traceId, (t) => {
@@ -147,6 +157,7 @@ export function annotateSpan(traceId: string, spanId: string, annotations: Recor
   });
 }
 
+/** Retrieve all persisted traces. */
 export function getTraces() {
   return tracesRepo ? tracesRepo.getAll() : [];
 }

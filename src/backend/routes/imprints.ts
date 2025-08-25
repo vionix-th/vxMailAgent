@@ -1,6 +1,5 @@
 import express from 'express';
 import { Imprint } from '../../shared/types';
-// Persistence handled by repository via deps.setImprints
 
 export interface ImprintsRoutesDeps {
   getImprints: () => Imprint[];

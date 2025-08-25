@@ -24,8 +24,6 @@ export default function registerOrchestrationRoutes(app: express.Express, deps: 
     setTraces: () => {},
   };
   const cleanup = createCleanupService(hub);
-  // GET diagnostics: via repository with filters and pagination
-  // /api/orchestration/diagnostics?director=&agent=&emailId=&phase=&since=&until=&limit=&offset=
   app.get('/api/orchestration/diagnostics', (req, res) => {
     let log: OrchestrationDiagnosticEntry[] = [];
     try { log = deps.getOrchestrationLog() || []; } catch (e) { console.error('[ERROR] getOrchestrationLog failed:', e); }
@@ -49,7 +47,6 @@ export default function registerOrchestrationRoutes(app: express.Express, deps: 
       if (sinceMs) items = items.filter(e => Date.parse(e.timestamp) >= sinceMs);
       if (untilMs) items = items.filter(e => Date.parse(e.timestamp) <= untilMs);
 
-      // sort desc by timestamp
       items = items.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
       const total = items.length;
       const paged = items.slice(offset, offset + limit);
@@ -59,7 +56,6 @@ export default function registerOrchestrationRoutes(app: express.Express, deps: 
     }
   });
 
-  // DELETE single diagnostic by id (delegates to cleanup service)
   app.delete('/api/orchestration/diagnostics/:id', (req, res) => {
     try {
       const id = req.params.id;
@@ -70,7 +66,6 @@ export default function registerOrchestrationRoutes(app: express.Express, deps: 
     }
   });
 
-  // DELETE bulk diagnostics by ids (delegates to cleanup service)
   app.delete('/api/orchestration/diagnostics', (req, res) => {
     try {
       const ids = Array.isArray(req.body.ids) ? (req.body.ids as string[]) : [];

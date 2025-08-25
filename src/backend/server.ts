@@ -29,11 +29,11 @@ import registerFetcherRoutes from './routes/fetcher';
 import registerDiagnosticsRoutes from './routes/diagnostics';
 import registerDiagnosticTracesRoutes from './routes/diagnostic-traces';
 import registerUnifiedDiagnosticsRoutes from './routes/unified-diagnostics';
-// store removed for agents/directors/filters; using repositories instead
 import registerHealthRoutes from './routes/health';
 import registerCleanupRoutes from './routes/cleanup';
 import { initFetcher } from './services/fetcher';
 
+/** Configure and return the Express application with all routes and services. */
 export function createServer() {
   const app = express();
 
@@ -46,15 +46,12 @@ export function createServer() {
   function getDirectorsLive(): Director[] { return directorsRepo.getAll(); }
   function getFiltersLive(): Filter[] { return filtersRepo.getAll(); }
   function getImprintsLive(): Imprint[] { return imprintsRepo.getAll(); }
-  // Replaced below by orchRepo
   function getOrchestrationLogLive(): OrchestrationDiagnosticEntry[] { return orchRepo.getAll(); }
   function getConversationsLive(): ConversationThread[] { return conversationsRepo.getAll(); }
   function getSettingsLive() { settings = loadSettings(); return settings; }
 
-  // Session lifecycle helpers (expiration removed); only director finalization remains
   function isDirectorFinalized(dirId: string): boolean { return svcIsDirectorFinalized(conversations, dirId); }
 
-  // Middleware
   app.use((req, res, next) => {
     void req; // satisfy noUnusedParameters
     res.setHeader('Content-Security-Policy', "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'");
@@ -65,15 +62,11 @@ export function createServer() {
   app.use('/api', authRouter);
   app.use((req, res, next) => { void res; console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`); next(); });
 
-  // Stable references
-  // Conversations live cache (refreshed from repo on writes)
   let conversations: ConversationThread[] = [];
 
-  // Initialize repositories
   const memoryRepo = createJsonRepository<MemoryEntry>(MEMORY_FILE);
   setMemoryRepo(memoryRepo);
   
-  // Initialize workspace repository
   const workspaceRepo = createJsonRepository<WorkspaceItem>(WORKSPACE_ITEMS_FILE);
   setWorkspaceRepo(workspaceRepo);
   const orchRepo = createJsonRepository<OrchestrationDiagnosticEntry>(ORCHESTRATION_LOG_FILE);
@@ -86,10 +79,8 @@ export function createServer() {
   const providerRepo = new FileProviderEventsRepository();
   const tracesRepo = new FileTracesRepository();
 
-  // Initialize logging service with repos
   initLogging({ orchRepo, providerRepo, tracesRepo });
 
-  // Routes
   registerTestRoutes(app, { getSettings: () => getSettingsLive(), getPrompts: () => getPromptsLive(), getDirectors: () => getDirectorsLive(), getAgents: () => getAgentsLive() });
   registerMemoryRoutes(app, { getMemory: () => memoryRepo.getAll(), setMemory: (next: MemoryEntry[]) => { memoryRepo.setAll(next); } });
   registerOrchestrationRoutes(app, { getOrchestrationLog: () => getOrchestrationLogLive(), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[]) => { svcSetOrchestrationLog(next); }, getSettings: () => getSettingsLive() });
@@ -113,7 +104,6 @@ export function createServer() {
   });
   registerHealthRoutes(app);
 
-  // Initialize fetcher service with DI
   const fetcher = initFetcher({
     getSettings: () => getSettingsLive(),
     getFilters: () => getFiltersLive(),
