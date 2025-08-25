@@ -125,3 +125,178 @@ export function appendMessageToThread(
   const updated = { ...conversations[idx], lastActiveAt: new Date().toISOString(), messages: [...(conversations[idx].messages || []), message] } as any;
   return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
 }
+
+export interface AgentConversationResult {
+  finalMessages: any[];
+  finalAssistantMessage: any;
+  conversations: ConversationThread[];
+  success: boolean;
+  error?: string;
+}
+
+export async function runAgentConversation(
+  agentThread: ConversationThread,
+  initialUserMessage: string,
+  conversations: ConversationThread[],
+  apiConfig: any,
+  toolRegistry: any[],
+  setConversations: (next: ConversationThread[]) => void,
+  traceId?: string,
+  logProviderEvent?: (event: any) => void,
+): Promise<AgentConversationResult> {
+  const LOOP_MAX = 6;
+  let stepCount = 0;
+  let currentMessages: any[] = [...(agentThread.messages || [])];
+  let updatedConversations = [...conversations];
+  let lastAssistant: any = null;
+
+  // Add initial user message if provided
+  if (initialUserMessage) {
+    const userMsg = { role: 'user', content: initialUserMessage, context: { traceId } };
+    currentMessages.push(userMsg);
+    updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, userMsg);
+    setConversations(updatedConversations);
+  }
+
+  try {
+    while (stepCount < LOOP_MAX) {
+      stepCount++;
+      
+      // Import conversationEngine and handleToolByName
+      const { conversationEngine } = require('./engine');
+      const { handleToolByName } = require('../toolCalls');
+
+      const t0 = Date.now();
+      // Agent LLM call
+      const result = await conversationEngine.run({
+        messages: currentMessages,
+        apiConfig,
+        role: 'agent',
+        roleCaps: { canSpawnAgents: false },
+        toolRegistry,
+        context: { conversationId: agentThread.id, traceId },
+      });
+
+      const latencyMs = Date.now() - t0;
+      const now = new Date().toISOString();
+
+      // Log provider events if logger provided
+      if (logProviderEvent) {
+        try {
+          if (result.request) {
+            logProviderEvent({
+              id: require('../utils/id').newId(),
+              conversationId: agentThread.id,
+              provider: 'openai',
+              type: 'request',
+              timestamp: now,
+              payload: result.request,
+            });
+          }
+          const usage = (result.response && (result.response as any).usage) || undefined;
+          logProviderEvent({
+            id: require('../utils/id').newId(),
+            conversationId: agentThread.id,
+            provider: 'openai',
+            type: 'response',
+            timestamp: now,
+            latencyMs,
+            usage: usage ? {
+              promptTokens: usage.prompt_tokens,
+              completionTokens: usage.completion_tokens,
+              totalTokens: usage.total_tokens,
+            } : undefined,
+            payload: result.response,
+          });
+        } catch {}
+      }
+
+      // Append assistant message
+      const assistant = result.assistantMessage;
+      lastAssistant = assistant;
+      currentMessages.push(assistant);
+      updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, assistant);
+      setConversations(updatedConversations);
+
+      // If no tool calls, agent is done
+      if (!result.toolCalls || result.toolCalls.length === 0) {
+        break;
+      }
+
+      // Execute tools and append responses
+      for (const tc of result.toolCalls) {
+        let args: any = {};
+        try { 
+          args = tc.arguments ? JSON.parse(tc.arguments) : {}; 
+        } catch (e: any) {
+          // Log tool argument parsing error
+          const toolErrorMsg = { 
+            role: 'tool', 
+            name: tc.name, 
+            tool_call_id: tc.id, 
+            content: JSON.stringify({ error: 'invalid tool arguments', details: String(e?.message || e) })
+          };
+          currentMessages.push(toolErrorMsg);
+          updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, toolErrorMsg);
+          setConversations(updatedConversations);
+          continue;
+        }
+        
+        try {
+          const exec = await handleToolByName(tc.name, args);
+          const toolMsg = { 
+            role: 'tool', 
+            name: tc.name, 
+            tool_call_id: tc.id, 
+            content: JSON.stringify(exec) 
+          };
+          
+          currentMessages.push(toolMsg);
+          updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, toolMsg);
+          setConversations(updatedConversations);
+        } catch (e: any) {
+          // Log tool execution error
+          const toolErrorMsg = { 
+            role: 'tool', 
+            name: tc.name, 
+            tool_call_id: tc.id, 
+            content: JSON.stringify({ error: 'tool execution failed', details: String(e?.message || e) })
+          };
+          currentMessages.push(toolErrorMsg);
+          updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, toolErrorMsg);
+          setConversations(updatedConversations);
+        }
+      }
+    }
+
+    return {
+      finalMessages: currentMessages,
+      finalAssistantMessage: lastAssistant,
+      conversations: updatedConversations,
+      success: true,
+    };
+  } catch (e: any) {
+    // Log agent conversation failure if logger provided
+    if (logProviderEvent) {
+      try {
+        const now = new Date().toISOString();
+        logProviderEvent({
+          id: require('../utils/id').newId(),
+          conversationId: agentThread.id,
+          provider: 'openai',
+          type: 'error',
+          timestamp: now,
+          error: String(e?.message || e),
+        });
+      } catch {}
+    }
+
+    return {
+      finalMessages: currentMessages,
+      finalAssistantMessage: lastAssistant,
+      conversations: updatedConversations,
+      success: false,
+      error: String(e?.message || e),
+    };
+  }
+}

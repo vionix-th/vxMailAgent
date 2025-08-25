@@ -6,7 +6,7 @@ import { newId } from '../utils/id';
 import { conversationEngine } from './engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { FetcherLogEntry, Account, ConversationThread, OrchestrationDiagnosticEntry, ProviderEvent, Filter, Director, Agent, Prompt } from '../../shared/types';
-import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread, appendMessageToThread } from './orchestration';
+import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread } from './orchestration';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
 
 export interface FetcherDeps {
@@ -329,40 +329,43 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
 
                     deps.logOrch({ timestamp: new Date().toISOString(), director: director.id, directorName: director.name, agent: agent.id, agentName: agent.name, emailSummary: subject || snippet || msgId, accountId: account.id, email: emailEnvelope as any, result: { content: `agentThreadId=${agentThread.id}; isNew=${isNew}`, attachments: [], notifications: [] }, detail: { tool: 'agent', agentId: agent.id, agentName: agent.name, agentThreadId: agentThread.id, isNew }, fetchCycleId: fetchStart, dirThreadId, agentThreadId: agentThread.id, phase: 'tool' });
 
-                    let agMsgs: any[] = [...(deps.getPrompts().find(p => p.id === agent.promptId)?.messages || [])];
-                    if (!isNew) { agMsgs = [...(agentThread.messages || [])]; }
-                    const agentInput = String(args.input || '');
-                    agMsgs.push({ role: 'user', content: agentInput } as any);
-                    conversations = appendMessageToThread(conversations, agentThread.id, { role: 'user', content: agentInput, context: { traceId } } as any);
-                    deps.setConversations(conversations);
-
                     const agentApi = settings.apiConfigs.find((c: any) => c.id === agent.apiConfigId)!;
-                    const sAgentLlm = beginSpan(traceId, { type: 'llm_call', name: 'agent_chatCompletion', directorId: director.id, agentId, emailId: msgId });
-                    let agentStep: any;
+                    const sAgentLlm = beginSpan(traceId, { type: 'llm_call', name: 'agent_conversation', directorId: director.id, agentId, emailId: msgId });
                     const tAg0 = Date.now();
+                    
                     try {
-                      const engineOut = await conversationEngine.run({
-                        messages: agMsgs as any,
-                        apiConfig: agentApi as any,
-                        role: 'agent',
-                        roleCaps: { canSpawnAgents: false },
-                        toolRegistry: TOOL_DESCRIPTORS,
-                        context: { conversationId: agentThread.id, traceId },
-                      });
-                      agentStep = {
-                        assistantMessage: engineOut.assistantMessage,
-                        toolCalls: engineOut.toolCalls,
-                        request: engineOut.request,
-                        response: engineOut.response,
-                      } as any;
+                      // Use unified agent conversation logic
+                      const { runAgentConversation } = require('./orchestration');
+                      const agentInput = String(args.input || '');
+                      
+                      const agentResult = await runAgentConversation(
+                        agentThread,
+                        agentInput,
+                        conversations,
+                        agentApi,
+                        TOOL_DESCRIPTORS,
+                        (next: ConversationThread[]) => {
+                          conversations = next;
+                          deps.setConversations(next);
+                        },
+                        traceId,
+                        deps.logProviderEvent // Add provider event logging
+                      );
+                      
                       const latencyMs = Date.now() - tAg0;
-                      endSpan(traceId, sAgentLlm, { status: 'ok', response: { latencyMs } });
-                      try {
-                        const now = new Date().toISOString();
-                        if (agentStep.request) deps.logProviderEvent({ id: newId(), conversationId: agentThread.id, provider: 'openai', type: 'request', timestamp: now, payload: agentStep.request });
-                        const usage = (agentStep.response as any)?.usage;
-                        deps.logProviderEvent({ id: newId(), conversationId: agentThread.id, provider: 'openai', type: 'response', timestamp: now, latencyMs, usage: usage ? { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } : undefined, payload: agentStep.response });
-                      } catch {}
+                      conversations = agentResult.conversations;
+                      
+                      if (agentResult.success) {
+                        endSpan(traceId, sAgentLlm, { status: 'ok', response: { latencyMs } });
+                        // Return final agent response to director
+                        const finalContent = agentResult.finalAssistantMessage?.content || '';
+                        appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(finalContent), context: { traceId, spanId: sTool } } as any);
+                        endSpan(traceId, sTool, { status: 'ok' });
+                      } else {
+                        endSpan(traceId, sAgentLlm, { status: 'error', error: agentResult.error });
+                        appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: agentResult.error || 'agent conversation failed' }) });
+                        endSpan(traceId, sTool, { status: 'error', error: agentResult.error || 'agent conversation failed' });
+                      }
                     } catch (e: any) {
                       const latencyMs = Date.now() - tAg0;
                       endSpan(traceId, sAgentLlm, { status: 'error', error: String(e?.message || e) });
@@ -370,16 +373,10 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                         const now = new Date().toISOString();
                         deps.logProviderEvent({ id: newId(), conversationId: agentThread.id, provider: 'openai', type: 'error', timestamp: now, latencyMs, error: String(e?.message || e) });
                       } catch {}
-                      appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: 'agent llm call failed' }) });
-                      endSpan(traceId, sTool, { status: 'error', error: 'agent llm call failed' });
+                      appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: 'agent conversation failed' }) });
+                      endSpan(traceId, sTool, { status: 'error', error: 'agent conversation failed' });
                       continue;
                     }
-                    const agentAssistantWithCtx = { ...(agentStep.assistantMessage as any), context: { ...(agentStep.assistantMessage as any)?.context, traceId, spanId: sAgentLlm } };
-                    conversations = appendMessageToThread(conversations, agentThread.id, agentAssistantWithCtx as any);
-                    deps.setConversations(conversations);
-
-                    appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(agentStep.assistantMessage?.content || ''), context: { traceId, spanId: sTool } } as any);
-                    endSpan(traceId, sTool, { status: 'ok' });
                   } else {
                     // Span: unsupported tool
                     try {

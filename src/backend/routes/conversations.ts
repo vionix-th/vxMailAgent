@@ -3,7 +3,6 @@ import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent } from '../../shared/types';
 import { conversationEngine } from '../services/engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
-import { handleToolByName } from '../toolCalls';
 
 export interface ConversationsRoutesDeps {
   getConversations: () => ConversationThread[];
@@ -108,9 +107,9 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
       if (deps.isDirectorFinalized(t.directorId) || (t as any).status === 'finalized' || t.finalized === true) {
         return res.status(400).json({ error: 'Conversation is finalized' });
       }
-      const settings = deps.getSettings();
-      const api = Array.isArray(settings?.apiConfigs) && settings.apiConfigs.find((c: any) => c.id === t.apiConfigId);
-      if (!api) return res.status(400).json({ error: 'API config not found for conversation' });
+
+      const api = deps.getSettings().apiConfigs.find((c: any) => c.id === t.apiConfigId);
+      if (!api) return res.status(404).json({ error: 'API config not found' });
 
       // Use existing transcript as-is (OpenAI-aligned)
       const messages = (t.messages || []).map((m) => {
@@ -122,27 +121,26 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
       });
       // Tool selection is handled by the engine (flags + roleCaps); no local tool building needed.
 
-      // For agent threads, run a small tool-call loop so results are produced, mirroring fetcher behavior
-      const LOOP_MAX = 6;
-      let stepCount = 0;
-      let currentMessages: any[] = [...messages];
-      let lastStep: any = null;
+      // Use unified conversation logic for both director and agent threads
       let lastAssistant: PromptMessage | null = null;
-      while (true) {
-        stepCount++;
+      let lastStep: any = null;
+      
+      // Get the last user message content for agent conversations
+      const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+      const userContent = lastUserMessage?.content || '';
+      
+      if (t.kind === 'director') {
+        // Director threads: single step only (delegations handled by fetcher path)
         const t0 = Date.now();
         let result: any;
         try {
-          // Prefer unified engine path
           const engineOut = await conversationEngine.run({
-            messages: currentMessages as any,
+            messages: messages as any,
             apiConfig: api as any,
-            role: t.kind,
-            roleCaps: { canSpawnAgents: t.kind === 'director' },
+            role: 'director',
+            roleCaps: { canSpawnAgents: true },
             toolRegistry: TOOL_DESCRIPTORS,
-            context: t.kind === 'director'
-              ? { conversationId: id, agents: deps.getAgents() || [] }
-              : { conversationId: id },
+            context: { conversationId: id, agents: deps.getAgents() || [] },
           });
           result = {
             assistantMessage: engineOut.assistantMessage,
@@ -161,8 +159,8 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
         const assistant = result.assistantMessage as any as PromptMessage;
         lastAssistant = assistant;
         const updated: ConversationThread = {
-          ...((stepCount === 1) ? t : deps.getConversations()[deps.getConversations().findIndex((c) => c.id === id)]),
-          messages: [...(((stepCount === 1) ? t : deps.getConversations()[deps.getConversations().findIndex((c) => c.id === id)]).messages || []), assistant],
+          ...t,
+          messages: [...(t.messages || []), assistant],
           lastActiveAt: now,
           provider: 'openai',
         } as any;
@@ -190,40 +188,32 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             payload: result.response,
           });
         } catch {}
-
-        currentMessages = [...currentMessages, assistant as any];
         lastStep = result;
-
-        // Director threads: single step only (delegations handled by fetcher path)
-        if (t.kind === 'director') break;
-
-        // Agent threads: execute tools until none or LOOP_MAX reached
-        if (!result.toolCalls || result.toolCalls.length === 0) break;
-        if (stepCount >= LOOP_MAX) break;
-
-        for (const tc of result.toolCalls) {
-          let args: any = {};
-          try { args = tc.arguments ? JSON.parse(tc.arguments) : {}; }
-          catch { args = {}; }
-          const exec = await handleToolByName(tc.name, args);
-          const toolMsg: any = { role: 'tool', name: tc.name, tool_call_id: tc.id, content: JSON.stringify(exec) };
-          currentMessages.push(toolMsg);
-          // Append tool message to thread
-          const cur = deps.getConversations();
-          const i2 = cur.findIndex((c) => c.id === id);
-          if (i2 !== -1) {
-            const now2 = new Date().toISOString();
-            const updated2: ConversationThread = {
-              ...cur[i2],
-              messages: [...(cur[i2].messages || []), toolMsg],
-              lastActiveAt: now2,
-            } as any;
-            const next = cur.slice();
-            next[i2] = updated2;
-            deps.setConversations(next);
+      } else {
+        // Agent threads: use unified agent conversation logic
+        try {
+          const { runAgentConversation } = require('../services/orchestration');
+          
+          const agentResult = await runAgentConversation(
+            t,
+            userContent, // Use the user's message content
+            deps.getConversations(),
+            api,
+            TOOL_DESCRIPTORS,
+            deps.setConversations,
+            undefined, // No traceId in routes path
+            deps.logProviderEvent // Add provider event logging
+          );
+          
+          if (agentResult.success) {
+            lastAssistant = agentResult.finalAssistantMessage;
+            lastStep = { content: agentResult.finalAssistantMessage?.content };
+          } else {
+            return res.status(502).json({ error: agentResult.error || 'Agent conversation failed' });
           }
+        } catch (e: any) {
+          return res.status(502).json({ error: String(e?.message || e) });
         }
-        // loop continues for next assistant step
       }
 
       console.log(`[${new Date().toISOString()}] POST /api/conversations/${id}/assistant -> assistant replied (${String(lastStep?.content || '').length} chars)`);
