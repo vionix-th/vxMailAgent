@@ -14,7 +14,6 @@ export function buildGoogleLoginAuthUrl(cfg: OAuthProviderConfig, state: string)
     response_type: 'code',
     scope: LOGIN_SCOPES.join(' '),
     access_type: 'online',
-    include_granted_scopes: 'true',
     prompt: 'select_account',
     state,
   });

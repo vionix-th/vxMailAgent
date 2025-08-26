@@ -22,6 +22,16 @@
 - Route guard: `requireAuth` protects all routes except the public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`.
 - Production security: HTTP→HTTPS redirect when behind a proxy and HSTS header `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
 
+### Google OAuth Clients (Split)
+
+- Provider (Gmail) OAuth client — used for linking Gmail accounts and refreshing tokens.
+  - Env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
+  - Redirect URI (local dev): `http://localhost:3000/oauth/callback` (frontend receives code).
+- Login (OIDC) OAuth client — used ONLY for app login sessions.
+  - Env vars: `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`, `GOOGLE_LOGIN_REDIRECT_URI`.
+  - Redirect URI (local dev): `http://localhost:3001/api/auth/google/callback` (backend handles callback).
+  - URL builder: `src/backend/oauth/googleLogin.ts::buildGoogleLoginAuthUrl()` (scopes: `openid email profile`, `access_type=online`, `prompt=select_account`).
+
 ## Workspace Semantics (Current)
 
 - Routes are namespaced by `:id`, but items are stored in a shared repository irrespective of `:id` (partitioning can be added later). See `src/backend/routes/workspaces.ts`.
@@ -52,6 +62,16 @@
   - Unified/provider events and traces under `src/backend/routes/{diagnostics.ts, unified-diagnostics.ts}` (admin/debug). Keep separate from user Results.
 - Accounts/Directors/Agents/Filters/Templates/Memory/Conversations
   - Modular files exist under `src/backend/routes/`. See each file for exact shapes.
+
+### Gmail Token Refresh: Re-Auth and Structured Logging
+
+- Endpoints (see `src/backend/routes/accounts.ts`):
+  - `POST /api/accounts/:id/refresh` (Gmail/Outlook refresh)
+  - `GET /api/accounts/:id/gmail-test` (Gmail API probe)
+- On Gmail token errors requiring user action, responses include a re-authorization URL:
+  - Shape: `{ ok: false, error: <category>, authorizeUrl: <string> }`
+  - Error categories: `missing_refresh_token`, `invalid_grant`, `network`, `other`.
+- Structured JSON logs are emitted with timestamp, operation, account id/email, category, and detail. Info events are logged when a re-auth URL is generated and returned.
 
 ## Prompt Assistant: Optional Context Inclusion
 

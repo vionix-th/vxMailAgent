@@ -1,5 +1,5 @@
 import express from 'express';
-import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, JWT_EXPIRES_IN_SEC, JWT_SECRET } from '../config';
+import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_LOGIN_CLIENT_ID, GOOGLE_LOGIN_CLIENT_SECRET, GOOGLE_LOGIN_REDIRECT_URI, JWT_EXPIRES_IN_SEC, JWT_SECRET } from '../config';
 import { buildGoogleLoginAuthUrl } from '../oauth/googleLogin';
 import { exchangeGoogleCode } from '../oauth/google';
 import { signJwt, verifyJwt } from '../utils/jwt';
@@ -23,7 +23,11 @@ function cookieSerialize(name: string, value: string, opts?: { maxAgeSec?: numbe
 }
 
 export default function registerAuthSessionRoutes(app: express.Express) {
-  const googleCfg = { clientId: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET, redirectUri: GOOGLE_REDIRECT_URI };
+  const googleCfg = {
+    clientId: GOOGLE_LOGIN_CLIENT_ID || GOOGLE_CLIENT_ID,
+    clientSecret: GOOGLE_LOGIN_CLIENT_SECRET || GOOGLE_CLIENT_SECRET,
+    redirectUri: GOOGLE_LOGIN_REDIRECT_URI || GOOGLE_REDIRECT_URI,
+  };
 
   app.get('/api/auth/google/initiate', (req, res) => {
     void req;
@@ -81,6 +85,7 @@ export default function registerAuthSessionRoutes(app: express.Express) {
       const token = signJwt({ uid: saved.id, email: saved.email, name: saved.name, picture: saved.picture }, JWT_SECRET, { expiresInSec: JWT_EXPIRES_IN_SEC });
       const secure = (process.env.NODE_ENV || 'development') === 'production';
       res.setHeader('Set-Cookie', cookieSerialize('vx.session', token, { maxAgeSec: JWT_EXPIRES_IN_SEC, httpOnly: true, sameSite: 'Lax', secure, path: '/' }));
+      // Frontend handles navigation; return JSON with the user
       res.json({ user: saved });
     } catch (e: any) {
       res.status(500).json({ error: 'Login failed', detail: e?.message || String(e || '') });
@@ -100,5 +105,16 @@ export default function registerAuthSessionRoutes(app: express.Express) {
     const payload = verifyJwt(token, JWT_SECRET);
     if (!payload || typeof payload.uid !== 'string') return res.status(401).json({ error: 'Unauthorized' });
     res.json({ user: { id: payload.uid, email: payload.email, name: payload.name, picture: payload.picture } });
+  });
+
+  // Clear session cookie and log out
+  app.post('/api/auth/logout', (req, res) => {
+    void req;
+    const secure = (process.env.NODE_ENV || 'development') === 'production';
+    // Explicitly expire the cookie
+    const parts = ['vx.session=', 'Path=/', 'SameSite=Lax', 'HttpOnly', 'Max-Age=0'];
+    if (secure) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+    res.json({ ok: true });
   });
 }

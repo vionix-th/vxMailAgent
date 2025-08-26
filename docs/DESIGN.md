@@ -8,6 +8,7 @@ The application is a single, web-based system running on localhost for processin
 - Dev servers: frontend runs on Vite (`http://localhost:3000`) and proxies `/api` to the backend (`http://localhost:3001`). See `src/frontend/vite.config.ts` and `src/backend/index.ts`/`server.ts`. The backend does not serve the frontend in dev.
 - Encryption behavior: if `VX_MAILAGENT_KEY` is missing/invalid (not 64-char hex), the backend still starts and persists plaintext JSON with a startup warning. See `src/backend/config.ts::warnIfInsecure()` and `src/backend/persistence.ts`.
 - Authentication/session: Stateless login via Google OIDC; backend issues an HttpOnly JWT cookie `vx.session` (SameSite=Lax; `Secure` in production). `requireAuth` guards routes except the public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`. In production, HTTP is redirected to HTTPS and HSTS is set (`Strict-Transport-Security: max-age=31536000; includeSubDomains`).
+  - Split OAuth clients: Separate Google OAuth client for app login (OIDC, minimal scopes) vs provider Gmail accounts (email access). Env vars: `GOOGLE_LOGIN_*` for login, `GOOGLE_*` for provider.
 - Workspace store: `workspaces/:id` routes exist, but items are stored in a shared repository (`workspaceRepo`) irrespective of `:id` (partitioning can be added later). See `src/backend/routes/workspaces.ts`.
 - Implemented routes include health, prompts, prompt-templates, conversations, accounts, directors, agents, filters, memory, settings, fetcher, diagnostics, and workspaces. Some live tools (calendar/todo/filesystem/memory) described below are planned and may not be wired as HTTP APIs yet.
 
@@ -152,13 +153,19 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Implementation**: Handles OAuth redirects, token storage (encrypted JSON), and signature retrieval. UI shows signature preview/edit field during account setup.
 
 ##### 3.2.2a Session Authentication (App Login)
-- Separate from provider account OAuth, the app login uses Google OIDC with minimal scopes (`openid email profile`).
+- Separate from provider account OAuth, the app login uses Google OIDC with minimal scopes (`openid email profile`). A distinct Google OAuth client is used for login to avoid interference with Gmail refresh tokens.
 - Backend endpoints (`src/backend/routes/auth-session.ts`):
   - `GET /api/auth/google/initiate` → returns authorization URL.
   - `GET /api/auth/google/callback` → exchanges code, upserts user, sets `vx.session` HttpOnly cookie.
   - `GET /api/auth/whoami` → returns `{ user }` or 401.
 - Middleware `requireAuth` guards all non-public endpoints. Cookie flags: HttpOnly, SameSite=Lax; `Secure` in production.
 - Production: trust proxy, redirect HTTP→HTTPS, set HSTS.
+
+###### Re-authorization Flow for Gmail Tokens
+
+- For Gmail provider accounts, token refresh or API probe failures that require user action return `{ ok: false, error: <category>, authorizeUrl }` from `src/backend/routes/accounts.ts`.
+- Error categories include: `missing_refresh_token`, `invalid_grant`, `network`, `other`. The frontend surfaces a re-authenticate action using the provided URL.
+- Structured JSON logs capture the error category and context; info-level events log when a re-auth URL is generated.
 
 #### 3.2.3 Director Orchestration
 - **Functionality**: Receive filtered emails and initialize a conversation using the director’s prompt and `ApiConfig`. The director’s model is in control and uses function-calling to invoke tools (calendar, to-do, filesystem, memory) and to message specialized agents via per-agent tools. Agents are not invoked independently.

@@ -454,7 +454,8 @@ const resources = {
         stop: 'Stop',
         triggerNow: 'Trigger Now',
         search: 'Search',
-        viewTrace: 'View Trace'
+        viewTrace: 'View Trace',
+        logout: 'Logout'
       },
       accounts: {
         add: 'Add Account',
@@ -1216,7 +1217,8 @@ const resources = {
         stop: 'หยุด',
         triggerNow: 'เรียกตอนนี้',
         search: 'ค้นหา',
-        viewTrace: 'ดู Trace'
+        viewTrace: 'ดู Trace',
+        logout: 'ออกจากระบบ'
       },
       orchestration: {
         title: 'การวินิจฉัย Orchestration',

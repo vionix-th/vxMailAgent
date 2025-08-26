@@ -16,6 +16,7 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
   const [provider, setProvider] = useState<'gmail' | 'outlook'>('gmail');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [reauthUrl, setReauthUrl] = useState<string | null>(null);
   const [editing, setEditing] = useState<Account | null>(null);
   const [testOpen, setTestOpen] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
@@ -63,7 +64,14 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
       const res = await fetch(`/api/accounts/${id}/gmail-test`);
       const data = await res.json();
       if (!res.ok || data.ok === false) {
-        setTestError(data.error || (t('accounts.errors.testFailed') as string));
+        // If backend suggests re-auth, surface it in UI and keep full payload for visibility
+        if (data.authorizeUrl) {
+          setTestError(
+            data.error ? `Re-authorization required (${data.error})` : (t('accounts.errors.testFailed') as string)
+          );
+        } else {
+          setTestError(data.error || (t('accounts.errors.testFailed') as string));
+        }
         setTestResult(data);
       } else {
         setTestResult(data);
@@ -143,11 +151,20 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
   const refreshAccount = async (id: string) => {
     setLoading(true);
     setError(undefined);
+    setReauthUrl(null);
     try {
       const res = await fetch(`/api/accounts/${id}/refresh`, { method: 'POST' });
       if (!res.ok) {
         let msg = t('accounts.errors.refreshFailed') as string;
-        try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
+        try {
+          const data = await res.json();
+          if (data?.authorizeUrl) {
+            setReauthUrl(data.authorizeUrl);
+            msg = data.error ? `Re-authorization required (${data.error})` : 'Re-authorization required';
+          } else if (data?.error) {
+            msg = data.error;
+          }
+        } catch {}
         throw new Error(msg);
       }
       await fetchAccounts();
@@ -186,7 +203,9 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
       </Stack>
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}
-          action={error.includes('accounts') ? (
+          action={reauthUrl ? (
+            <Button color="inherit" size="small" onClick={() => { window.location.href = reauthUrl; }}>{t('accounts.reauth') || 'Re-auth account'}</Button>
+          ) : error.includes('accounts') ? (
             <Button color="inherit" size="small" onClick={fetchAccounts}>{t('actions.retry')}</Button>
           ) : undefined}
         >{error}</Alert>
@@ -361,6 +380,13 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
           )}
           {testResult && testError && (
             <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 13, marginTop: 12 }}>{JSON.stringify(testResult, null, 2)}</pre>
+          )}
+          {testResult?.authorizeUrl && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="warning" action={<Button color="inherit" size="small" onClick={() => { window.location.href = testResult.authorizeUrl; }}>{t('accounts.reauth') || 'Re-auth account'}</Button>}>
+                {t('accounts.test.reauthNeeded') || 'Authorization has expired or is missing. Please re-authenticate this account.'}
+              </Alert>
+            </Box>
           )}
         </DialogContent>
         <DialogActions>

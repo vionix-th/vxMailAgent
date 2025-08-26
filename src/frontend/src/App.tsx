@@ -11,10 +11,12 @@ import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import SettingsBrightnessIcon from '@mui/icons-material/SettingsBrightness';
 import TranslateIcon from '@mui/icons-material/Translate';
+import LogoutIcon from '@mui/icons-material/Logout';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from './SettingsContext';
+import { logout } from './authClient';
 
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCookieState } from './hooks/useCookieState';
@@ -107,6 +109,18 @@ export default function App() {
                 <span style={{ marginRight: 8 }}>🇹🇭</span> {t('lang.th')}
               </MenuItem>
             </Menu>
+
+            <Tooltip title={t('actions.logout') as string}>
+              <IconButton
+                size="small"
+                onClick={async () => {
+                  try { await logout(); } finally { window.location.href = '/login'; }
+                }}
+                aria-label={t('actions.logout') as string}
+              >
+                <LogoutIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Toolbar>
       </AppBar>

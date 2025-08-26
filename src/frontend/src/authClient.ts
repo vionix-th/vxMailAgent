@@ -26,3 +26,7 @@ export async function startGoogleLogin(): Promise<void> {
   if (!url) throw new Error('No login URL');
   window.location.href = url;
 }
+
+export async function logout(): Promise<void> {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+}

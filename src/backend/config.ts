@@ -12,6 +12,10 @@ export const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 export const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
+// OAuth: Google (Login client - OIDC only)
+export const GOOGLE_LOGIN_CLIENT_ID = process.env.GOOGLE_LOGIN_CLIENT_ID || '';
+export const GOOGLE_LOGIN_CLIENT_SECRET = process.env.GOOGLE_LOGIN_CLIENT_SECRET || '';
+export const GOOGLE_LOGIN_REDIRECT_URI = process.env.GOOGLE_LOGIN_REDIRECT_URI || '';
 // OAuth: Outlook
 export const OUTLOOK_CLIENT_ID = process.env.OUTLOOK_CLIENT_ID || '';
 export const OUTLOOK_CLIENT_SECRET = process.env.OUTLOOK_CLIENT_SECRET || '';
@@ -44,6 +48,11 @@ export function envSummary() {
       CLIENT_ID_PRESENT: !!GOOGLE_CLIENT_ID,
       CLIENT_SECRET_PRESENT: !!GOOGLE_CLIENT_SECRET,
       REDIRECT_URI_PRESENT: !!GOOGLE_REDIRECT_URI,
+    },
+    GOOGLE_LOGIN: {
+      CLIENT_ID_PRESENT: !!GOOGLE_LOGIN_CLIENT_ID,
+      CLIENT_SECRET_PRESENT: !!GOOGLE_LOGIN_CLIENT_SECRET,
+      REDIRECT_URI_PRESENT: !!GOOGLE_LOGIN_REDIRECT_URI,
     },
     OUTLOOK: {
       CLIENT_ID_PRESENT: !!OUTLOOK_CLIENT_ID,

@@ -28,6 +28,8 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     setProviderEvents: () => {},
     getTraces: () => [],
     setTraces: () => {},
+    getWorkspaceItems: () => [],
+    setWorkspaceItems: () => {},
   };
   const cleanup = createCleanupService(hub);
   // GET /api/fetcher/status

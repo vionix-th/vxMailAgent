@@ -231,8 +231,56 @@ export default function registerAccountsRoutes(app: express.Express) {
           GOOGLE_REDIRECT_URI!
         );
         if (result.error) {
-          console.error(`[${new Date().toISOString()}] [OAUTH2] Refresh failed for ${id}: ${result.error}`);
-          return res.status(500).json({ ok: false, error: result.error });
+          const errTxt = String(result.error || '');
+          const missing = /missing refresh token/i.test(errTxt);
+          const invalidGrant = /invalid_grant/i.test(errTxt) || /expired or revoked/i.test(errTxt);
+          const network = /(ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network)/i.test(errTxt);
+          const category = missing ? 'missing_refresh_token' : invalidGrant ? 'invalid_grant' : network ? 'network' : 'other';
+          console.error(
+            JSON.stringify({
+              ts: new Date().toISOString(),
+              level: 'error',
+              area: 'oauth',
+              provider: 'google',
+              op: 'refresh',
+              accountId: id,
+              email: account.email,
+              category,
+              error: errTxt,
+            })
+          );
+          // Special-case: missing refresh token or invalid_grant -> provide re-auth URL instead of hard error
+          if (missing || invalidGrant) {
+            try {
+              const { getGoogleAuthUrl } = require('../oauth-google');
+              const state = `reauth:${id}`;
+              const url = getGoogleAuthUrl(
+                GOOGLE_CLIENT_ID!,
+                GOOGLE_CLIENT_SECRET!,
+                GOOGLE_REDIRECT_URI!,
+                state
+              );
+              console.log(
+                JSON.stringify({
+                  ts: new Date().toISOString(),
+                  level: 'info',
+                  area: 'oauth',
+                  provider: 'google',
+                  op: 'refresh',
+                  accountId: id,
+                  email: account.email,
+                  action: 'reauth_url_issued',
+                  category,
+                  state,
+                })
+              );
+              return res.json({ ok: false, error: category, authorizeUrl: url });
+            } catch (e) {
+              console.error(`[${new Date().toISOString()}] [OAUTH2] Failed to generate Google re-auth URL for ${id}:`, e);
+              return res.status(500).json({ ok: false, error: errTxt });
+            }
+          }
+          return res.status(500).json({ ok: false, error: errTxt });
         }
         if (result.updated) {
           account.tokens.accessToken = result.accessToken;
@@ -318,8 +366,56 @@ export default function registerAccountsRoutes(app: express.Express) {
         GOOGLE_REDIRECT_URI!
       );
       if (result.error) {
-        console.error(`[${new Date().toISOString()}] [OAUTH2] Gmail test refresh failed for ${id}: ${result.error}`);
-        return res.status(500).json({ ok: false, error: result.error });
+        const errTxt = String(result.error || '');
+        const missing = /missing refresh token/i.test(errTxt);
+        const invalidGrant = /invalid_grant/i.test(errTxt) || /expired or revoked/i.test(errTxt);
+        const network = /(ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network)/i.test(errTxt);
+        const category = missing ? 'missing_refresh_token' : invalidGrant ? 'invalid_grant' : network ? 'network' : 'other';
+        console.error(
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            level: 'error',
+            area: 'oauth',
+            provider: 'google',
+            op: 'gmail-test',
+            accountId: id,
+            email: account.email,
+            category,
+            error: errTxt,
+          })
+        );
+        // Special-case: missing refresh token or invalid_grant -> provide re-auth URL
+        if (missing || invalidGrant) {
+          try {
+            const { getGoogleAuthUrl } = require('../oauth-google');
+            const state = `reauth:${id}`;
+            const url = getGoogleAuthUrl(
+              GOOGLE_CLIENT_ID!,
+              GOOGLE_CLIENT_SECRET!,
+              GOOGLE_REDIRECT_URI!,
+              state
+            );
+            console.log(
+              JSON.stringify({
+                ts: new Date().toISOString(),
+                level: 'info',
+                area: 'oauth',
+                provider: 'google',
+                op: 'gmail-test',
+                accountId: id,
+                email: account.email,
+                action: 'reauth_url_issued',
+                category,
+                state,
+              })
+            );
+            return res.json({ ok: false, error: category, authorizeUrl: url });
+          } catch (e) {
+            console.error(`[${new Date().toISOString()}] [OAUTH2] Failed to generate Google re-auth URL for ${id}:`, e);
+            return res.status(500).json({ ok: false, error: errTxt });
+          }
+        }
+        return res.status(500).json({ ok: false, error: errTxt });
       }
       if (result.updated) {
         account.tokens.accessToken = result.accessToken;

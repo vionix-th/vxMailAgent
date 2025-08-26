@@ -27,6 +27,8 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     setProviderEvents: () => {},
     getTraces: () => [],
     setTraces: () => {},
+    getWorkspaceItems: () => [],
+    setWorkspaceItems: () => {},
   };
   const cleanup = createCleanupService(hub);
   // LIST conversations (canonical). Supports optional pagination only; no filters, no sorting.

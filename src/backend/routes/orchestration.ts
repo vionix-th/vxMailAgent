@@ -22,6 +22,8 @@ export default function registerOrchestrationRoutes(app: express.Express, deps: 
     setProviderEvents: () => {},
     getTraces: () => [],
     setTraces: () => {},
+    getWorkspaceItems: () => [],
+    setWorkspaceItems: () => {},
   };
   const cleanup = createCleanupService(hub);
   // GET diagnostics: via repository with filters and pagination

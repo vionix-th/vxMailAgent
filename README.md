@@ -32,9 +32,12 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 
 - `VX_MAILAGENT_KEY` — required for encryption: 64‑char hex key to encrypt `data/` at rest. If missing/invalid, data is written in plaintext (dev‑only).
 - `OPENAI_API_KEY` (required): OpenAI API key for orchestration.
-- Google OAuth2:
+- Google OAuth2 (Provider accounts: Gmail/Calendar/Tasks)
   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-  - `GOOGLE_REDIRECT_URI` → set to `http://localhost:3000/oauth/callback`
+  - `GOOGLE_REDIRECT_URI` → set to `http://localhost:3000/oauth/callback` (frontend receives code)
+- Google OAuth2 (App Login: OIDC session)
+  - `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`
+  - `GOOGLE_LOGIN_REDIRECT_URI` → set to `http://localhost:3001/api/auth/google/callback` in local dev (backend receives code)
 - Outlook OAuth2:
   - `OUTLOOK_CLIENT_ID`, `OUTLOOK_CLIENT_SECRET`
   - `OUTLOOK_REDIRECT_URI` → set to `http://localhost:3000/oauth/callback`
@@ -54,6 +57,8 @@ Use `src/backend/.env.example` as a template.
 - Route guard: Almost all API routes are protected by `requireAuth`. Public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`.
 - Cookie flags: `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
 - Production hardening: in production, HTTP is redirected to HTTPS and HSTS is set (`Strict-Transport-Security: max-age=31536000; includeSubDomains`).
+  
+Note: Login OAuth uses a separate Google OAuth client from provider accounts to prevent refresh token rotation/invalidation when the same Google user is used for both flows.
 
 ## Development Commands
 
@@ -76,6 +81,7 @@ Frontend (`src/frontend`)
 
 - From the UI, start an OAuth flow → provider redirects to `http://localhost:3000/oauth/callback` (handled by `src/frontend/src/OAuthCallback.tsx`).
 - The frontend exchanges the `code` with the backend via `/api/oauth2/{google|outlook}/callback` to produce an `account` object, then persists it via `POST /api/accounts`.
+- If a Gmail refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with an `authorizeUrl` for re-auth. The UI should redirect the user to that URL to restore tokens.
 
 ## API Overview
 
