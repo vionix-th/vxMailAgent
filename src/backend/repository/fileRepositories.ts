@@ -8,6 +8,7 @@ import {
 import { ProviderEvent, Trace } from '../../shared/types';
 import { TRACE_MAX_TRACES, TRACE_TTL_DAYS, PROVIDER_MAX_EVENTS, PROVIDER_TTL_DAYS } from '../config';
 
+/** Repository backed by an encrypted JSON file. */
 export class FileJsonRepository<T> implements Repository<T> {
   constructor(private filePath: string) {}
   getAll(): T[] {
@@ -27,10 +28,12 @@ export class FileJsonRepository<T> implements Repository<T> {
   }
 }
 
+/** Repository interface for provider events. */
 export interface ProviderEventsRepository extends Repository<ProviderEvent> {
   append(ev: ProviderEvent): void;
 }
 
+/** Provider events repository persisted to disk. */
 export class FileProviderEventsRepository implements ProviderEventsRepository {
   constructor(private filePath: string = PROVIDER_EVENTS_FILE) {}
   private prune(list: ProviderEvent[]): ProviderEvent[] {
@@ -69,11 +72,13 @@ export class FileProviderEventsRepository implements ProviderEventsRepository {
   }
 }
 
+/** Repository interface for traces. */
 export interface TracesRepository extends Repository<Trace> {
   append(t: Trace): void;
   update(id: string, updater: (t: Trace) => Trace | void): void;
 }
 
+/** Trace repository persisted to disk. */
 export class FileTracesRepository implements TracesRepository {
   constructor(private filePath: string = TRACES_FILE) {}
   private prune(list: Trace[]): Trace[] {
@@ -122,6 +127,7 @@ export class FileTracesRepository implements TracesRepository {
   }
 }
 
+/** Create a simple JSON file repository instance. */
 export function createJsonRepository<T>(filePath: string): Repository<T> {
   return new FileJsonRepository<T>(filePath);
 }

@@ -1,3 +1,4 @@
+/** Basic user profile information. */
 type User = {
   id: string;
   email: string;
@@ -7,6 +8,7 @@ type User = {
   lastLoginAt?: string;
 };
 
+/** Retrieve the current authenticated user, if any. */
 export async function whoAmI(): Promise<User | null> {
   try {
     const res = await fetch('/api/auth/whoami', { credentials: 'include' });
@@ -19,6 +21,7 @@ export async function whoAmI(): Promise<User | null> {
   }
 }
 
+/** Begin the Google OAuth login flow. */
 export async function startGoogleLogin(): Promise<void> {
   const res = await fetch('/api/auth/google/initiate');
   if (!res.ok) throw new Error('Failed to initiate login');
@@ -27,6 +30,7 @@ export async function startGoogleLogin(): Promise<void> {
   window.location.href = url;
 }
 
+/** Terminate the current session. */
 export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
 }

@@ -6,6 +6,7 @@ import { signJwt, verifyJwt } from '../utils/jwt';
 import { upsertUser } from '../services/users';
 import { User } from '../../shared/types';
 
+/** Serialize a cookie string. */
 function cookieSerialize(name: string, value: string, opts?: { maxAgeSec?: number; secure?: boolean; httpOnly?: boolean; sameSite?: 'Lax' | 'Strict' | 'None'; path?: string; domain?: string }) {
   const parts = [`${name}=${encodeURIComponent(value)}`];
   const path = opts?.path ?? '/';
@@ -22,6 +23,7 @@ function cookieSerialize(name: string, value: string, opts?: { maxAgeSec?: numbe
   return parts.join('; ');
 }
 
+/** Register OAuth-based authentication routes. */
 export default function registerAuthSessionRoutes(app: express.Express) {
   const googleCfg = {
     clientId: GOOGLE_LOGIN_CLIENT_ID || GOOGLE_CLIENT_ID,
@@ -47,7 +49,6 @@ export default function registerAuthSessionRoutes(app: express.Express) {
         return res.status(400).json({ error: 'Invalid or expired state' });
       }
       const tokens = await exchangeGoogleCode(googleCfg, code);
-      // Fetch OIDC userinfo via shared helper
       const me: any = await getGoogleUserInfo(tokens.accessToken);
       const subOrId: string = me?.id || me?.sub || '';
       const email: string = me?.email || '';
@@ -62,12 +63,10 @@ export default function registerAuthSessionRoutes(app: express.Express) {
         createdAt: nowIso,
         lastLoginAt: nowIso,
       };
-      // Upsert user (preserve createdAt if exists)
       const saved = upsertUser(user);
       const token = signJwt({ uid: saved.id, email: saved.email, name: saved.name, picture: saved.picture }, JWT_SECRET, { expiresInSec: JWT_EXPIRES_IN_SEC });
       const secure = (process.env.NODE_ENV || 'development') === 'production';
       res.setHeader('Set-Cookie', cookieSerialize('vx.session', token, { maxAgeSec: JWT_EXPIRES_IN_SEC, httpOnly: true, sameSite: 'Lax', secure, path: '/' }));
-      // Frontend handles navigation; return JSON with the user
       res.json({ user: saved });
     } catch (e: any) {
       res.status(500).json({ error: 'Login failed', detail: e?.message || String(e || '') });
@@ -89,11 +88,9 @@ export default function registerAuthSessionRoutes(app: express.Express) {
     res.json({ user: { id: payload.uid, email: payload.email, name: payload.name, picture: payload.picture } });
   });
 
-  // Clear session cookie and log out
   app.post('/api/auth/logout', (req, res) => {
     void req;
     const secure = (process.env.NODE_ENV || 'development') === 'production';
-    // Explicitly expire the cookie
     const parts = ['vx.session=', 'Path=/', 'SameSite=Lax', 'HttpOnly', 'Max-Age=0'];
     if (secure) parts.push('Secure');
     res.setHeader('Set-Cookie', parts.join('; '));
