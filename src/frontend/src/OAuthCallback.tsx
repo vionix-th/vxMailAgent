@@ -8,6 +8,19 @@ function useQuery() {
   return new URLSearchParams(window.location.search);
 }
 
+// Try to decode a JWT without verifying signature to read payload fields
+function decodeJwtPayload(token: string): any | undefined {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return undefined;
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(b64);
+    return JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+}
+
 // Local error shape that can be either a string or a structured object
 type OAuthError =
   | string
@@ -37,18 +50,38 @@ export default function OAuthCallback() {
     const state = query.get('state');
     let mode: string | undefined = undefined;
     if (state) {
+      // 1) Try plain JSON state (legacy)
       try {
         const parsed = JSON.parse(state);
         if (parsed && parsed.provider) provider = parsed.provider;
         if (parsed && parsed.mode) mode = parsed.mode;
-      } catch {}
+      } catch {
+        // 2) Try JWT payload (new signed state)
+        const payload = decodeJwtPayload(state);
+        if (payload) {
+          // If signed state embedded a JSON string under 's', parse it
+          if (typeof payload.s === 'string') {
+            try {
+              const inner = JSON.parse(payload.s);
+              if (inner && inner.provider) provider = inner.provider;
+              if (inner && inner.mode) mode = inner.mode;
+            } catch {}
+          }
+          // Infer provider/mode from payload 'p' when not present inside 's'
+          if (!provider && typeof payload.p === 'string') {
+            if (/outlook/i.test(payload.p)) provider = 'outlook';
+            else if (/google/i.test(payload.p)) provider = 'gmail';
+          }
+          if (!mode && typeof payload.p === 'string' && /login/i.test(payload.p)) mode = 'login';
+        }
+      }
     }
-    if (!provider || !code) {
+    if (!code) {
       setError(t('oauth.missingProviderOrCode'));
       setLoading(false);
       return;
     }
-    const isLoginGoogle = mode === 'login' && (provider === 'google' || provider === 'gmail');
+    const isLoginGoogle = mode === 'login' && (!provider || provider === 'google' || provider === 'gmail');
     const endpoint = isLoginGoogle
       ? `/api/auth/google/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`
       : (provider === 'gmail'
@@ -127,8 +160,16 @@ export default function OAuthCallback() {
             <Button color="primary" variant="contained" onClick={() => {
               const state = query.get('state') || '';
               const parsed = (() => { try { return state ? JSON.parse(state) : undefined; } catch { return undefined; } })();
-              const provider = query.get('provider') || (parsed && parsed.provider) || 'gmail';
-              const isLoginGoogle = parsed && parsed.mode === 'login' && (provider === 'google' || provider === 'gmail');
+              // Support JWT-signed state as well
+              const payload = parsed ? undefined : (state ? decodeJwtPayload(state) : undefined);
+              let provider = query.get('provider') || (parsed && parsed.provider) || undefined as string | undefined;
+              let mode = (parsed && parsed.mode) || undefined as string | undefined;
+              if (!provider && payload && typeof payload.p === 'string') {
+                if (/outlook/i.test(payload.p)) provider = 'outlook';
+                else if (/google/i.test(payload.p)) provider = 'gmail';
+              }
+              if (!mode && payload && typeof payload.p === 'string' && /login/i.test(payload.p)) mode = 'login';
+              const isLoginGoogle = mode === 'login' && (!provider || provider === 'google' || provider === 'gmail');
               const endpoint = isLoginGoogle
                 ? `/api/auth/google/initiate`
                 : (provider === 'gmail'

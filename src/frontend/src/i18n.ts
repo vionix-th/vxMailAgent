@@ -4,7 +4,7 @@ import { initReactI18next } from 'react-i18next';
 const resources = {
   en: {
     common: {
-      appTitle: 'vxMailAgent',
+      appTitle: 'Vionix Consulting',
       nav: {
         accounts: 'Accounts',
         directors: 'Directors',
@@ -811,7 +811,7 @@ const resources = {
   },
   th: {
     common: {
-      appTitle: 'vxMailAgent',
+      appTitle: 'Vionix Consulting',
       nav: {
         accounts: 'บัญชี',
         directors: 'ไดเร็กเตอร์',
