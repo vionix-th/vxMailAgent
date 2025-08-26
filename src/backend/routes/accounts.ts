@@ -265,10 +265,33 @@ export default function registerAccountsRoutes(app: express.Express) {
               error: errTxt,
             })
           );
+          // For missing/invalid refresh token, provide a re-auth URL like gmail-test does
+          if (missing || invalidGrant) {
+            try {
+              const { buildGoogleAuthUrl } = require('../oauth/google');
+              const rawState = `reauth:${id}`;
+              const signedState = signJwt({ p: 'google', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
+              const url = buildGoogleAuthUrl(
+                { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
+                signedState
+              );
+              return res.status(400).json({ ok: false, error: category, authorizeUrl: url });
+            } catch (e) {
+              console.error(`[${new Date().toISOString()}] [OAUTH2] Failed to generate Google re-auth URL for ${id}:`, e);
+              return res.status(500).json({ ok: false, error: errTxt });
+            }
+          }
+          // Other errors: surface failure
+          return res.status(500).json({ ok: false, error: errTxt });
+        }
+        // Success path: persist updated tokens when provided
+        if (result.updated) {
+          account.tokens.accessToken = result.accessToken;
+          account.tokens.expiry = result.expiry;
           account.tokens.refreshToken = result.refreshToken;
           accounts[idx] = account;
           persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
-          console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted access token for ${id}`);
+          console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted Gmail access token for ${id}`);
         }
         return res.json({ ok: true, updated: result.updated, tokens: account.tokens });
       } else if (account.provider === 'outlook') {
