@@ -2,6 +2,7 @@ import express from 'express';
 import { FetcherLogEntry, CleanupStats } from '../../shared/types';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
 
+/** Dependencies for cleanup routes. */
 export interface CleanupRoutesDeps {
   getFetcherLog: () => FetcherLogEntry[];
   setFetcherLog: (next: FetcherLogEntry[]) => void;
@@ -17,6 +18,7 @@ export interface CleanupRoutesDeps {
   setTraces: (next: any[]) => void;
 }
 
+/** Register routes for diagnostics cleanup operations. */
 export default function registerCleanupRoutes(app: express.Express, deps: CleanupRoutesDeps) {
   const router = express.Router();
   const hub: RepositoryHub = {
@@ -34,8 +36,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
     setTraces: (next: any[]) => deps.setTraces(next),
   };
   const svc = createCleanupService(hub);
-
-  // Get cleanup statistics (counts of each log type)
   router.get('/cleanup/stats', (_req, res) => {
     try {
       const stats: CleanupStats = svc.getStats();
@@ -44,8 +44,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
       res.status(500).json({ error: 'Failed to get cleanup stats' });
     }
   });
-
-  // Purge all logs and data
   router.delete('/cleanup/all', (_req, res) => {
     try {
       const { deleted, message } = svc.purgeAll();
@@ -54,8 +52,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
       res.status(500).json({ error: 'Failed to purge all logs' });
     }
   });
-
-  // Purge specific log types
   router.delete('/cleanup/fetcher-logs', (_req, res) => {
     try {
       const result = svc.purge('fetcher');
@@ -64,7 +60,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
       res.status(500).json({ error: 'Failed to delete fetcher logs' });
     }
   });
-
   router.delete('/cleanup/orchestration-logs', (_req, res) => {
     try {
       const result = svc.purge('orchestration');
@@ -73,7 +68,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
       res.status(500).json({ error: 'Failed to delete orchestration logs' });
     }
   });
-
   router.delete('/cleanup/conversations', (_req, res) => {
     try {
       const result = svc.purge('conversations');
@@ -82,7 +76,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
       res.status(500).json({ error: 'Failed to delete conversations' });
     }
   });
-
   router.delete('/cleanup/workspace-items', (_req, res) => {
     try {
       const result = svc.purge('workspaceItems');
@@ -91,7 +84,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
       res.status(500).json({ error: 'Failed to delete workspace items' });
     }
   });
-
   router.delete('/cleanup/provider-events', (_req, res) => {
     try {
       const result = svc.purge('providerEvents');
@@ -100,7 +92,6 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
       res.status(500).json({ error: 'Failed to delete provider events' });
     }
   });
-
   router.delete('/cleanup/traces', (_req, res) => {
     try {
       const result = svc.purge('traces');

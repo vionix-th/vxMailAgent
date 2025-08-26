@@ -5,9 +5,8 @@ import { ACCOUNTS_FILE } from '../utils/paths';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt } from '../utils/jwt';
 
-
+/** Register routes for managing accounts and tokens. */
 export default function registerAccountsRoutes(app: express.Express) {
-  // GET /api/accounts
   app.get('/api/accounts', (_req, res) => {
     try {
       if (!require('fs').existsSync(ACCOUNTS_FILE)) {
@@ -22,8 +21,6 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: 'Failed to load accounts' });
     }
   });
-
-  // GET /api/accounts/:id/outlook-test
   app.get('/api/accounts/:id/outlook-test', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     console.log(`[${new Date().toISOString()}] GET /api/accounts/${id}/outlook-test invoked`);
@@ -48,7 +45,6 @@ export default function registerAccountsRoutes(app: express.Express) {
         OUTLOOK_CLIENT_SECRET!
       );
       if (result.error) {
-        // Special-case: missing refresh token -> provide re-auth URL instead of hard error
         if (String(result.error).toLowerCase().includes('missing refresh token')) {
           try {
             const { getOutlookAuthUrl } = require('../oauth-outlook');
@@ -78,7 +74,6 @@ export default function registerAccountsRoutes(app: express.Express) {
         console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted during outlook-test for ${id}`);
       }
 
-      // Call Microsoft Graph: me and one message sample
       const doGet = (path: string) => new Promise<any>((resolve, reject) => {
         const https = require('https');
         const req = https.request({
@@ -115,8 +110,6 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: (e as any)?.message || String(e) });
     }
   });
-
-  // POST /api/accounts
   app.post('/api/accounts', (req, res) => {
     try {
       const newAccount: Account = req.body;
@@ -140,8 +133,6 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: 'Failed to save account' });
     }
   });
-
-  // PUT /api/accounts/:id
   app.put('/api/accounts/:id', (req: express.Request, res: express.Response) => {
     try {
       const id = req.params.id;
@@ -162,8 +153,6 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: 'Failed to update account' });
     }
   });
-
-  // DELETE /api/accounts/:id
   app.delete('/api/accounts/:id', async (req: express.Request, res: express.Response) => {
     console.log(`[DEBUG] DELETE /api/accounts/${req.params.id} invoked`);
     try {
@@ -225,8 +214,6 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e), details: e, revokeStatus, revokeError });
     }
   });
-
-  // POST /api/accounts/:id/refresh (Gmail)
   app.post('/api/accounts/:id/refresh', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     console.log(`[${new Date().toISOString()}] POST /api/accounts/${id}/refresh invoked`);
@@ -265,7 +252,6 @@ export default function registerAccountsRoutes(app: express.Express) {
               error: errTxt,
             })
           );
-          // For missing/invalid refresh token, provide a re-auth URL like gmail-test does
           if (missing || invalidGrant) {
             try {
               const { buildGoogleAuthUrl } = require('../oauth/google');
@@ -281,10 +267,8 @@ export default function registerAccountsRoutes(app: express.Express) {
               return res.status(500).json({ ok: false, error: errTxt });
             }
           }
-          // Other errors: surface failure
           return res.status(500).json({ ok: false, error: errTxt });
         }
-        // Success path: persist updated tokens when provided
         if (result.updated) {
           account.tokens.accessToken = result.accessToken;
           account.tokens.expiry = result.expiry;
@@ -305,7 +289,6 @@ export default function registerAccountsRoutes(app: express.Express) {
           OUTLOOK_CLIENT_SECRET!
         );
         if (result.error) {
-          // Special-case: missing refresh token -> provide re-auth URL to complete
           if (String(result.error).toLowerCase().includes('missing refresh token')) {
             try {
               const { getOutlookAuthUrl } = require('../oauth-outlook');
@@ -342,8 +325,6 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: 'Refresh failed' });
     }
   });
-
-  // GET /api/accounts/:id/gmail-test
   app.get('/api/accounts/:id/gmail-test', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     console.log(`[${new Date().toISOString()}] GET /api/accounts/${id}/gmail-test invoked`);
@@ -387,7 +368,6 @@ export default function registerAccountsRoutes(app: express.Express) {
             error: errTxt,
           })
         );
-        // Special-case: missing refresh token or invalid_grant -> provide re-auth URL
         if (missing || invalidGrant) {
           try {
             const { buildGoogleAuthUrl } = require('../oauth/google');

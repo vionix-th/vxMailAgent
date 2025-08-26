@@ -4,18 +4,17 @@ import { SETTINGS_FILE } from '../utils/paths';
 
 import type { ApiConfig } from '../../shared/types';
 
+/** Application settings loaded from disk. */
 export interface Settings {
   virtualRoot: string;
   apiConfigs: ApiConfig[];
   signatures: Record<string, string>;
   fetcherAutoStart: boolean;
   sessionTimeoutMinutes: number;
-  // allow unknowns for forward-compat without typing explosion
   [key: string]: any;
 }
 
- 
-
+/** Load settings from the encrypted JSON file. */
 export function loadSettings(): Settings {
   let settings: Settings;
   try {
@@ -24,7 +23,6 @@ export function loadSettings(): Settings {
     } else {
       settings = defaultSettings();
     }
-    // Ensure required fields exist for forward-compat
     if (!Array.isArray(settings.apiConfigs)) settings.apiConfigs = [] as ApiConfig[];
     if (!settings.signatures || typeof settings.signatures !== 'object') settings.signatures = {};
     if (typeof settings.fetcherAutoStart !== 'boolean') settings.fetcherAutoStart = true;
@@ -38,6 +36,7 @@ export function loadSettings(): Settings {
   return settings;
 }
 
+/** Default settings when none exist on disk. */
 function defaultSettings(): Settings {
   return {
     virtualRoot: '',

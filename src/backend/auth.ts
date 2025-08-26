@@ -1,10 +1,9 @@
-// OAuth logic for Gmail/Outlook
 import express from 'express';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from './config';
 
+/** Router handling OAuth flows for Google and Outlook. */
 const router = express.Router();
 
-// Gmail OAuth2 endpoints (standardized via shared provider)
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo } from './oauth/google';
 import { signJwt, verifyJwt } from './utils/jwt';
 import { computeExpiryISO } from './oauth/common';
@@ -32,7 +31,6 @@ router.get('/oauth2/google/callback', async (req: express.Request, res: express.
       return res.status(400).json({ error: 'Invalid or expired state' });
     }
     const tokens = await exchangeGoogleCode({ clientId: GOOGLE_ENV.CLIENT_ID, clientSecret: GOOGLE_ENV.CLIENT_SECRET, redirectUri: GOOGLE_ENV.REDIRECT_URI }, code);
-    // Fetch user info to get email via shared helper
     const me = await getGoogleUserInfo(tokens.accessToken);
     const email = me?.email || '';
     if (!email) return res.status(500).json({ error: 'Google profile missing email address' });
@@ -59,7 +57,6 @@ router.get('/oauth2/google/callback', async (req: express.Request, res: express.
   }
 });
 
-// Outlook OAuth2 endpoints
 import { getOutlookAuthUrl, getOutlookTokens, getOutlookUserInfo } from './oauth-outlook';
 
 const OUTLOOK_ENV = {
@@ -89,7 +86,6 @@ router.get('/oauth2/outlook/callback', async (req: express.Request, res: express
       return res.status(400).json({ error: 'Invalid or expired state' });
     }
     const tokenResponse = await getOutlookTokens(OUTLOOK_ENV.CLIENT_ID, OUTLOOK_ENV.CLIENT_SECRET, OUTLOOK_ENV.REDIRECT_URI, code);
-    // Try to extract email from id_token if present
     let email = '';
     if (tokenResponse?.id_token) {
       try {

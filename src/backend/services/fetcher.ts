@@ -9,8 +9,8 @@ import { FetcherLogEntry, Account, ConversationThread, OrchestrationDiagnosticEn
 import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread } from './orchestration';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
 
+/** Dependencies required by the fetcher service. */
 export interface FetcherDeps {
-  // state getters/setters
   getSettings: () => any;
   getFilters: () => Filter[];
   getDirectors: () => Director[];
@@ -18,15 +18,12 @@ export interface FetcherDeps {
   getPrompts: () => Prompt[];
   getConversations: () => ConversationThread[];
   setConversations: (next: ConversationThread[]) => void;
-
-  // diagnostics
   logOrch: (e: OrchestrationDiagnosticEntry) => void;
   logProviderEvent: (e: ProviderEvent) => void;
-
-  // lifecycle helpers
   isDirectorFinalized: (dirId: string) => boolean;
 }
 
+/** Interface for the fetcher service. */
 export interface FetcherService {
   getStatus: () => { active: boolean; running: boolean; lastRun: string | null; nextRun: string | null; accountStatus: Record<string, { lastRun: string | null; lastError: string | null }> };
   startFetcherLoop: () => void;
@@ -36,6 +33,7 @@ export interface FetcherService {
   setFetcherLog: (next: FetcherLogEntry[]) => void;
 }
 
+/** Initialize the background fetcher. */
 export function initFetcher(deps: FetcherDeps): FetcherService {
   let fetcherActive = false;
   let fetcherInterval: NodeJS.Timeout | null = null;
@@ -45,11 +43,9 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
   let fetcherLog: FetcherLogEntry[] = [];
   let fetcherAccountStatus: Record<string, { lastRun: string | null; lastError: string | null }> = {};
 
-  // Initialize in-memory fetcher log from disk so counts/stats reflect persisted state
   try {
     if (fs.existsSync(FETCHER_LOG_FILE)) {
       const loaded = persistence.loadAndDecrypt(FETCHER_LOG_FILE) as FetcherLogEntry[];
-      // Backfill IDs for legacy entries
       fetcherLog = (loaded || []).map(e => ({ ...e, id: e.id || newId() }));
       try { persistence.encryptAndPersist(fetcherLog, FETCHER_LOG_FILE); } catch {}
     }
@@ -99,7 +95,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
     }
 
     for (const account of accounts) {
-      // Account-level trace for provider ops in this cycle
       const accountTraceId = beginTrace({ accountId: account.id, provider: account.provider });
       if (!fetcherAccountStatus[account.id]) fetcherAccountStatus[account.id] = { lastRun: null, lastError: null };
       try {
@@ -110,7 +105,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
             logFetch({ timestamp: new Date().toISOString(), level: 'error', provider: account.provider, accountId: account.id, event: 'provider_missing', message: `${account.provider} provider not available` });
             continue;
           }
-          // Token refresh span
           const sRefresh = beginSpan(accountTraceId, { type: 'token_refresh', name: 'ensureValidAccessToken', provider: account.provider });
           const refreshResult = await provider.ensureValidAccessToken(account);
           endSpan(accountTraceId, sRefresh, { status: (refreshResult as any)?.error ? 'error' : 'ok', error: (refreshResult as any)?.error });
@@ -132,14 +126,12 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
               logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'oauth_refreshed', message: 'Refreshed and persisted new access token' });
             }
           }
-          // Messages list span
           const sList = beginSpan(accountTraceId, { type: 'provider_fetch', name: 'fetchUnread', provider: account.provider });
           const envelopes = await provider.fetchUnread(account, { max: 10, unreadOnly: true });
           endSpan(accountTraceId, sList, { status: 'ok', response: { count: envelopes.length } });
           logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'messages_listed', message: 'Listed unread messages', count: envelopes.length });
 
           for (const env of envelopes) {
-            // Per-email trace
             const traceId = beginTrace({ emailId: env.id, accountId: account.id, provider: account.provider });
             const msgId = env.id;
             const subject = String(env.subject || '');
@@ -148,12 +140,10 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
             const snippet = String(env.snippet || '');
             const bodies = { bodyPlain: env.bodyPlain, bodyHtml: env.bodyHtml } as any;
 
-            // 1. Filter evaluation
             const sFilters = beginSpan(traceId, { type: 'filters_eval', name: 'evaluateFilters', provider: account.provider, emailId: msgId, request: { filtersCount: filters.length } });
             const filterEvaluations = evaluateFilters(filters, { from, subject, bodyPlain: bodies.bodyPlain, bodyHtml: bodies.bodyHtml, snippet, date });
             endSpan(traceId, sFilters, { status: 'ok', response: { matches: filterEvaluations.filter(e => e.match).length } });
 
-            // 2. Director selection with duplicate control
             const sSelect = beginSpan(traceId, { type: 'director_select', name: 'selectDirectorTriggers', provider: account.provider, emailId: msgId });
             const directorTriggers: string[] = selectDirectorTriggers(filterEvaluations);
             endSpan(traceId, sSelect, { status: 'ok', response: { triggers: directorTriggers } });
@@ -183,7 +173,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
               } as ConversationThread;
               conversations = [...deps.getConversations(), dirThread];
               deps.setConversations(conversations);
-              // Conversation creation span
               const sConvCreate = beginSpan(traceId, { type: 'conversation_update', name: 'create_director_thread', emailId: msgId, directorId: director.id });
               endSpan(traceId, sConvCreate, { status: 'ok' });
 
@@ -195,7 +184,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                   conversations = [...conversations.slice(0, i), updated, ...conversations.slice(i + 1)];
                   deps.setConversations(conversations);
                 }
-                // Span: director thread failure
                 try {
                   const sFail = beginSpan(traceId, { type: 'conversation_update', name: 'director_thread_fail', emailId: msgId, directorId: director.id });
                   endSpan(traceId, sFail, { status: 'error', error: 'missing director apiConfig or prompt' });
@@ -236,7 +224,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                 let step: any;
                 let latencyMs = 0;
                 try {
-                  // Use unified engine; dynamic agent tools synthesized via context.agents when canSpawnAgents=true
                   const engineOut = await conversationEngine.run({
                     messages: dirMsgs as any,
                     apiConfig: dirApi as any,
@@ -260,7 +247,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                     const now = new Date().toISOString();
                     deps.logProviderEvent({ id: newId(), conversationId: dirThreadId, provider: 'openai', type: 'error', timestamp: now, latencyMs, error: String(e?.message || e) });
                   } catch {}
-                  break; // exit director loop on LLM failure
+                  break;
                 }
                 if (dirIdx !== -1) {
                   const assistantWithCtx = { ...(step.assistantMessage as any), context: { ...(step.assistantMessage as any)?.context, traceId, spanId: sLlm } };
@@ -277,7 +264,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
 
                 dirMsgs.push(step.assistantMessage as any);
                 if (!step.toolCalls || step.toolCalls.length === 0) {
-                  // Span: director final assistant message (no tool calls)
                   try {
                     const sFinalMsg = beginSpan(traceId, { type: 'conversation_update', name: 'director_final_message', directorId: director.id, emailId: msgId });
                     endSpan(traceId, sFinalMsg, { status: 'ok', response: { contentPreview: String(step.assistantMessage?.content || '').slice(0, 200) } });
@@ -289,7 +275,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                   let args: any = {};
                   try { args = tc.arguments ? JSON.parse(tc.arguments) : {}; }
                   catch (e: any) {
-                    // Span: malformed tool args
                     try {
                       const sArgs = beginSpan(traceId, { type: 'tool_call', name: tc.name || 'unknown', directorId: director.id, emailId: msgId, toolCallId: tc.id });
                       endSpan(traceId, sArgs, { status: 'error', error: `invalid tool arguments: ${String(e?.message || e)}` });
@@ -334,7 +319,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                     const tAg0 = Date.now();
                     
                     try {
-                      // Use unified agent conversation logic
                       const { runAgentConversation } = require('./orchestration');
                       const agentInput = String(args.input || '');
                       
@@ -349,7 +333,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                           deps.setConversations(next);
                         },
                         traceId,
-                        deps.logProviderEvent // Add provider event logging
+                        deps.logProviderEvent
                       );
                       
                       const latencyMs = Date.now() - tAg0;
@@ -357,7 +341,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                       
                       if (agentResult.success) {
                         endSpan(traceId, sAgentLlm, { status: 'ok', response: { latencyMs } });
-                        // Return final agent response to director
                         const finalContent = agentResult.finalAssistantMessage?.content || '';
                         appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(finalContent), context: { traceId, spanId: sTool } } as any);
                         endSpan(traceId, sTool, { status: 'ok' });
@@ -378,7 +361,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                       continue;
                     }
                   } else {
-                    // Span: unsupported tool
                     try {
                       const sUnsupported = beginSpan(traceId, { type: 'tool_call', name: tc.name || 'unknown', directorId: director.id, emailId: msgId, toolCallId: tc.id });
                       endSpan(traceId, sUnsupported, { status: 'error', error: 'tool not implemented' });
@@ -388,12 +370,10 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                 }
               }
 
-              // Finalization policy
               const finalized = shouldFinalizeDirector();
               if (finalized) {
                 const di = conversations.findIndex(c => c.id === dirThreadId);
                 if (di !== -1) {
-                  // Span: director thread finalization
                   let sFinalize = '';
                   try { sFinalize = beginSpan(traceId, { type: 'conversation_update', name: 'finalize_director_thread', emailId: msgId, directorId: director.id }); } catch {}
                   const updated = { ...conversations[di], status: 'completed', endedAt: new Date().toISOString(), finalized: true } as any;
@@ -401,7 +381,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                   deps.setConversations(conversations);
                   try { if (sFinalize) endSpan(traceId, sFinalize, { status: 'ok' }); } catch {}
 
-                  // Cascade finalization to child agent threads of this director
                   const childAgents = conversations
                     .filter(c => c.kind === 'agent' && c.parentId === dirThreadId && !c.finalized);
                   if (childAgents.length > 0) {
@@ -462,7 +441,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
     getFetcherLog: () => fetcherLog,
     setFetcherLog: (next: FetcherLogEntry[]) => {
       const before = fetcherLog.length;
-      // Normalize: ensure entries have ids
       fetcherLog = (next || []).map(e => ({ ...e, id: e.id || newId() }));
       try {
         persistence.encryptAndPersist(fetcherLog, FETCHER_LOG_FILE);

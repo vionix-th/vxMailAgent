@@ -13,11 +13,13 @@ interface SettingsContextValue {
   setLanguage: (lang: LanguageCode) => void;
 }
 
+/** Internal context for application settings. */
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
 
 const THEME_KEY = 'vx_theme_pref';
 const LANG_KEY = 'vx_lang';
 
+/** Provides theme and language preferences to descendants. */
 export const SettingsProvider: React.FC<{ children: React.ReactNode }>
   = ({ children }) => {
   const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
@@ -47,7 +49,6 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }>
     try { localStorage.setItem(LANG_KEY, lang); } catch {}
   };
 
-  // Sync Tailwind dark class on <html>
   useEffect(() => {
     const root = document.documentElement;
     if (effectiveMode === 'dark') root.classList.add('dark');
@@ -69,6 +70,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }>
   );
 };
 
+/** Access the current settings context. */
 export const useSettings = () => {
   const ctx = useContext(SettingsContext);
   if (!ctx) throw new Error('useSettings must be used within SettingsProvider');
