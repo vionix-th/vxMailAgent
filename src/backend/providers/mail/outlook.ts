@@ -7,8 +7,7 @@ export const outlookProvider: IMailProvider = {
   id: 'outlook',
 
   async ensureValidAccessToken(account: Account) {
-    // Defer to existing helper to keep behavior identical
-    const { ensureValidOutlookAccessToken } = require('../../oauth-outlook-refresh');
+    const { ensureValidOutlookAccessToken } = require('../../oauth-outlook');
     const result = await ensureValidOutlookAccessToken(
       account,
       OUTLOOK_CLIENT_ID!,

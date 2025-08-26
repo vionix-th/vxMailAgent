@@ -1,7 +1,7 @@
 import express from 'express';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_LOGIN_CLIENT_ID, GOOGLE_LOGIN_CLIENT_SECRET, GOOGLE_LOGIN_REDIRECT_URI, JWT_EXPIRES_IN_SEC, JWT_SECRET } from '../config';
 import { buildGoogleLoginAuthUrl } from '../oauth/googleLogin';
-import { exchangeGoogleCode } from '../oauth/google';
+import { exchangeGoogleCode, getGoogleUserInfo } from '../oauth/google';
 import { signJwt, verifyJwt } from '../utils/jwt';
 import { upsertUser } from '../services/users';
 import { User } from '../../shared/types';
@@ -31,8 +31,9 @@ export default function registerAuthSessionRoutes(app: express.Express) {
 
   app.get('/api/auth/google/initiate', (req, res) => {
     void req;
-    const state = JSON.stringify({ mode: 'login', provider: 'google' });
-    const url = buildGoogleLoginAuthUrl(googleCfg, state);
+    const rawState = JSON.stringify({ mode: 'login', provider: 'google' });
+    const signedState = signJwt({ p: 'google.login', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
+    const url = buildGoogleLoginAuthUrl(googleCfg, signedState);
     res.json({ url });
   });
 
@@ -41,32 +42,13 @@ export default function registerAuthSessionRoutes(app: express.Express) {
     const state = String(req.query.state || '');
     if (!code) return res.status(400).json({ error: 'Missing code' });
     try {
-      // For now, we accept the state without verification; future: CSRF.
-      void state;
+      const payload = state ? verifyJwt(state, JWT_SECRET) : null;
+      if (!payload || payload.p !== 'google.login') {
+        return res.status(400).json({ error: 'Invalid or expired state' });
+      }
       const tokens = await exchangeGoogleCode(googleCfg, code);
-      // Fetch OIDC userinfo
-      const me: any = await new Promise((resolve, reject) => {
-        const https = require('https');
-        const req2 = https.request({
-          method: 'GET',
-          hostname: 'www.googleapis.com',
-          path: '/oauth2/v2/userinfo',
-          headers: { Authorization: `Bearer ${tokens.accessToken}` },
-        }, (resp: any) => {
-          const chunks: Buffer[] = [];
-          resp.on('data', (d: any) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
-          resp.on('end', () => {
-            const text = Buffer.concat(chunks).toString('utf8');
-            try {
-              const json = JSON.parse(text || '{}');
-              if (resp.statusCode >= 200 && resp.statusCode < 300) resolve(json);
-              else reject(new Error(`HTTP ${resp.statusCode} ${resp.statusMessage}: ${text}`));
-            } catch (e) { reject(new Error(`Invalid JSON from Google: ${text}`)); }
-          });
-        });
-        req2.on('error', (err: any) => reject(err));
-        req2.end();
-      });
+      // Fetch OIDC userinfo via shared helper
+      const me: any = await getGoogleUserInfo(tokens.accessToken);
       const subOrId: string = me?.id || me?.sub || '';
       const email: string = me?.email || '';
       if (!subOrId || !email) return res.status(500).json({ error: 'Google profile missing id or email' });

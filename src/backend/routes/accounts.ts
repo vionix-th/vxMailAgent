@@ -2,7 +2,8 @@ import express from 'express';
 import * as persistence from '../persistence';
 import { Account } from '../../shared/types';
 import { ACCOUNTS_FILE } from '../utils/paths';
-import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI } from '../config';
+import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
+import { signJwt } from '../utils/jwt';
 
 
 export default function registerAccountsRoutes(app: express.Express) {
@@ -40,7 +41,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (account.provider !== 'outlook') {
         return res.status(400).json({ error: 'Only outlook supported for this test' });
       }
-      const { ensureValidOutlookAccessToken } = require('../oauth-outlook-refresh');
+      const { ensureValidOutlookAccessToken } = require('../oauth-outlook');
       const result = await ensureValidOutlookAccessToken(
         account,
         OUTLOOK_CLIENT_ID!,
@@ -51,12 +52,13 @@ export default function registerAccountsRoutes(app: express.Express) {
         if (String(result.error).toLowerCase().includes('missing refresh token')) {
           try {
             const { getOutlookAuthUrl } = require('../oauth-outlook');
-            const state = `reauth:${id}`;
+            const rawState = `reauth:${id}`;
+            const signedState = signJwt({ p: 'outlook', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
             const url = await getOutlookAuthUrl(
               OUTLOOK_CLIENT_ID!,
               OUTLOOK_CLIENT_SECRET!,
               OUTLOOK_REDIRECT_URI!,
-              state
+              signedState
             );
             return res.json({ ok: false, error: 'missing_refresh_token', authorizeUrl: url });
           } catch (e) {
@@ -180,7 +182,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (account.provider === 'gmail' && account.tokens && account.tokens.refreshToken) {
         console.log(`[DEBUG] Attempting to revoke Google refresh token for account ${account.email}`);
         try {
-          const { revokeGoogleToken } = require('../oauth-google');
+          const { revokeGoogleToken } = require('../oauth/google');
           revokeStatus = await revokeGoogleToken(account.tokens.refreshToken);
           if (!revokeStatus) {
             revokeError = 'Failed to revoke Google refresh token.';
@@ -192,6 +194,20 @@ export default function registerAccountsRoutes(app: express.Express) {
           revokeStatus = false;
           revokeError = e instanceof Error ? e.message : String(e);
           console.error(`[OAUTH2] Error revoking Google token for account ${account.email}:`, e);
+        }
+      }
+      if (account.provider === 'outlook' && account.tokens && account.tokens.refreshToken) {
+        console.log(`[DEBUG] Attempting to revoke Outlook refresh token for account ${account.email}`);
+        try {
+          const { revokeOutlookToken } = require('../oauth-outlook');
+          const ok = await revokeOutlookToken(account.tokens.refreshToken);
+          if (!ok) {
+            console.warn(`[OAUTH2] Failed to revoke Outlook token for account ${account.email}`);
+          } else {
+            console.log(`[OAUTH2] Successfully revoked Outlook token for account ${account.email}`);
+          }
+        } catch (e) {
+          console.error(`[OAUTH2] Error revoking Outlook token for account ${account.email}:`, e);
         }
       }
       const before = accounts.length;
@@ -223,7 +239,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (idx === -1) return res.status(404).json({ error: 'account not found' });
       const account = accounts[idx];
       if (account.provider === 'gmail') {
-        const { ensureValidGoogleAccessToken } = require('../oauth-google-refresh');
+        const { ensureValidGoogleAccessToken } = require('../oauth/google');
         const result = await ensureValidGoogleAccessToken(
           account,
           GOOGLE_CLIENT_ID!,
@@ -249,42 +265,6 @@ export default function registerAccountsRoutes(app: express.Express) {
               error: errTxt,
             })
           );
-          // Special-case: missing refresh token or invalid_grant -> provide re-auth URL instead of hard error
-          if (missing || invalidGrant) {
-            try {
-              const { getGoogleAuthUrl } = require('../oauth-google');
-              const state = `reauth:${id}`;
-              const url = getGoogleAuthUrl(
-                GOOGLE_CLIENT_ID!,
-                GOOGLE_CLIENT_SECRET!,
-                GOOGLE_REDIRECT_URI!,
-                state
-              );
-              console.log(
-                JSON.stringify({
-                  ts: new Date().toISOString(),
-                  level: 'info',
-                  area: 'oauth',
-                  provider: 'google',
-                  op: 'refresh',
-                  accountId: id,
-                  email: account.email,
-                  action: 'reauth_url_issued',
-                  category,
-                  state,
-                })
-              );
-              return res.json({ ok: false, error: category, authorizeUrl: url });
-            } catch (e) {
-              console.error(`[${new Date().toISOString()}] [OAUTH2] Failed to generate Google re-auth URL for ${id}:`, e);
-              return res.status(500).json({ ok: false, error: errTxt });
-            }
-          }
-          return res.status(500).json({ ok: false, error: errTxt });
-        }
-        if (result.updated) {
-          account.tokens.accessToken = result.accessToken;
-          account.tokens.expiry = result.expiry;
           account.tokens.refreshToken = result.refreshToken;
           accounts[idx] = account;
           persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
@@ -295,7 +275,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         if (!OUTLOOK_CLIENT_ID || !OUTLOOK_CLIENT_SECRET) {
           return res.status(400).json({ error: 'Missing Outlook OAuth env vars (OUTLOOK_CLIENT_ID/OUTLOOK_CLIENT_SECRET)' });
         }
-        const { ensureValidOutlookAccessToken } = require('../oauth-outlook-refresh');
+        const { ensureValidOutlookAccessToken } = require('../oauth-outlook');
         const result = await ensureValidOutlookAccessToken(
           account,
           OUTLOOK_CLIENT_ID!,
@@ -358,7 +338,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (account.provider !== 'gmail') {
         return res.status(400).json({ error: 'Only gmail supported for this test' });
       }
-      const { ensureValidGoogleAccessToken } = require('../oauth-google-refresh');
+      const { ensureValidGoogleAccessToken } = require('../oauth/google');
       const result = await ensureValidGoogleAccessToken(
         account,
         GOOGLE_CLIENT_ID!,
@@ -387,13 +367,12 @@ export default function registerAccountsRoutes(app: express.Express) {
         // Special-case: missing refresh token or invalid_grant -> provide re-auth URL
         if (missing || invalidGrant) {
           try {
-            const { getGoogleAuthUrl } = require('../oauth-google');
-            const state = `reauth:${id}`;
-            const url = getGoogleAuthUrl(
-              GOOGLE_CLIENT_ID!,
-              GOOGLE_CLIENT_SECRET!,
-              GOOGLE_REDIRECT_URI!,
-              state
+            const { buildGoogleAuthUrl } = require('../oauth/google');
+            const rawState = `reauth:${id}`;
+            const signedState = signJwt({ p: 'google', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
+            const url = buildGoogleAuthUrl(
+              { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
+              signedState
             );
             console.log(
               JSON.stringify({
@@ -406,7 +385,7 @@ export default function registerAccountsRoutes(app: express.Express) {
                 email: account.email,
                 action: 'reauth_url_issued',
                 category,
-                state,
+                state: rawState,
               })
             );
             return res.json({ ok: false, error: category, authorizeUrl: url });

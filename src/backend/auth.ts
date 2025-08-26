@@ -1,11 +1,12 @@
 // OAuth logic for Gmail/Outlook
 import express from 'express';
-import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI } from './config';
+import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from './config';
 
 const router = express.Router();
 
 // Gmail OAuth2 endpoints (standardized via shared provider)
-import { buildGoogleAuthUrl, exchangeGoogleCode } from './oauth/google';
+import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo } from './oauth/google';
+import { signJwt, verifyJwt } from './utils/jwt';
 import { computeExpiryISO } from './oauth/common';
 
 const GOOGLE_ENV = {
@@ -15,8 +16,9 @@ const GOOGLE_ENV = {
 };
 
 router.get('/oauth2/google/initiate', (req: express.Request, res: express.Response) => {
-  const state = (req.query.state as string) || '';
-  const url = buildGoogleAuthUrl({ clientId: GOOGLE_ENV.CLIENT_ID, clientSecret: GOOGLE_ENV.CLIENT_SECRET, redirectUri: GOOGLE_ENV.REDIRECT_URI }, state);
+  const rawState = (req.query.state as string) || '';
+  const signedState = signJwt({ p: 'google', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
+  const url = buildGoogleAuthUrl({ clientId: GOOGLE_ENV.CLIENT_ID, clientSecret: GOOGLE_ENV.CLIENT_SECRET, redirectUri: GOOGLE_ENV.REDIRECT_URI }, signedState);
   res.json({ url });
 });
 
@@ -24,30 +26,14 @@ router.get('/oauth2/google/callback', async (req: express.Request, res: express.
   const code = req.query.code as string;
   if (!code) return res.status(400).json({ error: 'Missing code' });
   try {
+    const stateToken = String(req.query.state || '');
+    const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
+    if (!payload || payload.p !== 'google') {
+      return res.status(400).json({ error: 'Invalid or expired state' });
+    }
     const tokens = await exchangeGoogleCode({ clientId: GOOGLE_ENV.CLIENT_ID, clientSecret: GOOGLE_ENV.CLIENT_SECRET, redirectUri: GOOGLE_ENV.REDIRECT_URI }, code);
-    // Fetch user info to get email
-    const me = await new Promise<any>((resolve, reject) => {
-      const https = require('https');
-      const req2 = https.request({
-        method: 'GET',
-        hostname: 'www.googleapis.com',
-        path: '/oauth2/v2/userinfo',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
-      }, (resp: any) => {
-        const chunks: Buffer[] = [];
-        resp.on('data', (d: any) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
-        resp.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
-          try {
-            const json = JSON.parse(text || '{}');
-            if (resp.statusCode >= 200 && resp.statusCode < 300) resolve(json);
-            else reject(new Error(`HTTP ${resp.statusCode} ${resp.statusMessage}: ${text}`));
-          } catch (e) { reject(new Error(`Invalid JSON from Google: ${text}`)); }
-        });
-      });
-      req2.on('error', (err: any) => reject(err));
-      req2.end();
-    });
+    // Fetch user info to get email via shared helper
+    const me = await getGoogleUserInfo(tokens.accessToken);
     const email = me?.email || '';
     if (!email) return res.status(500).json({ error: 'Google profile missing email address' });
     const account = {
@@ -74,7 +60,7 @@ router.get('/oauth2/google/callback', async (req: express.Request, res: express.
 });
 
 // Outlook OAuth2 endpoints
-import { getOutlookAuthUrl, getOutlookTokens } from './oauth-outlook';
+import { getOutlookAuthUrl, getOutlookTokens, getOutlookUserInfo } from './oauth-outlook';
 
 const OUTLOOK_ENV = {
   CLIENT_ID: OUTLOOK_CLIENT_ID!,
@@ -83,9 +69,10 @@ const OUTLOOK_ENV = {
 };
 
 router.get('/oauth2/outlook/initiate', async (req: express.Request, res: express.Response) => {
-  const state = (req.query.state as string) || '';
+  const rawState = (req.query.state as string) || '';
   try {
-    const url = await getOutlookAuthUrl(OUTLOOK_ENV.CLIENT_ID, OUTLOOK_ENV.CLIENT_SECRET, OUTLOOK_ENV.REDIRECT_URI, state);
+    const signedState = signJwt({ p: 'outlook', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
+    const url = await getOutlookAuthUrl(OUTLOOK_ENV.CLIENT_ID, OUTLOOK_ENV.CLIENT_SECRET, OUTLOOK_ENV.REDIRECT_URI, signedState);
     res.json({ url });
   } catch (e) {
     res.status(500).json({ error: 'Failed to generate Outlook OAuth2 URL' });
@@ -96,6 +83,11 @@ router.get('/oauth2/outlook/callback', async (req: express.Request, res: express
   const code = req.query.code as string;
   if (!code) return res.status(400).json({ error: 'Missing code' });
   try {
+    const stateToken = String(req.query.state || '');
+    const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
+    if (!payload || payload.p !== 'outlook') {
+      return res.status(400).json({ error: 'Invalid or expired state' });
+    }
     const tokenResponse = await getOutlookTokens(OUTLOOK_ENV.CLIENT_ID, OUTLOOK_ENV.CLIENT_SECRET, OUTLOOK_ENV.REDIRECT_URI, code);
     // Try to extract email from id_token if present
     let email = '';
@@ -111,28 +103,7 @@ router.get('/oauth2/outlook/callback', async (req: express.Request, res: express
     if (!email) {
       const accessToken = tokenResponse?.access_token || '';
       if (!accessToken) return res.status(500).json({ error: 'Outlook profile missing email address' });
-      const me = await new Promise<any>((resolve, reject) => {
-        const https = require('https');
-        const req2 = https.request({
-          method: 'GET',
-          hostname: 'graph.microsoft.com',
-          path: '/v1.0/me',
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }, (resp: any) => {
-          const chunks: Buffer[] = [];
-          resp.on('data', (d: any) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
-          resp.on('end', () => {
-            const text = Buffer.concat(chunks).toString('utf8');
-            try {
-              const json = JSON.parse(text || '{}');
-              if (resp.statusCode >= 200 && resp.statusCode < 300) resolve(json);
-              else reject(new Error(`HTTP ${resp.statusCode} ${resp.statusMessage}: ${text}`));
-            } catch (e) { reject(new Error(`Invalid JSON from Graph: ${text}`)); }
-          });
-        });
-        req2.on('error', (err: any) => reject(err));
-        req2.end();
-      });
+      const me = await getOutlookUserInfo(accessToken);
       email = (me && (me.mail || (Array.isArray(me.otherMails) && me.otherMails[0]) || me.userPrincipalName)) || '';
     }
     if (!email) return res.status(500).json({ error: 'Outlook profile missing email address' });

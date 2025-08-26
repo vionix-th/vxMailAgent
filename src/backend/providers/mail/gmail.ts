@@ -6,7 +6,7 @@ export const gmailProvider: IMailProvider = {
   id: 'gmail',
 
   async ensureValidAccessToken(account: Account) {
-    const { ensureValidGoogleAccessToken } = require('../../oauth-google-refresh');
+    const { ensureValidGoogleAccessToken } = require('../../oauth/google');
     const result = await ensureValidGoogleAccessToken(
       account,
       GOOGLE_CLIENT_ID!,
@@ -22,7 +22,7 @@ export const gmailProvider: IMailProvider = {
     const q = unread ? 'is:unread' : '';
 
     const { google } = require('googleapis');
-    const { getGoogleOAuth2Client } = require('../../oauth-google');
+    const { getGoogleOAuth2Client } = require('../../oauth/google');
 
     const oauth2Client = getGoogleOAuth2Client(
       GOOGLE_CLIENT_ID!,
