@@ -9,6 +9,8 @@ export interface CleanupRoutesDeps {
   setOrchestrationLog: (next: any[]) => void;
   getConversations: () => any[];
   setConversations: (next: any[]) => void;
+  getWorkspaceItems: () => any[];
+  setWorkspaceItems: (next: any[]) => void;
   getProviderEvents: () => any[];
   setProviderEvents: (next: any[]) => void;
   getTraces: () => any[];
@@ -24,6 +26,8 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
     setOrchestrationLog: (next: any[]) => deps.setOrchestrationLog(next),
     getConversations: () => deps.getConversations(),
     setConversations: (next: any[]) => deps.setConversations(next),
+    getWorkspaceItems: () => deps.getWorkspaceItems(),
+    setWorkspaceItems: (next: any[]) => deps.setWorkspaceItems(next),
     getProviderEvents: () => deps.getProviderEvents(),
     setProviderEvents: (next: any[]) => deps.setProviderEvents(next),
     getTraces: () => deps.getTraces(),
@@ -76,6 +80,15 @@ export default function registerCleanupRoutes(app: express.Express, deps: Cleanu
       res.json({ success: true, ...result });
     } catch (error) {
       res.status(500).json({ error: 'Failed to delete conversations' });
+    }
+  });
+
+  router.delete('/cleanup/workspace-items', (_req, res) => {
+    try {
+      const result = svc.purge('workspaceItems');
+      res.json({ success: true, ...result });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to delete workspace items' });
     }
   });
 

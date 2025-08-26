@@ -99,6 +99,7 @@ export interface CleanupStats {
   fetcherLogs: number;
   orchestrationLogs: number;
   conversations: number;
+  workspaceItems: number;
   providerEvents: number;
   traces: number;
   total: number;
@@ -136,6 +137,21 @@ export async function cleanupOrchestrationLogs(): Promise<{ success: boolean; de
 export async function cleanupConversations(): Promise<{ success: boolean; deleted: number; message: string }> {
   const res = await fetch('/api/cleanup/conversations', { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to cleanup conversations: ${res.status}`);
+  return res.json();
+}
+
+/** Delete workspace items. */
+export async function cleanupWorkspaceItems(): Promise<{ success: boolean; deleted: number; message: string }> {
+  const res = await fetch('/api/cleanup/workspace-items', { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Failed to cleanup workspace items: ${res.status}`);
+  return res.json();
+}
+
+/** Delete a single workspace item (soft by default; pass hard=true to permanently remove). */
+export async function deleteWorkspaceItem(itemId: string, opts?: { hard?: boolean }): Promise<any> {
+  const hard = opts?.hard ? '?hard=true' : '';
+  const res = await fetch(`/api/workspaces/default/items/${encodeURIComponent(itemId)}${hard}` , { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Failed to delete workspace item: ${res.status}`);
   return res.json();
 }
 

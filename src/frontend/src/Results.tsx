@@ -31,6 +31,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ConversationThread, WorkspaceItem } from '../../shared/types';
 import { useTranslation } from 'react-i18next';
+import { deleteWorkspaceItem } from './utils/api';
 
 // Use canonical OrchestrationResultEntry type from shared/types
 
@@ -50,6 +51,7 @@ export default function Results() {
   // Expansion state for left navigation
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [expandedDirs, setExpandedDirs] = useState<Record<string, boolean>>({});
+  const [deleting, setDeleting] = useState(false);
 
   // WorkspaceItem render kind derived strictly from mimeType
   type RenderKind = 'markdown' | 'text' | 'html' | 'json' | 'image' | 'attachment' | 'binary' | 'draft_reply' | 'error';
@@ -122,6 +124,50 @@ export default function Results() {
   };
 
   useEffect(() => { fetchThreads(); }, []);
+
+  // Delete a single workspace item (soft by default)
+  const handleDeleteItem = async (item: WorkspaceItem, hard = false) => {
+    try {
+      if (!item?.id) return;
+      const confirmMsg = hard ? 'Permanently delete this item? This cannot be undone.' : 'Delete this item?';
+      if (!window.confirm(confirmMsg)) return;
+      setDeleting(true);
+      await deleteWorkspaceItem(item.id, { hard });
+      // Refresh and clear active selection
+      await fetchThreads();
+      setActiveItemId(null);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Bulk delete all items for a director in current group
+  const handleDeleteDirectorItems = async (dirId: string, hard = false) => {
+    try {
+      const active = activeGroup;
+      if (!active) return;
+      // Determine items for this director similar to render logic
+      const dirThreads = (active.threads || []).filter((t: any) => t.directorId === dirId);
+      const items: WorkspaceItem[] = workspaceItems
+        .filter((i: WorkspaceItem) => i.provenance?.by === 'agent' && dirThreads.some(t => t.id === i.provenance?.conversationId))
+        .filter((i: any) => !i.deleted) as any;
+      if (!items.length) return;
+      const confirmMsg = hard ? `Permanently delete ${items.length} item(s) for this director? This cannot be undone.` : `Delete ${items.length} item(s) for this director?`;
+      if (!window.confirm(confirmMsg)) return;
+      setDeleting(true);
+      for (const it of items) {
+        await deleteWorkspaceItem(it.id, { hard });
+      }
+      await fetchThreads();
+      setActiveItemId(null);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Group entries by email id (or timestamp if missing) for a cleaner root view
   const groups = useMemo(() => {
@@ -304,6 +350,12 @@ export default function Results() {
                                     </Box>
                                   </ListItemButton>
                                   <Collapse in={dirExpanded} timeout="auto" unmountOnExit>
+                                    {sortedItems.length > 0 && (
+                                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', py: 0.75, px: 1.25 }}>
+                                        <Button size="small" color="error" variant="outlined" disabled={deleting} onClick={(e) => { e.stopPropagation(); handleDeleteDirectorItems(dirId, false); }}>Delete All</Button>
+                                        <Button size="small" color="error" variant="contained" disabled={deleting} onClick={(e) => { e.stopPropagation(); handleDeleteDirectorItems(dirId, true); }}>Delete Permanently</Button>
+                                      </Box>
+                                    )}
                                     <List dense disablePadding sx={{ pl: 0 }}>
                                       {sortedItems.length === 0 ? (
                                         <ListItemButton disableRipple disableTouchRipple sx={{ cursor: 'default', pl: 1.25, pr: 1, py: 0.5, opacity: 0.7 }}>
@@ -450,6 +502,8 @@ export default function Results() {
                       <Typography variant="h6">{item.label || t('results.preview')} · {name}</Typography>
                       <Stack direction="row" spacing={1}>
                         <Button size="small" variant="text" onClick={() => setActiveItemId(null)}>{t('results.backToDirector')}</Button>
+                        <Button size="small" color="error" variant="outlined" disabled={deleting} onClick={() => handleDeleteItem(item, false)}>Delete</Button>
+                        <Button size="small" color="error" variant="contained" disabled={deleting} onClick={() => handleDeleteItem(item, true)}>Delete Permanently</Button>
                       </Stack>
                     </Stack>
                     <Divider sx={{ mb: 1.5 }} />

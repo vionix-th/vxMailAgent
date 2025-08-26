@@ -161,6 +161,8 @@ export function createServer() {
     setOrchestrationLog: (next) => orchRepo.setAll(next),
     getConversations: () => getConversationsLive(),
     setConversations: (next) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); },
+    getWorkspaceItems: () => workspaceRepo.getAll(),
+    setWorkspaceItems: (next) => workspaceRepo.setAll(next),
     getProviderEvents: () => providerRepo.getAll(),
     setProviderEvents: (next) => providerRepo.setAll(next),
     getTraces: () => tracesRepo.getAll(),

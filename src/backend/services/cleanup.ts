@@ -12,6 +12,8 @@ export interface RepositoryHub<TConv = any, TOrch = any, TProv = any, TTrace = a
   setTraces: (next: TTrace[]) => void;
   getFetcherLog: () => TFetch[];
   setFetcherLog: (next: TFetch[]) => void;
+  getWorkspaceItems: () => any[];
+  setWorkspaceItems: (next: any[]) => void;
 }
 
 /** Operations exposed by the cleanup service. */
@@ -21,9 +23,10 @@ export interface CleanupService {
   removeProviderEventsByIds: (ids: string[]) => { deleted: number };
   removeTracesByIds: (ids: string[]) => { deleted: number };
   removeFetcherLogsByIds: (ids: string[]) => { deleted: number };
+  removeWorkspaceItemsByIds: (ids: string[]) => { deleted: number };
   getStats: () => CleanupStats;
   purgeAll: () => { deleted: CleanupStats; message: string };
-  purge: (type: 'fetcher' | 'orchestration' | 'conversations' | 'providerEvents' | 'traces') => { deleted: number; message: string };
+  purge: (type: 'fetcher' | 'orchestration' | 'conversations' | 'workspaceItems' | 'providerEvents' | 'traces') => { deleted: number; message: string };
 }
 
 /**
@@ -80,19 +83,28 @@ export function createCleanupService(hub: RepositoryHub): CleanupService {
       console.log(`[${isoNow()}] CLEANUP removeFetcherLogsByIds: deleted=${deleted}`);
       return { deleted };
     },
+    removeWorkspaceItemsByIds(ids: string[]) {
+      const cur = hub.getWorkspaceItems();
+      const { next, deleted } = removeByIds(cur, ids);
+      if (next !== cur) hub.setWorkspaceItems(next);
+      console.log(`[${isoNow()}] CLEANUP removeWorkspaceItemsByIds: deleted=${deleted}`);
+      return { deleted };
+    },
     getStats() {
       const fetcherLogs = hub.getFetcherLog().length;
       const orchestrationLogs = hub.getOrchestrationLog().length;
       const conversations = hub.getConversations().length;
+      const workspaceItems = hub.getWorkspaceItems().length;
       const providerEvents = hub.getProviderEvents().length;
       const traces = hub.getTraces().length;
       return {
         fetcherLogs,
         orchestrationLogs,
         conversations,
+        workspaceItems,
         providerEvents,
         traces,
-        total: fetcherLogs + orchestrationLogs + conversations + providerEvents + traces,
+        total: fetcherLogs + orchestrationLogs + conversations + workspaceItems + providerEvents + traces,
       };
     },
     purgeAll() {
@@ -100,9 +112,10 @@ export function createCleanupService(hub: RepositoryHub): CleanupService {
       hub.setFetcherLog([]);
       hub.setOrchestrationLog([]);
       hub.setConversations([]);
+      hub.setWorkspaceItems([]);
       hub.setProviderEvents([]);
       hub.setTraces([]);
-      const msg = `[${isoNow()}] CLEANUP purgeAll: deleted totals -> fetcher=${before.fetcherLogs}, orch=${before.orchestrationLogs}, conv=${before.conversations}, providerEvents=${before.providerEvents}, traces=${before.traces}`;
+      const msg = `[${isoNow()}] CLEANUP purgeAll: deleted totals -> fetcher=${before.fetcherLogs}, orch=${before.orchestrationLogs}, conv=${before.conversations}, workspaceItems=${before.workspaceItems}, providerEvents=${before.providerEvents}, traces=${before.traces}`;
       console.log(msg);
       return { deleted: before, message: 'All logs and data purged successfully' };
     },
@@ -125,6 +138,12 @@ export function createCleanupService(hub: RepositoryHub): CleanupService {
           hub.setConversations([]);
           console.log(`[${isoNow()}] CLEANUP purge(conversations): deleted=${count}`);
           return { deleted: count, message: `Deleted ${count} conversations` };
+        }
+        case 'workspaceItems': {
+          const count = hub.getWorkspaceItems().length;
+          hub.setWorkspaceItems([]);
+          console.log(`[${isoNow()}] CLEANUP purge(workspaceItems): deleted=${count}`);
+          return { deleted: count, message: `Deleted ${count} workspace items` };
         }
         case 'providerEvents': {
           const count = hub.getProviderEvents().length;

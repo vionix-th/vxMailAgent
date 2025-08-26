@@ -5,7 +5,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { ApiConfig } from '../../shared/types';
-import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupProviderEvents, cleanupTraces, CleanupStats } from './utils/api';
+import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats } from './utils/api';
 
 interface SettingsData {
   virtualRoot?: string;
@@ -188,7 +188,7 @@ export default function Settings() {
     setCleanupBusy(true);
     try {
       const result = await cleanupAll();
-      setSuccess(`🧹 All logs purged: ${result.deleted.total} items deleted (${result.deleted.fetcherLogs} fetcher logs, ${result.deleted.orchestrationLogs} orchestration logs, ${result.deleted.conversations} conversations, ${result.deleted.providerEvents} provider events, ${result.deleted.traces} traces)`);
+      setSuccess(`🧹 All logs purged: ${result.deleted.total} items deleted (${result.deleted.fetcherLogs} fetcher logs, ${result.deleted.orchestrationLogs} orchestration logs, ${result.deleted.conversations} conversations, ${result.deleted.workspaceItems} workspace items, ${result.deleted.providerEvents} provider events, ${result.deleted.traces} traces)`);
       await refreshCleanupStats();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -197,7 +197,7 @@ export default function Settings() {
     }
   };
 
-  const handleIndividualCleanup = async (type: 'fetcher-logs' | 'orchestration-logs' | 'conversations' | 'provider-events' | 'traces') => {
+  const handleIndividualCleanup = async (type: 'fetcher-logs' | 'orchestration-logs' | 'conversations' | 'workspace-items' | 'provider-events' | 'traces') => {
     setCleanupIndividualOpen(false);
     setError(null);
     setSuccess(null);
@@ -213,6 +213,9 @@ export default function Settings() {
           break;
         case 'conversations':
           result = await cleanupConversations();
+          break;
+        case 'workspace-items':
+          result = await cleanupWorkspaceItems();
           break;
         case 'provider-events':
           result = await cleanupProviderEvents();
@@ -339,6 +342,10 @@ export default function Settings() {
                 <Typography variant="caption">Conversations</Typography>
               </Box>
               <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="h6" color="primary">{cleanupStats.workspaceItems}</Typography>
+                <Typography variant="caption">Workspace Items</Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center' }}>
                 <Typography variant="h6" color="primary">{cleanupStats.providerEvents}</Typography>
                 <Typography variant="caption">LLM Events</Typography>
               </Box>
@@ -394,6 +401,7 @@ export default function Settings() {
                 <Typography variant="body2">• {cleanupStats.fetcherLogs} fetcher logs</Typography>
                 <Typography variant="body2">• {cleanupStats.orchestrationLogs} orchestration logs</Typography>
                 <Typography variant="body2">• {cleanupStats.conversations} conversations</Typography>
+                <Typography variant="body2">• {cleanupStats.workspaceItems} workspace items</Typography>
                 <Typography variant="body2">• {cleanupStats.providerEvents} LLM provider events</Typography>
                 <Typography variant="body2">• {cleanupStats.traces} diagnostic traces</Typography>
                 <Typography variant="body2" color="error.main" sx={{ mt: 1 }}>
@@ -415,11 +423,8 @@ export default function Settings() {
 
         {/* Individual Cleanup Options */}
         <Dialog open={cleanupIndividualOpen} onClose={() => setCleanupIndividualOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Individual Cleanup Options</DialogTitle>
-          <DialogContent>
-            <Typography variant="body2" sx={{ mb: 2 }}>
-              Choose specific log types to clean up:
-            </Typography>
+          <DialogTitle>🧹 Purge Specific Categories</DialogTitle>
+          <DialogContent dividers>
             {cleanupStats && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Button
@@ -451,6 +456,16 @@ export default function Settings() {
                 >
                   <span>Conversations</span>
                   <span>{cleanupStats.conversations} items</span>
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  disabled={cleanupBusy || !cleanupStats.workspaceItems}
+                  onClick={() => handleIndividualCleanup('workspace-items')}
+                  sx={{ justifyContent: 'space-between' }}
+                >
+                  <span>Workspace Items</span>
+                  <span>{cleanupStats.workspaceItems} items</span>
                 </Button>
                 <Button
                   variant="outlined"

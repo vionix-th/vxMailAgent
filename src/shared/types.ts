@@ -410,6 +410,7 @@ export interface CleanupStats {
   fetcherLogs: number;
   orchestrationLogs: number;
   conversations: number;
+  workspaceItems: number;
   providerEvents: number;
   traces: number;
   total: number;
