@@ -12,6 +12,16 @@
 - If missing/invalid, the backend still starts in PLAINTEXT mode and logs a warning. See `src/backend/config.ts::warnIfInsecure()` and `src/backend/persistence.ts`.
 - Tracing/provider events retention settings are in `src/backend/config.ts` (e.g., `TRACE_MAX_TRACES`, `PROVIDER_TTL_DAYS`).
 
+## Authentication & Sessions
+
+- Stateless login backed by a signed JWT stored in `vx.session` (HttpOnly, SameSite=Lax; `Secure` in production).
+- Endpoints (see `src/backend/routes/auth-session.ts`):
+  - `GET /api/auth/google/initiate` → returns Google OAuth2 authorization URL (scopes: `openid email profile`).
+  - `GET /api/auth/google/callback?code=&state=` → exchanges code, upserts user, sets cookie, responds with `{ user }`.
+  - `GET /api/auth/whoami` → returns `{ user }` when authenticated or HTTP 401.
+- Route guard: `requireAuth` protects all routes except the public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`.
+- Production security: HTTP→HTTPS redirect when behind a proxy and HSTS header `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
+
 ## Workspace Semantics (Current)
 
 - Routes are namespaced by `:id`, but items are stored in a shared repository irrespective of `:id` (partitioning can be added later). See `src/backend/routes/workspaces.ts`.
@@ -26,6 +36,8 @@
 
 - Health
   - `GET /api/health` — `src/backend/routes/health.ts`
+- Authentication (login/session)
+  - `GET /api/auth/google/initiate`, `GET /api/auth/google/callback`, `GET /api/auth/whoami` — `src/backend/routes/auth-session.ts`
 - Prompts
   - `GET /api/prompts`, `POST /api/prompts`, `PUT /api/prompts/:id`, `DELETE /api/prompts/:id` — `src/backend/routes/prompts.ts`
   - `POST /api/prompts/assist` — Prompt Optimizer with app context packs. Requires `prompt.messages[]` and `target` in `{director|agent}`.

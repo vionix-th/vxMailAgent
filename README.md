@@ -44,6 +44,17 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 
 Use `src/backend/.env.example` as a template.
 
+## Authentication (Login)
+
+- The app uses a stateless session backed by a signed JWT stored in an HttpOnly cookie `vx.session`.
+- Endpoints:
+  - `GET /api/auth/google/initiate` → returns a Google OAuth2 authorization URL (scopes: `openid email profile`).
+  - `GET /api/auth/google/callback?code=...&state=...` → exchanges the code, upserts the user, and sets the `vx.session` cookie.
+  - `GET /api/auth/whoami` → returns `{ user }` when authenticated, or HTTP 401.
+- Route guard: Almost all API routes are protected by `requireAuth`. Public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`.
+- Cookie flags: `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
+- Production hardening: in production, HTTP is redirected to HTTPS and HSTS is set (`Strict-Transport-Security: max-age=31536000; includeSubDomains`).
+
 ## Development Commands
 
 Backend (`src/backend`)
@@ -69,6 +80,7 @@ Frontend (`src/frontend`)
 ## API Overview
 
 - Health: `GET /api/health`
+- Auth session: `/api/auth/google/initiate`, `/api/auth/google/callback`, `/api/auth/whoami`
 - OAuth: `/api/oauth2/google|outlook/{initiate,callback}`
 - Accounts: `GET/POST/PUT/DELETE /api/accounts[...]` (see `src/backend/routes/accounts.ts`)
 - Fetcher: status/start/stop/run/logs under `/api/fetcher` (see `src/backend/routes/fetcher.ts`)
