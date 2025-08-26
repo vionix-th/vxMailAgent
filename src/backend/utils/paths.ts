@@ -19,5 +19,6 @@ export const FETCHER_LOG_FILE = dataPath('fetcherLog.json');
 export const MEMORY_FILE = dataPath('memory.json');
 export const TRACES_FILE = dataPath('traces.json');
 export const WORKSPACE_ITEMS_FILE = dataPath('workspaceItems.json');
+export const USERS_FILE = dataPath('users.json');
 
 export { DATA_DIR } from '../persistence';

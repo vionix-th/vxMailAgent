@@ -2,15 +2,18 @@ import express from 'express';
 import cors from 'cors';
 
 import authRouter from './auth';
+import { requireAuth } from './middleware/auth';
 import { loadSettings } from './services/settings';
 import { isDirectorFinalized as svcIsDirectorFinalized } from './services/conversations';
 import { initLogging, setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent } from './services/logging';
 
-import { Filter, Director, Agent, Prompt, Imprint, MemoryEntry, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, WorkspaceItem } from '../shared/types';
-import { PROMPTS_FILE, IMPRINTS_FILE, CONVERSATIONS_FILE, ORCHESTRATION_LOG_FILE, MEMORY_FILE, AGENTS_FILE, DIRECTORS_FILE, FILTERS_FILE, WORKSPACE_ITEMS_FILE } from './utils/paths';
+import { Filter, Director, Agent, Prompt, Imprint, MemoryEntry, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, WorkspaceItem, User } from '../shared/types';
+import { PROMPTS_FILE, IMPRINTS_FILE, CONVERSATIONS_FILE, ORCHESTRATION_LOG_FILE, MEMORY_FILE, AGENTS_FILE, DIRECTORS_FILE, FILTERS_FILE, WORKSPACE_ITEMS_FILE, USERS_FILE } from './utils/paths';
 import { newId } from './utils/id';
 import { setMemoryRepo, setWorkspaceRepo } from './toolCalls';
 import { createJsonRepository, FileProviderEventsRepository, FileTracesRepository } from './repository/fileRepositories';
+import { setUsersRepo } from './services/users';
+import registerAuthSessionRoutes from './routes/auth-session';
 
 import registerTestRoutes from './routes/test';
 import registerMemoryRoutes from './routes/memory';
@@ -60,10 +63,30 @@ export function createServer() {
     res.setHeader('Content-Security-Policy', "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'");
     next();
   });
-  app.use(cors());
+  // CORS: allow credentials only when origin is specific
+  const origin = (process.env.CORS_ORIGIN || '*');
+  if (origin && origin !== '*') app.use(cors({ origin, credentials: true }));
+  else app.use(cors());
   app.use(express.json());
-  app.use('/api', authRouter);
   app.use((req, res, next) => { void res; console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`); next(); });
+
+  // Enforce HTTPS and HSTS in production
+  if ((process.env.NODE_ENV || 'development') === 'production') {
+    app.enable('trust proxy');
+    app.use((req, res, next) => {
+      const xfProto = String(req.headers['x-forwarded-proto'] || '');
+      if (req.secure || xfProto === 'https') return next();
+      const host = req.headers.host;
+      res.redirect(301, `https://${host}${req.url}`);
+    });
+    app.use((req, res, next) => { void req; res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains'); next(); });
+  }
+
+  // Global auth guard (allows /api/auth/* and /api/health via internal allowlist)
+  app.use(requireAuth);
+
+  // Legacy OAuth router (now protected by requireAuth)
+  app.use('/api', authRouter);
 
   // Stable references
   // Conversations live cache (refreshed from repo on writes)
@@ -85,11 +108,14 @@ export function createServer() {
   const filtersRepo = createJsonRepository<Filter>(FILTERS_FILE);
   const providerRepo = new FileProviderEventsRepository();
   const tracesRepo = new FileTracesRepository();
+  const usersRepo = createJsonRepository<User>(USERS_FILE);
+  setUsersRepo(usersRepo);
 
   // Initialize logging service with repos
   initLogging({ orchRepo, providerRepo, tracesRepo });
 
   // Routes
+  registerAuthSessionRoutes(app);
   registerTestRoutes(app, { getSettings: () => getSettingsLive(), getPrompts: () => getPromptsLive(), getDirectors: () => getDirectorsLive(), getAgents: () => getAgentsLive() });
   registerMemoryRoutes(app, { getMemory: () => memoryRepo.getAll(), setMemory: (next: MemoryEntry[]) => { memoryRepo.setAll(next); } });
   registerOrchestrationRoutes(app, { getOrchestrationLog: () => getOrchestrationLogLive(), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[]) => { svcSetOrchestrationLog(next); }, getSettings: () => getSettingsLive() });

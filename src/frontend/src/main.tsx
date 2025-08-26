@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import Login from './Login';
+import AuthGate from './AuthGate';
 import OAuthCallback from './OAuthCallback';
 import './index.css';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -18,7 +20,8 @@ const Root: React.FC = () => {
       <BrowserRouter>
         <Routes>
           <Route path="/oauth/callback" element={<OAuthCallback />} />
-          <Route path="/*" element={<App />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/*" element={<AuthGate><App /></AuthGate>} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>

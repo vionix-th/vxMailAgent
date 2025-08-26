@@ -35,10 +35,12 @@ export default function OAuthCallback() {
     let provider = query.get('provider');
     const code = query.get('code');
     const state = query.get('state');
+    let mode: string | undefined = undefined;
     if (state) {
       try {
-        const parsed = JSON.parse(decodeURIComponent(state));
+        const parsed = JSON.parse(state);
         if (parsed && parsed.provider) provider = parsed.provider;
+        if (parsed && parsed.mode) mode = parsed.mode;
       } catch {}
     }
     if (!provider || !code) {
@@ -46,11 +48,14 @@ export default function OAuthCallback() {
       setLoading(false);
       return;
     }
-    const endpoint = provider === 'gmail'
-      ? `/api/oauth2/google/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`
-      : `/api/oauth2/outlook/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+    const isLoginGoogle = mode === 'login' && (provider === 'google' || provider === 'gmail');
+    const endpoint = isLoginGoogle
+      ? `/api/auth/google/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`
+      : (provider === 'gmail'
+          ? `/api/oauth2/google/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`
+          : `/api/oauth2/outlook/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`);
     try {
-      const res = await fetch(endpoint);
+      const res = await fetch(endpoint, { credentials: 'include' });
       // Surface backend warnings if present
       const warn = res.headers.get('x-vx-mailagent-warning');
       if (warn) setWarning(warn);
@@ -59,18 +64,20 @@ export default function OAuthCallback() {
         try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
         throw new Error(msg);
       }
-      const { account } = await res.json();
-      if (!account || !account.id || !account.email) throw new Error(t('oauth.noAccount') as string);
-      // Persist account
-      const persistRes = await fetch('/api/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(account),
-      });
-      if (!persistRes.ok) {
-        let msg = t('oauth.failedPersist') as string;
-        try { const data = await persistRes.json(); if (data.error) msg = data.error; } catch {}
-        throw new Error(msg);
+      if (!isLoginGoogle) {
+        const { account } = await res.json();
+        if (!account || !account.id || !account.email) throw new Error(t('oauth.noAccount') as string);
+        // Persist account for legacy provider connect flows
+        const persistRes = await fetch('/api/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(account),
+        });
+        if (!persistRes.ok) {
+          let msg = t('oauth.failedPersist') as string;
+          try { const data = await persistRes.json(); if (data.error) msg = data.error; } catch {}
+          throw new Error(msg);
+        }
       }
       setLoading(false);
       navigate('/');
@@ -118,16 +125,15 @@ export default function OAuthCallback() {
           <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
             <Button color="error" variant="contained" onClick={() => navigate('/')}>{t('oauth.abort')}</Button>
             <Button color="primary" variant="contained" onClick={() => {
-              const provider = query.get('provider') || (query.get('state') ? (() => {
-                try {
-                  const parsed = JSON.parse(decodeURIComponent(query.get('state')!));
-                  return parsed && parsed.provider ? parsed.provider : 'gmail';
-                } catch { return 'gmail'; }
-              })() : 'gmail');
               const state = query.get('state') || '';
-              const endpoint = provider === 'gmail'
-                ? `/api/oauth2/google/initiate?state=${encodeURIComponent(state)}`
-                : `/api/oauth2/outlook/initiate?state=${encodeURIComponent(state)}`;
+              const parsed = (() => { try { return state ? JSON.parse(state) : undefined; } catch { return undefined; } })();
+              const provider = query.get('provider') || (parsed && parsed.provider) || 'gmail';
+              const isLoginGoogle = parsed && parsed.mode === 'login' && (provider === 'google' || provider === 'gmail');
+              const endpoint = isLoginGoogle
+                ? `/api/auth/google/initiate`
+                : (provider === 'gmail'
+                    ? `/api/oauth2/google/initiate?state=${encodeURIComponent(state)}`
+                    : `/api/oauth2/outlook/initiate?state=${encodeURIComponent(state)}`);
               fetch(endpoint)
                 .then(res => res.json())
                 .then(({ url }) => { if (url) window.location.href = url; else setError(t('oauth.initiateFailed')); })

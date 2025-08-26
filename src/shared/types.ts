@@ -276,6 +276,16 @@ export interface Account {
   };
 }
 
+// App user (authenticated principal)
+export interface User {
+  id: string;           // stable app user id (e.g., `google:{sub}`)
+  email: string;
+  name?: string;
+  picture?: string;
+  createdAt: string;    // ISO
+  lastLoginAt: string;  // ISO
+}
+
 export interface ApiConfig {
   id: string;
   name: string;

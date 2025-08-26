@@ -17,6 +17,10 @@ export const OUTLOOK_CLIENT_ID = process.env.OUTLOOK_CLIENT_ID || '';
 export const OUTLOOK_CLIENT_SECRET = process.env.OUTLOOK_CLIENT_SECRET || '';
 export const OUTLOOK_REDIRECT_URI = process.env.OUTLOOK_REDIRECT_URI || '';
 
+// Auth / Sessions (JWT)
+export const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-jwt';
+export const JWT_EXPIRES_IN_SEC = parseInt(process.env.JWT_EXPIRES_IN_SEC || '86400', 10); // 24h default
+
 // Diagnostics / Tracing configuration
 export const TRACE_VERBOSE = /^true$/i.test(process.env.TRACE_VERBOSE || '');
 export const TRACE_PERSIST = process.env.TRACE_PERSIST === undefined ? true : /^true$/i.test(process.env.TRACE_PERSIST);
