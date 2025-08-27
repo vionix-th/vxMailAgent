@@ -4,14 +4,13 @@ import cors from 'cors';
 import authRouter from './auth';
 import { requireAuth } from './middleware/auth';
 import { loadSettings } from './services/settings';
-import { isDirectorFinalized as svcIsDirectorFinalized } from './services/conversations';
-import { initLogging, setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent } from './services/logging';
+import { setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent, getOrchestrationLog, getTraces } from './services/logging';
 
 import { Filter, Director, Agent, Prompt, Imprint, MemoryEntry, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, WorkspaceItem, User } from '../shared/types';
-import { PROMPTS_FILE, IMPRINTS_FILE, CONVERSATIONS_FILE, ORCHESTRATION_LOG_FILE, MEMORY_FILE, AGENTS_FILE, DIRECTORS_FILE, FILTERS_FILE, WORKSPACE_ITEMS_FILE, USERS_FILE } from './utils/paths';
+import { MEMORY_FILE, WORKSPACE_ITEMS_FILE, USERS_FILE } from './utils/paths';
 import { newId } from './utils/id';
 import { setMemoryRepo, setWorkspaceRepo } from './toolCalls';
-import { createJsonRepository, FileProviderEventsRepository, FileTracesRepository } from './repository/fileRepositories';
+import { createJsonRepository } from './repository/fileRepositories';
 import { setUsersRepo } from './services/users';
 import registerAuthSessionRoutes from './routes/auth-session';
 
@@ -32,9 +31,10 @@ import registerFetcherRoutes from './routes/fetcher';
 import registerDiagnosticsRoutes from './routes/diagnostics';
 import registerDiagnosticTracesRoutes from './routes/diagnostic-traces';
 import registerUnifiedDiagnosticsRoutes from './routes/unified-diagnostics';
-import registerHealthRoutes from './routes/health';
-import registerCleanupRoutes from './routes/cleanup';
-import { initFetcher } from './services/fetcher';
+// Health and cleanup routes removed - user isolation enforced
+// initFetcher removed - using FetcherManager
+import { FetcherManager } from './services/fetcher-manager.js';
+import { attachUserContext, UserRequest, hasUserContext, getUserContext } from './middleware/user-context';
 
 /** Create and configure the backend Express server. */
 export function createServer() {
@@ -42,22 +42,120 @@ export function createServer() {
 
   let settings = loadSettings();
 
-  function getPromptsLive(): Prompt[] { return promptsRepo.getAll(); }
+  function getPromptsLive(req?: UserRequest): Prompt[] { 
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.prompts.getAll();
+    }
+    throw new Error('User context required - no global prompts available');
+  }
 
-
-  function getAgentsLive(): Agent[] { return agentsRepo.getAll(); }
-  function getDirectorsLive(): Director[] { return directorsRepo.getAll(); }
-  function getFiltersLive(): Filter[] { return filtersRepo.getAll(); }
-  function getImprintsLive(): Imprint[] { return imprintsRepo.getAll(); }
-  function getOrchestrationLogLive(): OrchestrationDiagnosticEntry[] { return orchRepo.getAll(); }
-  function getConversationsLive(): ConversationThread[] { return conversationsRepo.getAll(); }
+  function getAgentsLive(req?: UserRequest): Agent[] {
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.agents.getAll();
+    }
+    throw new Error('User context required - no global agents available');
+  }
+  function getDirectorsLive(req?: UserRequest): Director[] {
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.directors.getAll();
+    }
+    throw new Error('User context required - no global directors available');
+  }
+  function getFiltersLive(req?: UserRequest): Filter[] {
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.filters.getAll();
+    }
+    throw new Error('User context required - no global filters available');
+  }
+  function getImprintsLive(req?: UserRequest): Imprint[] {
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.imprints.getAll();
+    }
+    throw new Error('User context required - no global imprints available');
+  }
+  function getOrchestrationLogLive(req?: UserRequest): OrchestrationDiagnosticEntry[] { 
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.orchestrationLog.getAll();
+    }
+    throw new Error('User context required - no global orchestration log available');
+  }
+  function getConversationsLive(req?: UserRequest): ConversationThread[] {
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.conversations.getAll();
+    }
+    throw new Error('User context required - no global conversations available');
+  }
   function getSettingsLive() { settings = loadSettings(); return settings; }
 
-  function isDirectorFinalized(dirId: string): boolean { return svcIsDirectorFinalized(conversations, dirId); }
+  // Setter functions for per-user repositories
+  function setPromptsLive(req: UserRequest, next: Prompt[]): void {
+    if (hasUserContext(req)) {
+      getUserContext(req).repos.prompts.setAll(next);
+    } else {
+      throw new Error('User context required - no global prompts available');
+    }
+  }
+
+  function setAgentsLive(req: UserRequest, next: Agent[]): void {
+    if (hasUserContext(req)) {
+      getUserContext(req).repos.agents.setAll(next);
+    } else {
+      throw new Error('User context required - no global agents available');
+    }
+  }
+
+  function setDirectorsLive(req: UserRequest, next: Director[]): void {
+    if (hasUserContext(req)) {
+      getUserContext(req).repos.directors.setAll(next);
+    } else {
+      throw new Error('User context required - no global directors available');
+    }
+  }
+
+  function setFiltersLive(req: UserRequest, next: Filter[]): void {
+    if (hasUserContext(req)) {
+      getUserContext(req).repos.filters.setAll(next);
+    } else {
+      throw new Error('User context required - no global filters available');
+    }
+  }
+
+  function setImprintsLive(req: UserRequest, next: Imprint[]): void {
+    if (hasUserContext(req)) {
+      getUserContext(req).repos.imprints.setAll(next);
+    } else {
+      throw new Error('User context required - no global imprints available');
+    }
+  }
+
+  function setConversationsLive(req: UserRequest, next: ConversationThread[]) {
+    if (hasUserContext(req)) {
+      getUserContext(req).repos.conversations.setAll(next);
+    } else {
+      throw new Error('User context required - no global conversations available');
+    }
+  }
+
+  function getProviderRepo(req?: UserRequest) {
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.providerEvents;
+    }
+    throw new Error('User context required - no global provider events available');
+  }
+
+  function getTracesRepo(req?: UserRequest) {
+    if (req && hasUserContext(req)) {
+      return getUserContext(req).repos.traces;
+    }
+    throw new Error('User context required - no global traces available');
+  }
+
+  // Director finalization removed - requires user context
 
   app.use((req, res, next) => {
     void req; // satisfy noUnusedParameters
     res.setHeader('Content-Security-Policy', "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'");
+    res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
   const origin = (process.env.CORS_ORIGIN || '*');
@@ -77,78 +175,119 @@ export function createServer() {
   }
 
   app.use(requireAuth);
+  app.use(attachUserContext);
   app.use('/api', authRouter);
-  let conversations: ConversationThread[] = [];
+  // Global conversations array removed - user isolation enforced
   const memoryRepo = createJsonRepository<MemoryEntry>(MEMORY_FILE);
   setMemoryRepo(memoryRepo);
   const workspaceRepo = createJsonRepository<WorkspaceItem>(WORKSPACE_ITEMS_FILE);
   setWorkspaceRepo(workspaceRepo);
-  const orchRepo = createJsonRepository<OrchestrationDiagnosticEntry>(ORCHESTRATION_LOG_FILE);
-  const promptsRepo = createJsonRepository<Prompt>(PROMPTS_FILE);
-  const imprintsRepo = createJsonRepository<Imprint>(IMPRINTS_FILE);
-  const conversationsRepo = createJsonRepository<ConversationThread>(CONVERSATIONS_FILE);
-  const agentsRepo = createJsonRepository<Agent>(AGENTS_FILE);
-  const directorsRepo = createJsonRepository<Director>(DIRECTORS_FILE);
-  const filtersRepo = createJsonRepository<Filter>(FILTERS_FILE);
-  const providerRepo = new FileProviderEventsRepository();
-  const tracesRepo = new FileTracesRepository();
+  // All global repositories removed - user isolation enforced
+  // Only system-level repositories remain (memory, workspace, users)
   const usersRepo = createJsonRepository<User>(USERS_FILE);
   setUsersRepo(usersRepo);
-  initLogging({ orchRepo, providerRepo, tracesRepo });
+  // Logging initialization removed - per-user logging only
   registerAuthSessionRoutes(app);
   registerTestRoutes(app, { getSettings: () => getSettingsLive(), getPrompts: () => getPromptsLive(), getDirectors: () => getDirectorsLive(), getAgents: () => getAgentsLive() });
   registerMemoryRoutes(app, { getMemory: () => memoryRepo.getAll(), setMemory: (next: MemoryEntry[]) => { memoryRepo.setAll(next); } });
   registerOrchestrationRoutes(app, { getOrchestrationLog: () => getOrchestrationLogLive(), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[]) => { svcSetOrchestrationLog(next); }, getSettings: () => getSettingsLive() });
   registerSettingsRoutes(app, { getSettings: () => getSettingsLive() });
-  registerAgentsRoutes(app, { getAgents: () => getAgentsLive(), setAgents: (next: Agent[]) => { agentsRepo.setAll(next); } });
-  registerFiltersRoutes(app, { getFilters: () => getFiltersLive(), setFilters: (next: Filter[]) => { filtersRepo.setAll(next); } });
-  registerDirectorsRoutes(app, { getDirectors: () => getDirectorsLive(), setDirectors: (next: Director[]) => { directorsRepo.setAll(next); } });
-  registerPromptsRoutes(app, { getPrompts: () => getPromptsLive(), setPrompts: (next: Prompt[]) => { promptsRepo.setAll(next); }, getSettings: () => getSettingsLive(), getAgents: () => getAgentsLive(), getDirectors: () => getDirectorsLive() });
+  registerAgentsRoutes(app, { 
+    getAgents: (req?: UserRequest) => getAgentsLive(req), 
+    setAgents: (req: UserRequest, next: Agent[]) => setAgentsLive(req, next) 
+  });
+  registerFiltersRoutes(app, { 
+    getFilters: (req?: UserRequest) => getFiltersLive(req), 
+    setFilters: (req: UserRequest, next: Filter[]) => setFiltersLive(req, next) 
+  });
+  registerDirectorsRoutes(app, { 
+    getDirectors: (req?: UserRequest) => getDirectorsLive(req), 
+    setDirectors: (req: UserRequest, next: Director[]) => setDirectorsLive(req, next) 
+  });
+  registerPromptsRoutes(app, { 
+    getPrompts: (req?: UserRequest) => getPromptsLive(req), 
+    setPrompts: (req: UserRequest, next: Prompt[]) => setPromptsLive(req, next), 
+    getSettings: () => getSettingsLive(), 
+    getAgents: (req?: UserRequest) => getAgentsLive(req), 
+    getDirectors: (req?: UserRequest) => getDirectorsLive(req) 
+  });
   registerTemplatesRoutes(app);
-  registerConversationsRoutes(app, { getConversations: () => getConversationsLive(), setConversations: (next: ConversationThread[]) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); }, getSettings: () => getSettingsLive(), isDirectorFinalized, logProviderEvent: (e: ProviderEvent) => { svcLogProviderEvent(e); }, newId, getDirectors: () => getDirectorsLive(), getAgents: () => getAgentsLive() });
-  registerWorkspacesRoutes(app, { getConversations: () => getConversationsLive(), setConversations: (next: ConversationThread[]) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); }, workspaceRepo });
-  registerImprintsRoutes(app, { getImprints: () => getImprintsLive(), setImprints: (next: Imprint[]) => { imprintsRepo.setAll(next); } });
+  registerConversationsRoutes(app, { 
+    getConversations: (req?: UserRequest) => getConversationsLive(req), 
+    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next), 
+    getSettings: () => getSettingsLive(), 
+    isDirectorFinalized: () => { throw new Error('Director finalization requires user context'); }, 
+    logProviderEvent: (e: ProviderEvent, req?: UserRequest) => { svcLogProviderEvent(e, req); }, 
+    newId, 
+    getDirectors: (req?: UserRequest) => getDirectorsLive(req), 
+    getAgents: (req?: UserRequest) => getAgentsLive(req) 
+  });
+  registerWorkspacesRoutes(app, { 
+    getConversations: (req?: UserRequest) => getConversationsLive(req), 
+    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next), 
+    workspaceRepo 
+  });
+  registerImprintsRoutes(app, { 
+    getImprints: (req?: UserRequest) => getImprintsLive(req), 
+    setImprints: (req: UserRequest, next: Imprint[]) => setImprintsLive(req, next) 
+  });
   registerAccountsRoutes(app);
-  registerDiagnosticsRoutes(app, { getOrchestrationLog: () => orchRepo.getAll(), getConversations: () => getConversationsLive() });
-  registerDiagnosticTracesRoutes(app, { getTraces: () => tracesRepo.getAll(), setTraces: (next) => { tracesRepo.setAll(next); } });
+  registerDiagnosticsRoutes(app, { getOrchestrationLog: (req?: UserRequest) => getOrchestrationLogLive(req), getConversations: (req?: UserRequest) => getConversationsLive(req) });
+  registerDiagnosticTracesRoutes(app, { getTraces: (req?: UserRequest) => getTracesRepo(req).getAll(), setTraces: (req: UserRequest, next) => getTracesRepo(req).setAll(next) });
   registerUnifiedDiagnosticsRoutes(app, {
-    getOrchestrationLog: () => orchRepo.getAll(),
-    getConversations: () => getConversationsLive(),
-    getProviderEvents: () => providerRepo.getAll(),
-    getTraces: () => tracesRepo.getAll()
+    getOrchestrationLog: (req?: UserRequest) => getOrchestrationLog(req),
+    getConversations: (req?: UserRequest) => getConversationsLive(req),
+    getProviderEvents: (req?: UserRequest) => getProviderRepo(req).getAll(),
+    getTraces: (req?: UserRequest) => getTraces(req)
   });
-  registerHealthRoutes(app);
 
-  const fetcher = initFetcher({
+  // Conversations routes registration moved to proper location
+
+  registerConversationsRoutes(app, {
+    getConversations: (req?: UserRequest) => getConversationsLive(req),
+    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next),
     getSettings: () => getSettingsLive(),
-    getFilters: () => getFiltersLive(),
-    getDirectors: () => getDirectorsLive(),
-    getAgents: () => getAgentsLive(),
-    getPrompts: () => getPromptsLive(),
-    getConversations: () => getConversationsLive(),
-    setConversations: (next: ConversationThread[]) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); },
-    logOrch: (e: OrchestrationDiagnosticEntry) => { svcLogOrch(e); },
+    getDirectors: (req?: UserRequest) => getDirectorsLive(req),
+    getAgents: (req?: UserRequest) => getAgentsLive(req),
+    isDirectorFinalized: () => { throw new Error('Director finalization requires user context'); },
     logProviderEvent: (e: ProviderEvent) => { svcLogProviderEvent(e); },
-    isDirectorFinalized,
+    newId
   });
 
-  registerFetcherRoutes(app, { getStatus: () => fetcher.getStatus(), startFetcherLoop: () => fetcher.startFetcherLoop(), stopFetcherLoop: () => fetcher.stopFetcherLoop(), fetchEmails: () => fetcher.fetchEmails(), getSettings: () => getSettingsLive(), getFetcherLog: () => fetcher.getFetcherLog(), setFetcherLog: (next) => fetcher.setFetcherLog(next) });
-  registerCleanupRoutes(app, {
-    getFetcherLog: () => fetcher.getFetcherLog(),
-    setFetcherLog: (next) => fetcher.setFetcherLog(next),
-    getOrchestrationLog: () => orchRepo.getAll(),
-    setOrchestrationLog: (next) => orchRepo.setAll(next),
-    getConversations: () => getConversationsLive(),
-    setConversations: (next) => { conversationsRepo.setAll(next); conversations = conversationsRepo.getAll(); },
-    getWorkspaceItems: () => workspaceRepo.getAll(),
-    setWorkspaceItems: (next) => workspaceRepo.setAll(next),
-    getProviderEvents: () => providerRepo.getAll(),
-    setProviderEvents: (next) => providerRepo.setAll(next),
-    getTraces: () => tracesRepo.getAll(),
-    setTraces: (next) => tracesRepo.setAll(next),
-  });
+  // Initialize FetcherManager with per-user fetcher factory
+  const fetcherManager = new FetcherManager((uid: string) => ({
+    uid,
+    getSettings: () => getSettingsLive(),
+    getFilters: (req?: UserRequest) => getFiltersLive(req),
+    getDirectors: (req?: UserRequest) => getDirectorsLive(req),
+    getAgents: (req?: UserRequest) => getAgentsLive(req),
+    getPrompts: (req?: UserRequest) => getPromptsLive(req),
+    getConversations: (req?: UserRequest) => getConversationsLive(req),
+    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next),
+    logOrch: (e: OrchestrationDiagnosticEntry, req?: UserRequest) => { svcLogOrch(e, req); },
+    logProviderEvent: (e: ProviderEvent, req?: UserRequest) => { svcLogProviderEvent(e, req); },
+    isDirectorFinalized: (_dirId: string) => { throw new Error('Director finalization requires user context'); },
+    getAccounts: (_req?: UserRequest) => { throw new Error('Accounts access requires user context'); },
+    setAccounts: (_req: UserRequest, _next: any[]) => { throw new Error('Accounts access requires user context'); },
+    getFetcherLog: (_req?: UserRequest) => [], // Per-user fetcher log not implemented yet
+    setFetcherLog: (_req: UserRequest, _next: any[]) => {}, // Per-user fetcher log not implemented yet
+  }));
 
-  if (getSettingsLive().fetcherAutoStart !== false) { fetcher.startFetcherLoop(); }
+  // Global fetcher initialization removed - user isolation enforced
+
+  registerFetcherRoutes(app, {
+    getStatus: (req?: UserRequest) => fetcherManager.getStatus(req),
+    startFetcherLoop: (req?: UserRequest) => fetcherManager.startFetcherLoop(req),
+    stopFetcherLoop: (req?: UserRequest) => fetcherManager.stopFetcherLoop(req),
+    fetchEmails: (req?: UserRequest) => fetcherManager.fetchEmails(req),
+    getSettings: () => getSettingsLive(),
+    getFetcherLog: (req?: UserRequest) => fetcherManager.getFetcherLog(req),
+    setFetcherLog: (req: UserRequest, next) => fetcherManager.setFetcherLog(req, next)
+  });
+  // Cleanup routes removed - user isolation enforced
+  // All cleanup operations must use per-user repositories
+
+  // Global fetcher auto-start removed - user isolation enforced
 
   return app;
 }

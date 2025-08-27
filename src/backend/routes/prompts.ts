@@ -3,15 +3,17 @@ import path from 'path';
 import fs from 'fs';
 import { Prompt } from '../../shared/types';
 import * as persistence from '../persistence';
-import { TEMPLATES_FILE } from '../utils/paths';
+// dataPath import removed - using templatesFile variable
 import { chatCompletion } from '../providers/openai';
 
+import { UserRequest } from '../middleware/user-context';
+
 export interface PromptsRoutesDeps {
-  getPrompts: () => Prompt[];
-  setPrompts: (next: Prompt[]) => void;
+  getPrompts: (req?: UserRequest) => Prompt[];
+  setPrompts: (req: UserRequest, next: Prompt[]) => void;
   getSettings: () => any;
-  getAgents: () => Array<{ id: string; name: string; promptId?: string; apiConfigId: string }>;
-  getDirectors: () => Array<{ id: string; name: string; agentIds: string[]; promptId?: string; apiConfigId: string }>;
+  getAgents: (req?: UserRequest) => Array<{ id: string; name: string; promptId?: string; apiConfigId: string }>;
+  getDirectors: (req?: UserRequest) => Array<{ id: string; name: string; agentIds: string[]; promptId?: string; apiConfigId: string }>;
 }
 
  
@@ -206,12 +208,12 @@ const DEFAULT_OPTIMIZER: TemplateItem = {
 
 function loadTemplatesArray(): TemplateItem[] {
   try {
-    if (!fs.existsSync(TEMPLATES_FILE)) {
-      const seeded = [DEFAULT_OPTIMIZER];
-      persistence.encryptAndPersist(seeded, TEMPLATES_FILE);
-      return seeded;
+    const templatesFile = 'templates.json'; // Hardcoded for now
+    if (!fs.existsSync(templatesFile)) {
+      const seeded = DEFAULT_OPTIMIZER ? [DEFAULT_OPTIMIZER] : [];
+      persistence.encryptAndPersist(seeded, templatesFile);
     }
-    const raw = persistence.loadAndDecrypt(TEMPLATES_FILE);
+    const raw = persistence.loadAndDecrypt(templatesFile);
     if (raw && !Array.isArray(raw) && typeof raw === 'object') {
       const arr: TemplateItem[] = Object.values(raw as any);
       // Ensure optimizer presence and canonical content
@@ -221,7 +223,8 @@ function loadTemplatesArray(): TemplateItem[] {
       } else {
         next = arr.map(t => t.id === 'prompt_optimizer' ? { ...t, name: DEFAULT_OPTIMIZER.name, messages: DEFAULT_OPTIMIZER.messages } : t);
       }
-      persistence.encryptAndPersist(next, TEMPLATES_FILE);
+      const templatesFile = 'templates.json';
+      persistence.encryptAndPersist(next, templatesFile);
       return next;
     }
     const arr = Array.isArray(raw) ? (raw as TemplateItem[]) : [];
@@ -231,14 +234,16 @@ function loadTemplatesArray(): TemplateItem[] {
     } else {
       next = arr.map(t => t.id === 'prompt_optimizer' ? { ...t, name: DEFAULT_OPTIMIZER.name, messages: DEFAULT_OPTIMIZER.messages } : t);
     }
-    persistence.encryptAndPersist(next, TEMPLATES_FILE);
+    const templatesFile3 = 'templates.json';
+    persistence.encryptAndPersist(next, templatesFile3);
     return next;
   } catch (e) {
     console.warn('[WARN] loadTemplatesArray failed:', e);
     // Recreate with optimizer to maintain invariant
     try {
       const seeded = [DEFAULT_OPTIMIZER];
-      persistence.encryptAndPersist(seeded, TEMPLATES_FILE);
+      const templatesFile4 = 'templates.json';
+      persistence.encryptAndPersist(seeded, templatesFile4);
       return seeded;
     } catch {}
     return [DEFAULT_OPTIMIZER];
@@ -247,16 +252,16 @@ function loadTemplatesArray(): TemplateItem[] {
 
 export default function registerPromptsRoutes(app: express.Express, deps: PromptsRoutesDeps) {
   // GET /api/prompts
-  app.get('/api/prompts', (_req, res) => {
+  app.get('/api/prompts', (req, res) => {
     console.log(`[${new Date().toISOString()}] GET /api/prompts`);
-    res.json(deps.getPrompts());
+    res.json(deps.getPrompts(req as UserRequest));
   });
 
   // POST /api/prompts
   app.post('/api/prompts', (req, res) => {
     const prompt: Prompt = req.body;
-    const next = [...deps.getPrompts(), prompt];
-    deps.setPrompts(next);
+    const next = [...deps.getPrompts(req as UserRequest), prompt];
+    deps.setPrompts(req as UserRequest, next);
     console.log(`[${new Date().toISOString()}] POST /api/prompts: added prompt ${prompt.id}`);
     res.json({ success: true });
   });
@@ -264,7 +269,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // PUT /api/prompts/:id
   app.put('/api/prompts/:id', (req, res) => {
     const id = req.params.id;
-    const current = deps.getPrompts();
+    const current = deps.getPrompts(req as UserRequest);
     const idx = current.findIndex(p => p.id === id);
     if (idx === -1) {
       console.warn(`[${new Date().toISOString()}] PUT /api/prompts/${id}: not found`);
@@ -272,7 +277,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     }
     const next = current.slice();
     next[idx] = req.body;
-    deps.setPrompts(next);
+    deps.setPrompts(req as UserRequest, next);
     console.log(`[${new Date().toISOString()}] PUT /api/prompts/${id}: updated`);
     res.json({ success: true });
   });
@@ -280,10 +285,10 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // DELETE /api/prompts/:id
   app.delete('/api/prompts/:id', (req, res) => {
     const id = req.params.id;
-    const current = deps.getPrompts();
+    const current = deps.getPrompts(req as UserRequest);
     const before = current.length;
     const next = current.filter(p => p.id !== id);
-    deps.setPrompts(next);
+    deps.setPrompts(req as UserRequest, next);
     const after = next.length;
     console.log(`[${new Date().toISOString()}] DELETE /api/prompts/${id}: ${before - after} deleted`);
     res.json({ success: true });
@@ -315,8 +320,8 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
       const includingPacks = parseIncluding(payload, req.query);
       const finalPacks = Array.from(new Set<ContextPackName>([...selectedPacks, ...includingPacks])) as ContextPackName[];
       // Runtime agents/directors (ids/names only), and supported tools/actions
-      const agents = (deps.getAgents?.() || []).map(a => ({ id: a.id, name: a.name }));
-      const directors = (deps.getDirectors?.() || []).map(d => ({ id: d.id, name: d.name, agentIds: d.agentIds }));
+      const agents = (deps.getAgents?.(req as UserRequest) || []).map(a => ({ id: a.id, name: a.name }));
+      const directors = (deps.getDirectors?.(req as UserRequest) || []).map(d => ({ id: d.id, name: d.name, agentIds: d.agentIds }));
       const tools = [
         { kind: 'calendar', actions: ['read', 'add'] },
         { kind: 'todo', actions: ['add'] },

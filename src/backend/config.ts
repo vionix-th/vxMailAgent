@@ -39,6 +39,13 @@ export const TRACE_TTL_DAYS = parseInt(process.env.TRACE_TTL_DAYS || '7', 10);
 export const PROVIDER_MAX_EVENTS = parseInt(process.env.PROVIDER_MAX_EVENTS || '5000', 10);
 export const PROVIDER_TTL_DAYS = parseInt(process.env.PROVIDER_TTL_DAYS || '7', 10);
 
+// Multi-user isolation configuration (always enabled)
+export const USER_REGISTRY_TTL_MINUTES = parseInt(process.env.USER_REGISTRY_TTL_MINUTES || '60', 10);
+export const USER_REGISTRY_MAX_ENTRIES = parseInt(process.env.USER_REGISTRY_MAX_ENTRIES || '1000', 10);
+export const USER_MAX_FILE_SIZE_MB = parseInt(process.env.USER_MAX_FILE_SIZE_MB || '50', 10);
+export const USER_MAX_CONVERSATIONS = parseInt(process.env.USER_MAX_CONVERSATIONS || '10000', 10);
+export const USER_MAX_LOGS_PER_TYPE = parseInt(process.env.USER_MAX_LOGS_PER_TYPE || '10000', 10);
+
 export function envSummary() {
   return {
     VX_MAILAGENT_KEY_PRESENT: VX_MAILAGENT_KEY.length === 64,

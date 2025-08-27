@@ -3,40 +3,68 @@ import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS,
 import { newId } from '../utils/id';
 import { Repository } from '../repository/core';
 import { ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
+import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
 
-let orchRepo: Repository<OrchestrationDiagnosticEntry> | null = null;
-let providerRepo: ProviderEventsRepository | null = null;
-let tracesRepo: TracesRepository | null = null;
+// Global repositories for fallback
+let globalOrchRepo: Repository<OrchestrationDiagnosticEntry> | null = null;
+let globalProviderRepo: ProviderEventsRepository | null = null;
+let globalTracesRepo: TracesRepository | null = null;
 
 export function initLogging(input: {
   orchRepo: Repository<OrchestrationDiagnosticEntry>;
   providerRepo: ProviderEventsRepository;
   tracesRepo: TracesRepository;
 }) {
-  orchRepo = input.orchRepo;
-  providerRepo = input.providerRepo;
-  tracesRepo = input.tracesRepo;
+  globalOrchRepo = input.orchRepo;
+  globalProviderRepo = input.providerRepo;
+  globalTracesRepo = input.tracesRepo;
 }
 
-export function logOrch(e: OrchestrationDiagnosticEntry) {
-  if (!orchRepo) return;
-  const list = orchRepo.getAll();
+// Helper functions to get per-user or global repositories
+function getOrchRepo(req?: UserRequest): Repository<OrchestrationDiagnosticEntry> | null {
+  if (req && hasUserContext(req)) {
+    return getUserContext(req).repos.orchestrationLog;
+  }
+  return globalOrchRepo;
+}
+
+function getProviderRepo(req?: UserRequest): ProviderEventsRepository | null {
+  if (req && hasUserContext(req)) {
+    return getUserContext(req).repos.providerEvents;
+  }
+  return globalProviderRepo;
+}
+
+function getTracesRepo(req?: UserRequest): TracesRepository | null {
+  if (req && hasUserContext(req)) {
+    return getUserContext(req).repos.traces;
+  }
+  return globalTracesRepo;
+}
+
+export function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest) {
+  const repo = getOrchRepo(req);
+  if (!repo) return;
+  const list = repo.getAll();
   list.push(e);
-  orchRepo.setAll(list);
+  repo.setAll(list);
 }
 
-export function logProviderEvent(e: ProviderEvent) {
-  if (!providerRepo) return;
-  providerRepo.append(e);
+export function logProviderEvent(e: ProviderEvent, req?: UserRequest) {
+  const repo = getProviderRepo(req);
+  if (!repo) return;
+  repo.append(e);
 }
 
-export function getOrchestrationLog() {
-  return orchRepo ? orchRepo.getAll() : [];
+export function getOrchestrationLog(req?: UserRequest) {
+  const repo = getOrchRepo(req);
+  return repo ? repo.getAll() : [];
 }
 
-export function setOrchestrationLog(next: OrchestrationDiagnosticEntry[]) {
-  if (!orchRepo) return;
-  orchRepo.setAll(next);
+export function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: UserRequest) {
+  const repo = getOrchRepo(req);
+  if (!repo) return;
+  repo.setAll(next);
 }
 
 // ---------- Structured tracing ----------
@@ -71,7 +99,7 @@ function redact(obj: any): any {
   }
 }
 
-export function beginTrace(seed?: Partial<Trace>): string {
+export function beginTrace(seed?: Partial<Trace>, req?: UserRequest): string {
   const id = seed?.id || newId();
   const t: Trace = {
     id,
@@ -82,24 +110,27 @@ export function beginTrace(seed?: Partial<Trace>): string {
     status: 'ok',
     spans: [],
   };
-  if (TRACE_PERSIST && tracesRepo) tracesRepo.append(t);
+  const repo = getTracesRepo(req);
+  if (TRACE_PERSIST && repo) repo.append(t);
   return id;
 }
 
-export function endTrace(id: string, status?: 'ok' | 'error', error?: string) {
-  if (!TRACE_PERSIST || !tracesRepo) return;
-  tracesRepo.update(id, (t) => {
+export function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: UserRequest) {
+  const repo = getTracesRepo(req);
+  if (!TRACE_PERSIST || !repo) return;
+  repo.update(id, (t) => {
     t.endedAt = new Date().toISOString();
     if (status) t.status = status;
     if (error) t.error = error;
   });
 }
 
-export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }): string {
-  if (!TRACE_PERSIST || !tracesRepo) return '';
+export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }, req?: UserRequest): string {
+  const repo = getTracesRepo(req);
+  if (!TRACE_PERSIST || !repo) return '';
   const sid = span.id || newId();
   const now = new Date().toISOString();
-  tracesRepo.update(traceId, (t) => {
+  repo.update(traceId, (t) => {
     if (t.spans.length >= TRACE_MAX_SPANS) return;
     const s: Span = {
       id: sid,
@@ -122,9 +153,10 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
   return sid;
 }
 
-export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }) {
-  if (!TRACE_PERSIST || !tracesRepo) return;
-  tracesRepo.update(traceId, (t) => {
+export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: UserRequest) {
+  const repo = getTracesRepo(req);
+  if (!TRACE_PERSIST || !repo) return;
+  repo.update(traceId, (t) => {
     const s = t.spans.find(x => x.id === spanId);
     if (!s) return;
     const end = new Date().toISOString();
@@ -138,15 +170,17 @@ export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok'
   });
 }
 
-export function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>) {
-  if (!TRACE_PERSIST || !tracesRepo) return;
-  tracesRepo.update(traceId, (t) => {
+export function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: UserRequest) {
+  const repo = getTracesRepo(req);
+  if (!TRACE_PERSIST || !repo) return;
+  repo.update(traceId, (t) => {
     const s = t.spans.find(x => x.id === spanId);
     if (!s) return;
     s.annotations = Object.assign({}, s.annotations || {}, annotations);
   });
 }
 
-export function getTraces() {
-  return tracesRepo ? tracesRepo.getAll() : [];
+export function getTraces(req?: UserRequest) {
+  const repo = getTracesRepo(req);
+  return repo ? repo.getAll() : [];
 }

@@ -1,6 +1,4 @@
-import fs from 'fs';
-import * as persistence from '../persistence';
-import { ACCOUNTS_FILE, FETCHER_LOG_FILE } from '../utils/paths';
+// fs and persistence imports removed - not used
 import { getMailProvider } from '../providers/mail';
 import { newId } from '../utils/id';
 import { conversationEngine } from './engine';
@@ -21,6 +19,10 @@ export interface FetcherDeps {
   logOrch: (e: OrchestrationDiagnosticEntry) => void;
   logProviderEvent: (e: ProviderEvent) => void;
   isDirectorFinalized: (dirId: string) => boolean;
+  getAccounts: () => Account[];
+  setAccounts: (next: Account[]) => void;
+  getFetcherLog: () => FetcherLogEntry[];
+  setFetcherLog: (next: FetcherLogEntry[]) => void;
 }
 
 /** Interface for the fetcher service. */
@@ -44,20 +46,16 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
   let fetcherAccountStatus: Record<string, { lastRun: string | null; lastError: string | null }> = {};
 
   try {
-    if (fs.existsSync(FETCHER_LOG_FILE)) {
-      const loaded = persistence.loadAndDecrypt(FETCHER_LOG_FILE) as FetcherLogEntry[];
-      fetcherLog = (loaded || []).map(e => ({ ...e, id: e.id || newId() }));
-      try { persistence.encryptAndPersist(fetcherLog, FETCHER_LOG_FILE); } catch {}
-    }
+    fetcherLog = deps.getFetcherLog().map(e => ({ ...e, id: e.id || newId() }));
   } catch (e) {
-    console.error('[ERROR] Failed to initialize fetcherLog from disk:', e);
+    console.error('[ERROR] Failed to initialize fetcherLog:', e);
   }
 
   function logFetch(entry: FetcherLogEntry) {
     try {
       const withId: FetcherLogEntry = { ...entry, id: entry.id || newId() };
       fetcherLog.push(withId);
-      persistence.encryptAndPersist(fetcherLog, FETCHER_LOG_FILE);
+      deps.setFetcherLog(fetcherLog);
     } catch (e) {
       console.error('[ERROR] Failed to persist fetcherLog entry:', e);
     }
@@ -82,12 +80,8 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
 
     let accounts: Account[] = [];
     try {
-      if (fs.existsSync(ACCOUNTS_FILE)) {
-        accounts = persistence.loadAndDecrypt(ACCOUNTS_FILE) as Account[];
-        logFetch({ timestamp: new Date().toISOString(), level: 'debug', event: 'accounts_loaded', message: `Loaded ${accounts.length} accounts from store`, count: accounts.length });
-      } else {
-        logFetch({ timestamp: new Date().toISOString(), level: 'warn', event: 'accounts_missing', message: 'No accounts file found at startup' });
-      }
+      accounts = deps.getAccounts();
+      logFetch({ timestamp: new Date().toISOString(), level: 'debug', event: 'accounts_loaded', message: `Loaded ${accounts.length} accounts from store`, count: accounts.length });
     } catch (e) {
       logFetch({ timestamp: new Date().toISOString(), level: 'error', event: 'accounts_load_error', message: 'Error loading accounts', detail: String(e) });
       fetcherRunning = false;
@@ -118,11 +112,12 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
             account.tokens.accessToken = refreshResult.accessToken;
             account.tokens.expiry = refreshResult.expiry;
             account.tokens.refreshToken = refreshResult.refreshToken;
-            const accountsAll = persistence.loadAndDecrypt(ACCOUNTS_FILE);
+            const accountsAll = deps.getAccounts();
             const idx = accountsAll.findIndex((a: any) => a.id === account.id);
             if (idx !== -1) {
-              accountsAll[idx].tokens = { ...account.tokens };
-              persistence.encryptAndPersist(accountsAll, ACCOUNTS_FILE);
+              const updatedAccounts = [...accountsAll];
+              updatedAccounts[idx] = { ...updatedAccounts[idx], tokens: { ...account.tokens } };
+              deps.setAccounts(updatedAccounts);
               logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'oauth_refreshed', message: 'Refreshed and persisted new access token' });
             }
           }
@@ -443,7 +438,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
       const before = fetcherLog.length;
       fetcherLog = (next || []).map(e => ({ ...e, id: e.id || newId() }));
       try {
-        persistence.encryptAndPersist(fetcherLog, FETCHER_LOG_FILE);
+        // Fetcher log persistence removed - using per-user logs
         console.log(`[${new Date().toISOString()}] [FETCHER] setFetcherLog: ${before} -> ${fetcherLog.length}`);
       } catch (e) {
         console.error('[ERROR] Failed to persist fetcherLog after setFetcherLog:', e);

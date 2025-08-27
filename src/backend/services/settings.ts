@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { loadAndDecrypt } from '../persistence';
-import { SETTINGS_FILE } from '../utils/paths';
+import { dataPath } from '../utils/paths';
 
 import type { ApiConfig } from '../../shared/types';
 
@@ -18,8 +18,9 @@ export interface Settings {
 export function loadSettings(): Settings {
   let settings: Settings;
   try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      settings = loadAndDecrypt(SETTINGS_FILE) as Settings;
+    const settingsFile = dataPath('settings.json');
+    if (fs.existsSync(settingsFile)) {
+      settings = loadAndDecrypt(settingsFile) as Settings;
     } else {
       settings = defaultSettings();
     }

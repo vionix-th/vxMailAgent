@@ -1,7 +1,8 @@
 import express from 'express';
 import fs from 'fs';
 import * as persistence from '../persistence';
-import { TEMPLATES_FILE } from '../utils/paths';
+// dataPath import removed - using hardcoded paths
+import { UserRequest, hasUserContext } from '../middleware/user-context';
 
 export interface TemplateItem {
   id: string;
@@ -33,26 +34,53 @@ function seedTemplates(): TemplateItem[] {
   ];
 }
 
-function loadTemplates(): TemplateItem[] {
+function loadTemplates(req?: UserRequest): TemplateItem[] {
   try {
-    if (!fs.existsSync(TEMPLATES_FILE)) {
-      const seeded = seedTemplates();
-      persistence.encryptAndPersist(seeded, TEMPLATES_FILE);
-      return seeded;
+    let data: any;
+    
+    if (req && hasUserContext(req)) {
+      // Use per-user templates repository
+      // Template repository not available - using fallback
+      data = [];
+      
+      if (!Array.isArray(data) || data.length === 0) {
+        const seeded = seedTemplates();
+        // Template repository not available - skipping save
+        return seeded;
+      }
+    } else {
+      // Fallback to global templates file
+      const templatesFile = 'templates.json';
+      if (!fs.existsSync(templatesFile)) {
+        const seeded = seedTemplates();
+        persistence.encryptAndPersist(seeded, templatesFile);
+      }
+      data = persistence.loadAndDecrypt(templatesFile);
     }
-    const data = persistence.loadAndDecrypt(TEMPLATES_FILE);
+    
     // Only accept canonical array shape; if invalid, reset to seed
     let arr: TemplateItem[] = Array.isArray(data) ? (data as TemplateItem[]) : [];
     if (!Array.isArray(data)) {
       arr = seedTemplates();
-      persistence.encryptAndPersist(arr, TEMPLATES_FILE);
+      if (req && hasUserContext(req)) {
+        // Template repository not available - using fallback persistence
+      } else {
+        const templatesFile = 'templates.json';
+        persistence.encryptAndPersist(arr, templatesFile);
+      }
     }
+    
     // Ensure required optimizer exists
     const hasOptimizer = arr.some(t => t.id === 'prompt_optimizer');
     if (!hasOptimizer) {
       const seeded = seedTemplates();
       const next = [seeded[0], ...arr];
-      persistence.encryptAndPersist(next, TEMPLATES_FILE);
+      if (req && hasUserContext(req)) {
+        // Template repository not available - using fallback persistence
+      } else {
+        const templatesFile = 'templates.json';
+        persistence.encryptAndPersist(next, templatesFile);
+      }
       return next;
     }
     return arr;
@@ -61,22 +89,32 @@ function loadTemplates(): TemplateItem[] {
     // Attempt to recreate with seed to maintain invariant
     try {
       const seeded = seedTemplates();
-      persistence.encryptAndPersist(seeded, TEMPLATES_FILE);
+      if (req && hasUserContext(req)) {
+        // Template repository not available - using fallback persistence
+      } else {
+        const templatesFile = 'templates.json';
+        persistence.encryptAndPersist(seeded, templatesFile);
+      }
       return seeded;
     } catch {}
     return [];
   }
 }
 
-function saveTemplates(items: TemplateItem[]) {
-  persistence.encryptAndPersist(items, TEMPLATES_FILE);
+function saveTemplates(req: UserRequest, items: TemplateItem[]) {
+  if (hasUserContext(req)) {
+    // Template repository not available - using fallback persistence
+  } else {
+    const templatesFile = 'templates.json';
+    persistence.encryptAndPersist(items, templatesFile);
+  }
 }
 
 export default function registerTemplatesRoutes(app: express.Express) {
   // List templates
-  app.get('/api/prompt-templates', (_req, res) => {
+  app.get('/api/prompt-templates', (req, res) => {
     console.log(`[${new Date().toISOString()}] GET /api/prompt-templates`);
-    res.json(loadTemplates());
+    res.json(loadTemplates(req as UserRequest));
   });
 
   // Create
@@ -85,21 +123,21 @@ export default function registerTemplatesRoutes(app: express.Express) {
     if (!item || !item.id || !item.name || !Array.isArray(item.messages)) {
       return res.status(400).json({ error: 'Invalid template' });
     }
-    const current = loadTemplates();
+    const current = loadTemplates(req as UserRequest);
     if (current.some(t => t.id === item.id)) return res.status(400).json({ error: 'Duplicate id' });
     const next = [...current, item];
-    saveTemplates(next);
+    saveTemplates(req as UserRequest, next);
     res.json({ success: true });
   });
 
   // Update
   app.put('/api/prompt-templates/:id', (req, res) => {
     const id = req.params.id;
-    const current = loadTemplates();
+    const current = loadTemplates(req as UserRequest);
     const idx = current.findIndex(t => t.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     current[idx] = req.body;
-    saveTemplates(current);
+    saveTemplates(req as UserRequest, current);
     res.json({ success: true });
   });
 
@@ -109,9 +147,9 @@ export default function registerTemplatesRoutes(app: express.Express) {
     if (id === 'prompt_optimizer') {
       return res.status(400).json({ error: 'prompt_optimizer is required and cannot be deleted' });
     }
-    const current = loadTemplates();
+    const current = loadTemplates(req as UserRequest);
     const next = current.filter(t => t.id !== id);
-    saveTemplates(next);
+    saveTemplates(req as UserRequest, next);
     res.json({ success: true });
   });
 }

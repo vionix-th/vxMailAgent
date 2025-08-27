@@ -1,9 +1,10 @@
 import express from 'express';
 import type { Trace } from '../../shared/types';
+import { UserRequest } from '../middleware/user-context';
 
 export default function registerDiagnosticTracesRoutes(app: express.Express, deps: {
-  getTraces: () => Trace[];
-  setTraces: (next: Trace[]) => void;
+  getTraces: (req?: UserRequest) => Trace[];
+  setTraces: (req: UserRequest, next: Trace[]) => void;
 }) {
   const router = express.Router();
 
@@ -13,7 +14,7 @@ export default function registerDiagnosticTracesRoutes(app: express.Express, dep
     const lim = Math.min(Math.max(parseInt(String(limit || '100'), 10) || 100, 1), 1000);
     const off = Math.max(parseInt(String(offset || '0'), 10) || 0, 0);
 
-    const traces = deps.getTraces(); // canonical insertion order
+    const traces = deps.getTraces(req as UserRequest); // canonical insertion order
     const total = traces.length;
     const slice = traces.slice(off, off + lim);
 
@@ -40,7 +41,7 @@ export default function registerDiagnosticTracesRoutes(app: express.Express, dep
   // Get a single trace by id
   router.get('/diagnostics/trace/:id', (req, res) => {
     const id = req.params.id;
-    const t = deps.getTraces().find(x => x.id === id);
+    const t = deps.getTraces(req as UserRequest).find(x => x.id === id);
     if (!t) return res.status(404).json({ error: 'Not found' });
     res.json(t);
   });
@@ -48,17 +49,17 @@ export default function registerDiagnosticTracesRoutes(app: express.Express, dep
   // Delete a single trace by id
   router.delete('/diagnostics/trace/:id', (req, res) => {
     const id = req.params.id;
-    const before = deps.getTraces();
+    const before = deps.getTraces(req as UserRequest);
     const next = before.filter(t => t.id !== id);
     const deleted = before.length - next.length;
-    if (deleted > 0) deps.setTraces(next);
+    if (deleted > 0) deps.setTraces(req as UserRequest, next);
     res.json({ deleted });
   });
 
   // Bulk delete traces by ids, or clear all if no ids provided
   router.delete('/diagnostics/traces', (req, res) => {
     const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];
-    const before = deps.getTraces();
+    const before = deps.getTraces(req as UserRequest);
     let next: Trace[] = before;
     if (ids.length > 0) {
       const set = new Set(ids);
@@ -67,7 +68,7 @@ export default function registerDiagnosticTracesRoutes(app: express.Express, dep
       next = [];
     }
     const deleted = before.length - next.length;
-    deps.setTraces(next);
+    deps.setTraces(req as UserRequest, next);
     res.json({ deleted });
   });
 

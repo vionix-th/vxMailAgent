@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { VX_MAILAGENT_KEY } from './config';
+import { VX_MAILAGENT_KEY, USER_MAX_FILE_SIZE_MB } from './config';
+import { validatePathSafety } from './utils/paths';
 
 /**
  * Resolve the data directory for persistent storage. Uses `VX_MAILAGENT_DATA_DIR`
@@ -48,38 +49,92 @@ const getKey = (): Buffer | undefined => {
 };
 
 /**
- * Encrypt an object with AES-256-GCM and write it to disk.
+ * Encrypt an object with AES-256-GCM and write it to disk atomically.
+ * @param obj - Object to persist
+ * @param filePath - Target file path
+ * @param containerPath - Optional container path for security validation
  */
-export function encryptAndPersist(obj: any, filePath: string) {
+export function encryptAndPersist(obj: any, filePath: string, containerPath?: string) {
+  // Security validation if container path provided
+  if (containerPath && !validatePathSafety(filePath, containerPath)) {
+    throw new Error(`Security violation: path ${filePath} is not safe relative to ${containerPath}`);
+  }
+  
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
   
   const key = getKey();
+  let content: string;
+  
   if (!key) {
-    fs.writeFileSync(filePath, JSON.stringify(obj), { encoding: 'utf8' });
-    return;
+    content = JSON.stringify(obj);
+  } else {
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+    const json = JSON.stringify(obj);
+    const encrypted = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    content = Buffer.concat([iv, tag, encrypted]).toString(ENCODING);
   }
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-  const json = JSON.stringify(obj);
-  const encrypted = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  const payload = Buffer.concat([iv, tag, encrypted]).toString(ENCODING);
-  fs.writeFileSync(filePath, payload, { encoding: 'utf8' });
+  
+  // Size validation
+  const maxSizeBytes = USER_MAX_FILE_SIZE_MB * 1024 * 1024;
+  if (Buffer.byteLength(content, 'utf8') > maxSizeBytes) {
+    throw new Error(`File size exceeds limit of ${USER_MAX_FILE_SIZE_MB}MB`);
+  }
+  
+  // Atomic write: tmp file + fsync + rename
+  const tmpPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substr(2, 9)}`;
+  
+  try {
+    // Write to temporary file with secure permissions
+    fs.writeFileSync(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
+    
+    // Force write to disk
+    const fd = fs.openSync(tmpPath, 'r+');
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    
+    // Atomic rename
+    fs.renameSync(tmpPath, filePath);
+  } catch (error) {
+    // Clean up temp file on error
+    try {
+      if (fs.existsSync(tmpPath)) {
+        fs.unlinkSync(tmpPath);
+      }
+    } catch {}
+    throw error;
+  }
 }
 
 /**
  * Load and decrypt a previously persisted object. Falls back to plaintext JSON
  * if encryption is not configured or decryption fails.
+ * @param filePath - Path to file to load
+ * @param containerPath - Optional container path for security validation
  */
-export function loadAndDecrypt(filePath: string): any {
+export function loadAndDecrypt(filePath: string, containerPath?: string): any {
+  // Security validation if container path provided
+  if (containerPath && !validatePathSafety(filePath, containerPath)) {
+    throw new Error(`Security violation: path ${filePath} is not safe relative to ${containerPath}`);
+  }
+  
   const key = getKey();
   const payload = fs.readFileSync(filePath, { encoding: 'utf8' });
+  
+  // Size validation
+  const maxSizeBytes = USER_MAX_FILE_SIZE_MB * 1024 * 1024;
+  if (Buffer.byteLength(payload, 'utf8') > maxSizeBytes) {
+    throw new Error(`File size exceeds limit of ${USER_MAX_FILE_SIZE_MB}MB`);
+  }
+  
   if (!key) {
     return JSON.parse(payload);
   }
+  
   try {
     const buf = Buffer.from(payload, ENCODING);
     const iv = buf.slice(0, IV_LENGTH);

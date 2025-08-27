@@ -1,10 +1,11 @@
 import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
 import { Repository } from '../repository/core';
+import { UserRequest } from '../middleware/user-context';
 
 export interface WorkspacesRoutesDeps {
-  getConversations: () => ConversationThread[];
-  setConversations: (next: ConversationThread[]) => void;
+  getConversations: (req?: UserRequest) => ConversationThread[];
+  setConversations: (req: UserRequest, next: ConversationThread[]) => void;
   workspaceRepo: Repository<WorkspaceItem>;
 }
 
@@ -64,6 +65,13 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
   app.delete('/api/workspaces/:id/items/:itemId', (req, res) => {
     const { itemId } = req.params as { id: string; itemId: string };
     const hard = String(req.query.hard || 'false').toLowerCase() === 'true';
+    const conversations = deps.getConversations(req as UserRequest);
+    const idx = conversations.findIndex(c => c.id === itemId);
+    if (idx === -1) return res.status(404).json({ error: 'Conversation not found' });
+    const updated = { ...conversations[idx], workspaceId: req.params.id };
+    const next = conversations.slice();
+    next[idx] = updated;
+    deps.setConversations(req as UserRequest, next);
     const items = deps.workspaceRepo.getAll();
     const itemIdx = items.findIndex(i => i.id === itemId);
     if (itemIdx === -1) return res.status(404).json({ error: 'Item not found' });

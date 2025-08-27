@@ -1,20 +1,49 @@
 import express from 'express';
 import * as persistence from '../persistence';
 import { Account } from '../../shared/types';
-import { ACCOUNTS_FILE } from '../utils/paths';
+// dataPath import removed - not used
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt } from '../utils/jwt';
+import { UserRequest, getUserContext, hasUserContext } from '../middleware/user-context';
+import fs from 'fs';
+
+/**
+ * Gets accounts from the appropriate source (per-user or global).
+ */
+function getAccounts(req: UserRequest): Account[] {
+  if (hasUserContext(req)) {
+    const { repos } = getUserContext(req);
+    return repos.accounts.getAll();
+  }
+  
+  // Fallback to global accounts file
+  if (!fs.existsSync(ACCOUNTS_FILE)) {
+    return [];
+  }
+  return persistence.loadAndDecrypt(ACCOUNTS_FILE) as Account[];
+}
+
+/**
+ * Saves accounts to the appropriate destination (per-user or global).
+ */
+function saveAccounts(req: UserRequest, accounts: Account[]): void {
+  if (hasUserContext(req)) {
+    const { repos } = getUserContext(req);
+    repos.accounts.setAll(accounts);
+    return;
+  }
+  
+  // Fallback to global accounts file
+  persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
+}
 
 /** Register routes for managing accounts and tokens. */
 export default function registerAccountsRoutes(app: express.Express) {
-  app.get('/api/accounts', (_req, res) => {
+  app.get('/api/accounts', (req: UserRequest, res) => {
     try {
-      if (!require('fs').existsSync(ACCOUNTS_FILE)) {
-        console.log(`[${new Date().toISOString()}] accounts.json.enc not found, returning empty account list`);
-        return res.json([]);
-      }
-      const accounts = persistence.loadAndDecrypt(ACCOUNTS_FILE) as Account[];
-      console.log(`[${new Date().toISOString()}] Loaded ${accounts.length} accounts from encrypted store`);
+      const accounts = getAccounts(req);
+      const source = hasUserContext(req) ? `user ${getUserContext(req).uid}` : 'global';
+      console.log(`[${new Date().toISOString()}] Loaded ${accounts.length} accounts from ${source} store`);
       res.json(accounts);
     } catch (e) {
       console.error(`[${new Date().toISOString()}] Error loading accounts:`, e);
@@ -28,10 +57,10 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (!OUTLOOK_CLIENT_ID || !OUTLOOK_CLIENT_SECRET) {
         return res.status(400).json({ error: 'Missing Outlook OAuth env vars (OUTLOOK_CLIENT_ID/OUTLOOK_CLIENT_SECRET)' });
       }
-      if (!require('fs').existsSync(ACCOUNTS_FILE)) {
-        return res.status(404).json({ error: 'accounts store not found' });
+      const accounts = getAccounts(req as UserRequest);
+      if (accounts.length === 0) {
+        return res.status(404).json({ error: 'no accounts found' });
       }
-      const accounts = persistence.loadAndDecrypt(ACCOUNTS_FILE) as Account[];
       const idx = accounts.findIndex(a => a.id === id);
       if (idx === -1) return res.status(404).json({ error: 'account not found' });
       const account = accounts[idx];
@@ -70,7 +99,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         account.tokens.expiry = result.expiry;
         account.tokens.refreshToken = result.refreshToken;
         accounts[idx] = account;
-        persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
+        saveAccounts(req as UserRequest, accounts);
         console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted during outlook-test for ${id}`);
       }
 
@@ -110,14 +139,12 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: (e as any)?.message || String(e) });
     }
   });
-  app.post('/api/accounts', (req, res) => {
+  app.post('/api/accounts', (req: UserRequest, res) => {
     try {
       const newAccount: Account = req.body;
-      let accounts: Account[] = [];
-      if (require('fs').existsSync(ACCOUNTS_FILE)) {
-        accounts = persistence.loadAndDecrypt(ACCOUNTS_FILE);
-      }
+      const accounts = getAccounts(req);
       const idx = accounts.findIndex(a => a.id === newAccount.id);
+      
       if (idx >= 0) {
         console.log(`[${new Date().toISOString()}] Updating existing account: ${newAccount.email}`);
         accounts[idx] = newAccount;
@@ -125,27 +152,28 @@ export default function registerAccountsRoutes(app: express.Express) {
         console.log(`[${new Date().toISOString()}] Adding new account: ${newAccount.email}`);
         accounts.push(newAccount);
       }
-      persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
-      console.log(`[${new Date().toISOString()}] Saved ${accounts.length} accounts to encrypted store`);
+      
+      saveAccounts(req, accounts);
+      const source = hasUserContext(req) ? `user ${getUserContext(req).uid}` : 'global';
+      console.log(`[${new Date().toISOString()}] Saved ${accounts.length} accounts to ${source} store`);
       res.json({ success: true });
     } catch (e) {
       console.error(`[${new Date().toISOString()}] Error saving account:`, e);
       res.status(500).json({ error: 'Failed to save account' });
     }
   });
-  app.put('/api/accounts/:id', (req: express.Request, res: express.Response) => {
+  app.put('/api/accounts/:id', (req: UserRequest, res: express.Response) => {
     try {
       const id = req.params.id;
-      let accounts: Account[] = [];
-      if (require('fs').existsSync(ACCOUNTS_FILE)) {
-        accounts = persistence.loadAndDecrypt(ACCOUNTS_FILE);
-      }
+      const accounts = getAccounts(req);
       const idx = accounts.findIndex(a => a.id === id);
+      
       if (idx === -1) {
         return res.status(404).json({ error: 'Account not found' });
       }
+      
       accounts[idx] = req.body;
-      persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
+      saveAccounts(req, accounts);
       console.log(`[${new Date().toISOString()}] PUT /api/accounts/${id}: updated`);
       res.json({ success: true });
     } catch (e) {
@@ -157,10 +185,7 @@ export default function registerAccountsRoutes(app: express.Express) {
     console.log(`[DEBUG] DELETE /api/accounts/${req.params.id} invoked`);
     try {
       const id = req.params.id;
-      let accounts: Account[] = [];
-      if (require('fs').existsSync(ACCOUNTS_FILE)) {
-        accounts = persistence.loadAndDecrypt(ACCOUNTS_FILE);
-      }
+      const accounts = getAccounts(req as UserRequest);
       const idx = accounts.findIndex(a => a.id === id);
       if (idx === -1) {
         return res.status(404).json({ error: 'Account not found' });
@@ -200,9 +225,9 @@ export default function registerAccountsRoutes(app: express.Express) {
         }
       }
       const before = accounts.length;
-      accounts = accounts.filter(a => a.id !== id);
-      persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
-      const after = accounts.length;
+      const filteredAccounts = accounts.filter(a => a.id !== id);
+      saveAccounts(req as UserRequest, filteredAccounts);
+      const after = filteredAccounts.length;
       console.log(`[DEBUG] Deleted account ${id}. Accounts before: ${before}, after: ${after}`);
       res.json({ success: true, revokeStatus, revokeError });
     } catch (e) {
@@ -218,10 +243,10 @@ export default function registerAccountsRoutes(app: express.Express) {
     const id = req.params.id;
     console.log(`[${new Date().toISOString()}] POST /api/accounts/${id}/refresh invoked`);
     try {
-      if (!require('fs').existsSync(ACCOUNTS_FILE)) {
-        return res.status(404).json({ error: 'accounts store not found' });
+      const accounts = getAccounts(req as UserRequest);
+      if (accounts.length === 0) {
+        return res.status(404).json({ error: 'no accounts found' });
       }
-      const accounts = persistence.loadAndDecrypt(ACCOUNTS_FILE) as Account[];
       const idx = accounts.findIndex(a => a.id === id);
       if (idx === -1) return res.status(404).json({ error: 'account not found' });
       const account = accounts[idx];
@@ -274,7 +299,7 @@ export default function registerAccountsRoutes(app: express.Express) {
           account.tokens.expiry = result.expiry;
           account.tokens.refreshToken = result.refreshToken;
           accounts[idx] = account;
-          persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
+          saveAccounts(req as UserRequest, accounts);
           console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted Gmail access token for ${id}`);
         }
         return res.json({ ok: true, updated: result.updated, tokens: account.tokens });
@@ -313,7 +338,7 @@ export default function registerAccountsRoutes(app: express.Express) {
           account.tokens.expiry = result.expiry;
           account.tokens.refreshToken = result.refreshToken;
           accounts[idx] = account;
-          persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
+          saveAccounts(req as UserRequest, accounts);
           console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted Outlook access token for ${id}`);
         }
         return res.json({ ok: true, updated: result.updated, tokens: account.tokens });
@@ -404,7 +429,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         account.tokens.expiry = result.expiry;
         account.tokens.refreshToken = result.refreshToken;
         accounts[idx] = account;
-        persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
+        saveAccounts(req as UserRequest, accounts);
         console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted during gmail-test for ${id}`);
       }
       const { google } = require('googleapis');

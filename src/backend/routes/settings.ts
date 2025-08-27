@@ -1,6 +1,6 @@
 import express from 'express';
 import * as persistence from '../persistence';
-import { SETTINGS_FILE } from '../utils/paths';
+import { dataPath } from '../utils/paths';
 
 export interface SettingsRoutesDeps {
   getSettings: () => any;
@@ -33,7 +33,8 @@ export default function registerSettingsRoutes(app: express.Express, deps: Setti
     if (typeof req.body.sessionTimeoutMinutes === 'number') {
       settings.sessionTimeoutMinutes = req.body.sessionTimeoutMinutes;
     }
-    persistence.encryptAndPersist(settings, SETTINGS_FILE);
+    const settingsFile = dataPath('settings.json');
+    persistence.encryptAndPersist(settings, settingsFile);
     console.log(`[${new Date().toISOString()}] PUT /api/settings: updated`);
     res.json({ success: true });
   });

@@ -1,25 +1,26 @@
 import express from 'express';
 import * as persistence from '../persistence';
-import { SETTINGS_FILE } from '../utils/paths';
+// dataPath import removed - not used
 import { FetcherLogEntry } from '../../shared/types';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
+import { UserRequest } from '../middleware/user-context';
 
 /** Dependencies for fetcher routes. */
 export interface FetcherRoutesDeps {
-  getStatus: () => { active: boolean; running?: boolean; lastRun: string | null; nextRun: string | null; accountStatus: Record<string, { lastRun: string | null; lastError: string | null }> };
-  startFetcherLoop: () => void;
-  stopFetcherLoop: () => void;
-  fetchEmails: () => Promise<void>;
+  getStatus: (req?: UserRequest) => { active: boolean; running?: boolean; lastRun: string | null; nextRun: string | null; accountStatus: Record<string, { lastRun: string | null; lastError: string | null }> };
+  startFetcherLoop: (req?: UserRequest) => void;
+  stopFetcherLoop: (req?: UserRequest) => void;
+  fetchEmails: (req?: UserRequest) => Promise<void>;
   getSettings: () => any;
-  getFetcherLog: () => FetcherLogEntry[];
-  setFetcherLog: (next: FetcherLogEntry[]) => void;
+  getFetcherLog: (req?: UserRequest) => FetcherLogEntry[];
+  setFetcherLog: (req: UserRequest, next: FetcherLogEntry[]) => void;
 }
 
 /** Register routes controlling the email fetcher. */
 export default function registerFetcherRoutes(app: express.Express, deps: FetcherRoutesDeps) {
   const hub: RepositoryHub = {
     getFetcherLog: () => deps.getFetcherLog(),
-    setFetcherLog: (next: FetcherLogEntry[]) => deps.setFetcherLog(next),
+    setFetcherLog: (next: FetcherLogEntry[]) => deps.setFetcherLog({} as UserRequest, next),
     getOrchestrationLog: () => [],
     setOrchestrationLog: () => {},
     getConversations: () => [],
@@ -32,41 +33,50 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     setWorkspaceItems: () => {},
   };
   const cleanup = createCleanupService(hub);
-  app.get('/api/fetcher/status', (_req, res) => {
-    const status = deps.getStatus();
+  app.get('/api/fetcher/status', (req, res) => {
+    const status = deps.getStatus(req as UserRequest);
     res.json(status);
   });
 
-  app.post('/api/fetcher/start', (_req, res) => {
-    deps.startFetcherLoop();
+  app.post('/api/fetcher/start', (req, res) => {
+    deps.startFetcherLoop(req as UserRequest);
     const settings = deps.getSettings();
     settings.fetcherAutoStart = true;
     try { persistence.encryptAndPersist(settings, SETTINGS_FILE); } catch {}
-    res.json({ success: true, active: deps.getStatus().active });
+    res.json({ success: true, active: deps.getStatus(req as UserRequest).active });
   });
 
-  app.post('/api/fetcher/stop', (_req, res) => {
-    deps.stopFetcherLoop();
+  app.post('/api/fetcher/stop', (req, res) => {
+    deps.stopFetcherLoop(req as UserRequest);
     const settings = deps.getSettings();
     settings.fetcherAutoStart = false;
     try { persistence.encryptAndPersist(settings, SETTINGS_FILE); } catch {}
-    res.json({ success: true, active: deps.getStatus().active });
+    res.json({ success: true, active: deps.getStatus(req as UserRequest).active });
   });
 
-  app.post('/api/fetcher/trigger', (_req, res) => {
-    deps.fetchEmails();
-    res.json({ success: true });
-  });
-
-  app.post('/api/fetcher/run', async (_req, res) => {
-    console.log(`[${new Date().toISOString()}] [FETCHER] Manual fetch triggered`);
-    await deps.fetchEmails();
-    res.json({ success: true });
-  });
-
-  app.get('/api/fetcher/logs', (_req, res) => {
+  app.post('/api/fetcher/fetch', async (req, res) => {
     try {
-      const log = deps.getFetcherLog();
+      await deps.fetchEmails(req as UserRequest);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e?.message || e) });
+    }
+  });
+
+  app.post('/api/fetcher/run', async (req, res) => {
+    console.log(`[${new Date().toISOString()}] [FETCHER] Manual fetch triggered`);
+    await deps.fetchEmails(req as UserRequest);
+    res.json({ success: true });
+  });
+
+  app.get('/api/fetcher/log', (req, res) => {
+    const log = deps.getFetcherLog(req as UserRequest);
+    res.json(log);
+  });
+
+  app.get('/api/fetcher/logs', (req, res) => {
+    try {
+      const log = deps.getFetcherLog(req as UserRequest);
       res.json(log);
     } catch (e) {
       console.error('[ERROR] Failed to read fetcherLog:', e);
