@@ -69,13 +69,7 @@ export default function Conversations() {
   const [wsItems, setWsItems] = useState<WorkspaceItem[]>([]);
   const [wsLoading, setWsLoading] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
-  const [newType, setNewType] = useState<WorkspaceItemTypeUI>('text');
-  const [newLabel, setNewLabel] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [newTags, setNewTags] = useState('');
-  const [newData, setNewData] = useState('');
-  const [newMimeType, setNewMimeType] = useState('');
-  const [newEncoding, setNewEncoding] = useState<'utf8'|'base64'|'binary'|''>('');
+  // REMOVED: Workspace item creation state variables - no longer needed
   const [finalizing, setFinalizing] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [directors, setDirectors] = useState<Director[]>([]);
@@ -201,35 +195,8 @@ export default function Conversations() {
     }
   }
 
-  async function addWorkspaceItem() {
-    if (!detail || detail.thread.kind !== 'director') return;
-    try {
-      const tags = newTags.split(',').map(t => t.trim()).filter(Boolean);
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/items`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          label: newLabel || undefined,
-          description: newDescription || undefined,
-          tags,
-          mimeType: newMimeType || undefined,
-          encoding: (newEncoding || undefined) as any,
-          data: newData || undefined,
-        })
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to add item');
-      setNewLabel('');
-      setNewDescription('');
-      setNewTags('');
-      setNewData('');
-      setNewMimeType('');
-      setNewEncoding('');
-      await loadWorkspaceItems(detail.thread.id);
-    } catch (e: any) {
-      setWsError(e?.message || String(e));
-    }
-  }
+  // REMOVED: Direct workspace item creation
+  // Only agents can create workspace items via tool calls during orchestration
 
   function openEdit(item: WorkspaceItem) {
     setEditTarget(item);
@@ -459,35 +426,7 @@ export default function Conversations() {
           <Divider sx={{ my: 2 }} />
           <Typography variant="subtitle1" gutterBottom>{t('conversations.workspace.title')}</Typography>
           {wsError && <Alert severity="error" sx={{ mb: 1 }}>{wsError}</Alert>}
-          {detail.thread.kind === 'director' && !isThreadFinalized(detail.thread) && (
-            <Stack spacing={1} sx={{ mb: 1 }}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
-                <TextField select size="small" label={t('conversations.workspace.add.type')} value={newType} onChange={(e) => setNewType(e.target.value as WorkspaceItemTypeUI)} sx={{ minWidth: 160 }}>
-                  {WORKSPACE_ITEM_TYPES.map(ti => (
-                    <MenuItem key={ti} value={ti}>{ti}</MenuItem>
-                  ))}
-                </TextField>
-                <TextField size="small" label={t('conversations.workspace.add.label')} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} fullWidth />
-                <TextField size="small" label={t('conversations.workspace.add.description')} value={newDescription} onChange={(e) => setNewDescription(e.target.value)} sx={{ minWidth: 200 }} />
-                <TextField size="small" label={t('conversations.workspace.add.tags')} value={newTags} onChange={(e) => setNewTags(e.target.value)} sx={{ minWidth: 200 }} />
-              </Stack>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
-                <TextField size="small" label={t('conversations.workspace.add.data')} value={newData} onChange={(e) => setNewData(e.target.value)} sx={{ minWidth: 160 }} />
-                <TextField size="small" label={t('conversations.workspace.add.mimeType')} value={newMimeType} onChange={(e) => setNewMimeType(e.target.value)} sx={{ minWidth: 160 }} />
-                <TextField select size="small" label={t('conversations.workspace.add.encoding')} value={newEncoding} onChange={(e) => setNewEncoding(e.target.value as any)} sx={{ minWidth: 140 }}>
-                  <MenuItem value="">{t('conversations.workspace.add.encodingNone')}</MenuItem>
-                  <MenuItem value="utf8">utf8</MenuItem>
-                  <MenuItem value="base64">base64</MenuItem>
-                  <MenuItem value="binary">binary</MenuItem>
-                </TextField>
-                {/* URL/sizeBytes/filename removed in data-centric model */}
-              </Stack>
-              <Stack direction="row" spacing={1}>
-                <Button variant="outlined" size="small" onClick={addWorkspaceItem} disabled={!newLabel.trim() && !newDescription.trim() && !newData.trim()}>{t('actions.add')}</Button>
-                <Button variant="text" size="small" startIcon={<RefreshIcon />} onClick={() => loadWorkspaceItems(detail.thread.id)} disabled={wsLoading}>{t('conversations.workspace.add.refresh')}</Button>
-              </Stack>
-            </Stack>
-          )}
+          {/* REMOVED: Manual workspace item creation UI - only agents create items via tool calls */}
           <TableContainer>
             <Table size="small">
               <TableHead>

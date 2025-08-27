@@ -1,6 +1,5 @@
 import express from 'express';
-import { ConversationThread, WorkspaceItem, WorkspaceItemInput } from '../../shared/types';
-import { newId } from '../utils/id';
+import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
 import { Repository } from '../repository/core';
 
 export interface WorkspacesRoutesDeps {
@@ -17,32 +16,8 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     res.json(includeDeleted ? items : items.filter(i => !i.deleted));
   });
 
-  app.post('/api/workspaces/:id/items', (req, res) => {
-    const body = req.body as WorkspaceItemInput;
-    // Lightweight validation (non-prescriptive, guard commons)
-    const enc = body.encoding as any;
-    if (typeof enc !== 'undefined' && !['utf8','base64','binary'].includes(enc)) {
-      return res.status(400).json({ error: `Invalid encoding: ${enc}` });
-    }
-    const now = new Date().toISOString();
-    const item: WorkspaceItem = {
-      id: newId(),
-      label: typeof body.label !== 'undefined' ? body.label : undefined,
-      description: typeof body.description !== 'undefined' ? body.description : undefined,
-      mimeType: typeof body.mimeType !== 'undefined' ? body.mimeType : undefined,
-      encoding: typeof body.encoding !== 'undefined' ? body.encoding : undefined,
-      data: typeof body.data !== 'undefined' ? body.data : undefined,
-      provenance: { by: 'director' },
-      tags: Array.isArray(body.tags) ? body.tags : [],
-      created: now,
-      updated: now,
-      revision: 1,
-    };
-    const current = deps.workspaceRepo.getAll();
-    deps.workspaceRepo.setAll([...current, item]);
-    console.log(`[${now}] POST /api/workspaces/items -> added item ${item.id}`);
-    res.json({ success: true, item });
-  });
+  // REMOVED: Direct workspace item creation via REST API
+  // Only orchestration should create workspace items with proper context
 
   app.get('/api/workspaces/:id/items/:itemId', (req, res) => {
     const { itemId } = req.params as { id: string; itemId: string };

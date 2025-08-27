@@ -112,13 +112,23 @@ export interface WorkspaceItem {
   mimeType?: string;
   encoding?: 'utf8' | 'base64' | 'binary';
   data?: string;
-  provenance: { by: 'director' | 'agent' | 'tool'; agentId?: string; tool?: ToolCallKind | string; conversationId?: string };
   tags?: string[];
   created: string;
   updated: string;
   revision?: number;
   // Soft-delete flag; item remains addressable but should be hidden by default
   deleted?: boolean;
+  // Required context with provenance collapsed in
+  context: {
+    email: { id: string; subject?: string; from?: string; date?: string };
+    director: { id: string; name?: string };
+    agent?: { id?: string; name?: string };
+    // Provenance information
+    createdBy: 'director' | 'agent' | 'tool';
+    agentId?: string;
+    tool?: ToolCallKind | string;
+    conversationId?: string;
+  };
 }
 
 export interface WorkspaceItemInput {
@@ -129,6 +139,14 @@ export interface WorkspaceItemInput {
   encoding?: 'utf8' | 'base64' | 'binary';
   data?: string;
   tags?: string[];
+  // Optional write-time context snapshot; if provided, persisted as-is
+  context?: {
+    email: { id: string; subject?: string; from?: string; date?: string };
+    director: { id: string; name?: string };
+    agent?: { id?: string; name?: string };
+  };
+  // Optional provenance override (defaults applied by backend when omitted)
+  provenance?: { by: 'director' | 'agent' | 'tool'; agentId?: string; tool?: ToolCallKind | string; conversationId?: string };
 }
 
 export interface Attachment {

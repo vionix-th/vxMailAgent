@@ -234,11 +234,12 @@ async function handleWorkspaceToolCall(payload: any): Promise<ToolCallResult> {
         mimeType: payload.mimeType || 'text/plain',
         encoding: payload.encoding || 'utf8',
         data: payload.data || '',
-        provenance: { by: 'agent', conversationId: payload.conversationId }, // Default to agent since this is called from agent conversations
         tags: payload.tags || [],
         created: now,
         updated: now,
-        revision: 1
+        revision: 1,
+        // Required context from orchestration
+        context: payload.context,
       };
       const current = workspaceRepo.getAll();
       workspaceRepo.setAll([...current, item]);

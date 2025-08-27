@@ -29,7 +29,7 @@ import Code from '@mui/icons-material/Code';
 import WarningAmber from '@mui/icons-material/WarningAmber';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ConversationThread, WorkspaceItem } from '../../shared/types';
+import type { WorkspaceItem } from '../../shared/types';
 import { useTranslation } from 'react-i18next';
 import { deleteWorkspaceItem } from './utils/api';
 
@@ -37,7 +37,6 @@ import { deleteWorkspaceItem } from './utils/api';
 
 export default function Results() {
   const { t, i18n } = useTranslation();
-  const [threads, setThreads] = useState<ConversationThread[]>([]);
   const [workspaceItems, setWorkspaceItems] = useState<WorkspaceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,12 +110,9 @@ export default function Results() {
 
   const fetchThreads = () => {
     setLoading(true);
-    Promise.all([
-      fetch('/api/conversations?kind=director&limit=1000').then(r => r.json()),
-      fetch('/api/workspaces/default/items').then(r => r.json())
-    ])
-      .then(([conversationData, workspaceData]) => {
-        setThreads(Array.isArray(conversationData?.items) ? conversationData.items : []);
+    fetch('/api/workspaces/default/items')
+      .then(r => r.json())
+      .then((workspaceData) => {
         setWorkspaceItems(Array.isArray(workspaceData) ? workspaceData : []);
         setLoading(false);
       })
@@ -125,14 +121,13 @@ export default function Results() {
 
   useEffect(() => { fetchThreads(); }, []);
 
-  // Delete a single workspace item (soft by default)
-  const handleDeleteItem = async (item: WorkspaceItem, hard = false) => {
+  // Delete a single workspace item
+  const handleDeleteItem = async (item: WorkspaceItem) => {
     try {
       if (!item?.id) return;
-      const confirmMsg = hard ? 'Permanently delete this item? This cannot be undone.' : 'Delete this item?';
-      if (!window.confirm(confirmMsg)) return;
+      if (!window.confirm('Delete this item?')) return;
       setDeleting(true);
-      await deleteWorkspaceItem(item.id, { hard });
+      await deleteWorkspaceItem(item.id);
       // Refresh and clear active selection
       await fetchThreads();
       setActiveItemId(null);
@@ -143,22 +138,21 @@ export default function Results() {
     }
   };
 
-  // Bulk delete all items for a director in current group
-  const handleDeleteDirectorItems = async (dirId: string, hard = false) => {
+  // No bulk delete actions in left navigation
+
+  // Bulk delete all items for a director in the current active group (right pane only)
+  const handleDeleteDirectorItems = async (dirId: string) => {
     try {
       const active = activeGroup;
       if (!active) return;
-      // Determine items for this director similar to render logic
-      const dirThreads = (active.threads || []).filter((t: any) => t.directorId === dirId);
-      const items: WorkspaceItem[] = workspaceItems
-        .filter((i: WorkspaceItem) => i.provenance?.by === 'agent' && dirThreads.some(t => t.id === i.provenance?.conversationId))
-        .filter((i: any) => !i.deleted) as any;
+      const items: WorkspaceItem[] = (workspaceItems || [])
+        .filter((i) => !i.deleted && i.context?.email?.id === active.key && i.context?.director?.id === dirId);
       if (!items.length) return;
-      const confirmMsg = hard ? `Permanently delete ${items.length} item(s) for this director? This cannot be undone.` : `Delete ${items.length} item(s) for this director?`;
+      const confirmMsg = `Delete ${items.length} item(s) for this director?`;
       if (!window.confirm(confirmMsg)) return;
       setDeleting(true);
       for (const it of items) {
-        await deleteWorkspaceItem(it.id, { hard });
+        await deleteWorkspaceItem(it.id);
       }
       await fetchThreads();
       setActiveItemId(null);
@@ -169,36 +163,56 @@ export default function Results() {
     }
   };
 
-  // Group entries by email id (or timestamp if missing) for a cleaner root view
-  const groups = useMemo(() => {
-    const m = new Map<string, ConversationThread[]>();
-    for (const t of threads) {
-      const key = (t.email as any)?.id || t.id;
-      const list = m.get(key) || [];
-      list.push(t);
-      m.set(key, list);
+  // Bulk delete all items for the current active email group (right pane only)
+  const handleDeleteEmailGroupItems = async () => {
+    try {
+      const active = activeGroup;
+      if (!active) return;
+      const items: WorkspaceItem[] = (workspaceItems || [])
+        .filter((i) => !i.deleted && i.context?.email?.id === active.key);
+      if (!items.length) return;
+      const confirmMsg = `Delete ${items.length} item(s) for this email?`;
+      if (!window.confirm(confirmMsg)) return;
+      setDeleting(true);
+      for (const it of items) {
+        await deleteWorkspaceItem(it.id);
+      }
+      await fetchThreads();
+      setActiveItemId(null);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setDeleting(false);
     }
-    const arr = Array.from(m.entries()).map(([key, list]) => {
-      const anyWithEmail = list.find(x => !!x.email);
-      const email = (anyWithEmail?.email || list[0]?.email) as any;
-      const subject = email?.subject || t('results.noSubject');
-      const from = email?.from || '';
-      const date = email?.date || '';
-      // Sort threads in a group by startedAt desc
-      const sorted = list.slice().sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
-      return { key, email, subject, from, date, threads: sorted };
-    });
-    // Sort groups by email date desc if present; fallback to latest thread startedAt
+  };
+
+  // Group entries purely by write-time email context
+  const groups = useMemo(() => {
+    const items = (workspaceItems || []).filter(i => !i.deleted && i?.context?.email?.id);
+    const m = new Map<string, { key: string; subject: string; from: string; date: string; }>();
+    for (const it of items) {
+      const emailId = String(it.context!.email.id);
+      const existing = m.get(emailId);
+      const subj = it.context?.email?.subject || t('results.noSubject');
+      const from = it.context?.email?.from || '';
+      const date = it.context?.email?.date || '';
+      if (!existing) m.set(emailId, { key: emailId, subject: subj, from, date });
+      else {
+        // keep the latest date if provided
+        const keep = parseTime(date) > parseTime(existing.date) ? { key: emailId, subject: subj || existing.subject, from: from || existing.from, date } : existing;
+        m.set(emailId, keep);
+      }
+    }
+    const arr = Array.from(m.values());
+    // Sort by email date desc
     arr.sort((a, b) => {
-      const da = a.email?.date || a.threads[0]?.startedAt || '';
-      const db = b.email?.date || b.threads[0]?.startedAt || '';
-      const ta = parseTime(da);
-      const tb = parseTime(db);
+      const ta = parseTime(a.date);
+      const tb = parseTime(b.date);
       if (ta === tb) return 0;
       return ta > tb ? -1 : 1;
     });
     return arr;
-  }, [threads, t]);
+  }, [workspaceItems, t]);
 
   // Filter groups by subject/from (case-insensitive)
   const filteredGroups = useMemo(() => {
@@ -307,92 +321,93 @@ export default function Results() {
                       </ListItemButton>
                       <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                         <List dense disablePadding sx={{ pl: 0 }}>
-                          {Array.from(new Set((g.threads || []).map((t: any) => t.directorId).filter((x: any) => !!x)))
-                            .sort((a: string, b: string) => {
-                              const ia = directorOrder.indexOf(a);
-                              const ib = directorOrder.indexOf(b);
-                              if (ia === -1 && ib === -1) return a.localeCompare(b);
-                              if (ia === -1) return 1;
-                              if (ib === -1) return -1;
-                              return ia - ib;
-                            })
-                            .map((dirId: string) => {
-                              const isDirectorSelected = activeGroupKey === g.key && activeDirectorId === dirId && !activeItemId;
-                              const name = directorNameMap[dirId] || dirId;
-                              const dirThreads = (g.threads || []).filter((t: any) => t.directorId === dirId);
-                              const items: WorkspaceItem[] = workspaceItems
-                                .filter((i: WorkspaceItem) => i.provenance?.by === 'agent' && dirThreads.some(t => t.id === i.provenance?.conversationId))
-                                .filter((i: any) => !i.deleted) as any;
-                              const dirKey = `${g.key}:${dirId}`;
-                              const dirExpanded = expandedDirs[dirKey] ?? true;
-                              const toggleDir = (e: React.MouseEvent) => { e.stopPropagation(); setExpandedDirs((s) => ({ ...s, [dirKey]: !dirExpanded })); };
-                              const sortedItems = (items || []).slice().sort((a: any, b: any) => {
-                                const ta = (a.created || a.updated || '') as string;
-                                const tb = (b.created || b.updated || '') as string;
-                                return (tb || '').localeCompare(ta || '');
-                              });
-                              return (
-                                <React.Fragment key={dirId}>
-                                  <ListItemButton
-                                    selected={isDirectorSelected}
-                                    onClick={(e) => { e.stopPropagation(); if (activeGroupKey !== g.key) setActiveGroupKey(g.key); setActiveDirectorId(dirId); setActiveItemId(null); }}
-                                    sx={{ pl: 1.25, pr: 1, py: 0.625, borderRadius: 1, position: 'relative', '&:hover': { backgroundColor: 'action.hover' }, '&.Mui-selected': { backgroundColor: 'action.selected' }, '&.Mui-selected::before': { content: '""', position: 'absolute', left: 0, top: 5, bottom: 5, width: 2, bgcolor: 'primary.main', borderRadius: 2 }, '& .MuiListItemIcon-root': { color: 'text.secondary' }, '&.Mui-selected .MuiListItemIcon-root': { color: 'primary.main' } }}
-                                  >
-                                    <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
-                                      <AccountTree fontSize="small" />
-                                    </ListItemIcon>
-                                    <ListItemText primaryTypographyProps={{ variant: 'body2', sx: { lineHeight: 1.4 } }} primary={name} />
-                                    <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, pr: 1 }}>
-                                      <Chip label={sortedItems.length} size="small" variant="outlined" sx={{ height: 20, '& .MuiChip-label': { px: 0.75, lineHeight: '20px' } }} />
-                                      <IconButton size="small" edge="end" aria-label={dirExpanded ? t('results.collapse') : t('results.expand')} onClick={toggleDir} sx={{ ml: 0 }}>
-                                        {dirExpanded ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
-                                      </IconButton>
-                                    </Box>
-                                  </ListItemButton>
-                                  <Collapse in={dirExpanded} timeout="auto" unmountOnExit>
-                                    {sortedItems.length > 0 && (
-                                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', py: 0.75, px: 1.25 }}>
-                                        <Button size="small" color="error" variant="outlined" disabled={deleting} onClick={(e) => { e.stopPropagation(); handleDeleteDirectorItems(dirId, false); }}>Delete All</Button>
-                                        <Button size="small" color="error" variant="contained" disabled={deleting} onClick={(e) => { e.stopPropagation(); handleDeleteDirectorItems(dirId, true); }}>Delete Permanently</Button>
+                          {(() => {
+                            // derive director ids from items in this email group
+                            const dirIdsSet = new Set<string>();
+                            (workspaceItems || []).forEach((it) => {
+                              if (!it.deleted && it.context?.email?.id === g.key && it.context?.director?.id) dirIdsSet.add(String(it.context.director.id));
+                            });
+                            const dirIds = Array.from(dirIdsSet);
+                            // Only keep directors that actually have items (already ensured)
+                            return dirIds
+                              .sort((a: string, b: string) => {
+                                const ia = directorOrder.indexOf(a);
+                                const ib = directorOrder.indexOf(b);
+                                if (ia === -1 && ib === -1) return a.localeCompare(b);
+                                if (ia === -1) return 1;
+                                if (ib === -1) return -1;
+                                return ia - ib;
+                              })
+                              .map((dirId: string) => {
+                                const isDirectorSelected = activeGroupKey === g.key && activeDirectorId === dirId && !activeItemId;
+                                const name = directorNameMap[dirId] || dirId;
+                                const items: WorkspaceItem[] = (workspaceItems || [])
+                                  .filter((i) => !i.deleted && i.context?.email?.id === g.key && i.context?.director?.id === dirId);
+                                const dirKey = `${g.key}:${dirId}`;
+                                const dirExpanded = expandedDirs[dirKey] ?? true;
+                                const toggleDir = (e: React.MouseEvent) => { e.stopPropagation(); setExpandedDirs((s) => ({ ...s, [dirKey]: !dirExpanded })); };
+                                const sortedItems = (items || []).slice().sort((a: any, b: any) => {
+                                  const ta = (a.created || a.updated || '') as string;
+                                  const tb = (b.created || b.updated || '') as string;
+                                  return (tb || '').localeCompare(ta || '');
+                                });
+                                return (
+                                  <React.Fragment key={dirId}>
+                                    <ListItemButton
+                                      selected={isDirectorSelected}
+                                      onClick={(e) => { e.stopPropagation(); if (activeGroupKey !== g.key) setActiveGroupKey(g.key); setActiveDirectorId(dirId); setActiveItemId(null); }}
+                                      sx={{ pl: 1.25, pr: 1, py: 0.625, borderRadius: 1, position: 'relative', '&:hover': { backgroundColor: 'action.hover' }, '&.Mui-selected': { backgroundColor: 'action.selected' }, '&.Mui-selected::before': { content: '""', position: 'absolute', left: 0, top: 5, bottom: 5, width: 2, bgcolor: 'primary.main', borderRadius: 2 }, '& .MuiListItemIcon-root': { color: 'text.secondary' }, '&.Mui-selected .MuiListItemIcon-root': { color: 'primary.main' } }}
+                                    >
+                                      <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
+                                        <AccountTree fontSize="small" />
+                                      </ListItemIcon>
+                                      <ListItemText primaryTypographyProps={{ variant: 'body2', sx: { lineHeight: 1.4 } }} primary={name} />
+                                      <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, pr: 1 }}>
+                                        <Chip label={sortedItems.length} size="small" variant="outlined" sx={{ height: 20, '& .MuiChip-label': { px: 0.75, lineHeight: '20px' } }} />
+                                        <IconButton size="small" edge="end" aria-label={dirExpanded ? t('results.collapse') : t('results.expand')} onClick={toggleDir} sx={{ ml: 0 }}>
+                                          {dirExpanded ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+                                        </IconButton>
                                       </Box>
-                                    )}
-                                    <List dense disablePadding sx={{ pl: 0 }}>
-                                      {sortedItems.length === 0 ? (
-                                        <ListItemButton disableRipple disableTouchRipple sx={{ cursor: 'default', pl: 1.25, pr: 1, py: 0.5, opacity: 0.7 }}>
-                                          <ListItemText primaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }} primary={t('results.noItems')} />
-                                        </ListItemButton>
-                                      ) : (
-                                        sortedItems.map((it: any) => {
-                                          const isChildActive = activeItemId === it.id;
-                                          return (
-                                            <ListItemButton
-                                              key={`${dirId}-item-${it.id}`}
-                                              selected={isChildActive}
-                                              onClick={(ev) => { ev.stopPropagation(); if (activeGroupKey !== g.key) setActiveGroupKey(g.key); setActiveDirectorId(dirId); setActiveItemId(it.id); }}
-                                              sx={{ pl: 1.25, pr: 1, py: 0.5, borderRadius: 1, position: 'relative', '&:hover': { backgroundColor: 'action.hover' }, '&.Mui-selected': { backgroundColor: 'action.selected' }, '&.Mui-selected::before': { content: '""', position: 'absolute', left: 0, top: 5, bottom: 5, width: 2, bgcolor: 'primary.main', borderRadius: 2 } }}
-                                            >
-                                              <ListItemIcon sx={{ minWidth: 24, mr: 0.75 }}>
-                                                {(() => {
-                                                  const k = getItemKind(it as WorkspaceItem);
-                                                  if (k === 'image') return <Image fontSize="small" />;
-                                                  if (k === 'json') return <Code fontSize="small" />;
-                                                  if (k === 'error') return <WarningAmber fontSize="small" color="warning" />;
-                                                  return <Description fontSize="small" />;
-                                                })()}
-                                              </ListItemIcon>
-                                              <ListItemText
-                                                primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { lineHeight: 1.4 } }}
-                                                primary={getItemTitle(it as WorkspaceItem)}
-                                              />
-                                            </ListItemButton>
-                                          );
-                                        })
-                                      )}
-                                    </List>
-                                  </Collapse>
-                                </React.Fragment>
-                              );
-                            })}
+                                    </ListItemButton>
+                                    <Collapse in={dirExpanded} timeout="auto" unmountOnExit>
+                                      <List dense disablePadding sx={{ pl: 0 }}>
+                                        {sortedItems.length === 0 ? (
+                                          <ListItemButton disableRipple disableTouchRipple sx={{ cursor: 'default', pl: 1.25, pr: 1, py: 0.5, opacity: 0.7 }}>
+                                            <ListItemText primaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }} primary={t('results.noItems')} />
+                                          </ListItemButton>
+                                        ) : (
+                                          sortedItems.map((it: any) => {
+                                            const isChildActive = activeItemId === it.id;
+                                            return (
+                                              <ListItemButton
+                                                key={`${dirId}-item-${it.id}`}
+                                                selected={isChildActive}
+                                                onClick={(ev) => { ev.stopPropagation(); if (activeGroupKey !== g.key) setActiveGroupKey(g.key); setActiveDirectorId(dirId); setActiveItemId(it.id); }}
+                                                sx={{ pl: 1.25, pr: 1, py: 0.5, borderRadius: 1, position: 'relative', '&:hover': { backgroundColor: 'action.hover' }, '&.Mui-selected': { backgroundColor: 'action.selected' }, '&.Mui-selected::before': { content: '""', position: 'absolute', left: 0, top: 5, bottom: 5, width: 2, bgcolor: 'primary.main', borderRadius: 2 } }}
+                                              >
+                                                <ListItemIcon sx={{ minWidth: 24, mr: 0.75 }}>
+                                                  {(() => {
+                                                    const k = getItemKind(it as WorkspaceItem);
+                                                    if (k === 'image') return <Image fontSize="small" />;
+                                                    if (k === 'json') return <Code fontSize="small" />;
+                                                    if (k === 'error') return <WarningAmber fontSize="small" color="warning" />;
+                                                    return <Description fontSize="small" />;
+                                                  })()}
+                                                </ListItemIcon>
+                                                <ListItemText
+                                                  primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { lineHeight: 1.4 } }}
+                                                  primary={getItemTitle(it as WorkspaceItem)}
+                                                />
+                                              </ListItemButton>
+                                            );
+                                          })
+                                        )}
+                                      </List>
+                                    </Collapse>
+                                  </React.Fragment>
+                                );
+                              });
+                          })()}
                         </List>
                       </Collapse>
                     </>
@@ -502,8 +517,7 @@ export default function Results() {
                       <Typography variant="h6">{item.label || t('results.preview')} · {name}</Typography>
                       <Stack direction="row" spacing={1}>
                         <Button size="small" variant="text" onClick={() => setActiveItemId(null)}>{t('results.backToDirector')}</Button>
-                        <Button size="small" color="error" variant="outlined" disabled={deleting} onClick={() => handleDeleteItem(item, false)}>Delete</Button>
-                        <Button size="small" color="error" variant="contained" disabled={deleting} onClick={() => handleDeleteItem(item, true)}>Delete Permanently</Button>
+                        <Button size="small" color="error" variant="outlined" disabled={deleting} onClick={() => handleDeleteItem(item)}>Delete</Button>
                       </Stack>
                     </Stack>
                     <Divider sx={{ mb: 1.5 }} />
@@ -512,7 +526,43 @@ export default function Results() {
                 );
               })()
             ) : (
-              <Typography variant="body2" color="text.secondary">{t('results.selectItem')}</Typography>
+              (() => {
+                const grp = activeGroup;
+                if (!grp) return <Typography variant="body2" color="text.secondary">{t('results.selectItem')}</Typography>;
+                if (activeDirectorId === 'all') {
+                  const items: WorkspaceItem[] = (workspaceItems || [])
+                    .filter((i) => !i.deleted && i.context?.email?.id === grp.key);
+                  return (
+                    <Box>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                        <Typography variant="h6">{grp.subject}</Typography>
+                        <Stack direction="row" spacing={1}>
+                          <Button size="small" color="error" variant="outlined" disabled={deleting || items.length === 0} onClick={handleDeleteEmailGroupItems}>Delete All</Button>
+                        </Stack>
+                      </Stack>
+                      <Divider sx={{ mb: 1.5 }} />
+                      <Typography variant="body2" color="text.secondary">{items.length} item(s) under this email. Select an item to preview.</Typography>
+                    </Box>
+                  );
+                } else {
+                  const dirId = String(activeDirectorId);
+                  const name = directorNameMap[dirId] || dirId;
+                  const items: WorkspaceItem[] = (workspaceItems || [])
+                    .filter((i) => !i.deleted && i.context?.email?.id === grp.key && i.context?.director?.id === dirId);
+                  return (
+                    <Box>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                        <Typography variant="h6">{name}</Typography>
+                        <Stack direction="row" spacing={1}>
+                          <Button size="small" color="error" variant="outlined" disabled={deleting || items.length === 0} onClick={() => handleDeleteDirectorItems(dirId)}>Delete All</Button>
+                        </Stack>
+                      </Stack>
+                      <Divider sx={{ mb: 1.5 }} />
+                      <Typography variant="body2" color="text.secondary">{items.length} item(s) for this director. Select an item to preview.</Typography>
+                    </Box>
+                  );
+                }
+              })()
             )}
             </Box>
           </Paper>

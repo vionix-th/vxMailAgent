@@ -245,7 +245,31 @@ export async function runAgentConversation(
         }
 
         try {
-          const argsWithContext = { ...args, conversationId: agentThread.id };
+          // Find director and agent info for context enrichment
+          const director = conversations.find(c => c.id === agentThread.parentId);
+          const directorInfo = director ? { id: director.directorId, name: undefined } : { id: agentThread.directorId, name: undefined };
+          
+          const argsWithContext = { 
+            ...args, 
+            conversationId: agentThread.id,
+            // Pass context for workspace item creation
+            context: {
+              email: {
+                id: agentThread.email.id,
+                subject: agentThread.email.subject,
+                from: agentThread.email.from,
+                date: agentThread.email.date
+              },
+              director: directorInfo,
+              agent: {
+                id: agentThread.agentId,
+                name: undefined // Agent name not readily available in this scope
+              },
+              createdBy: 'agent' as const,
+              agentId: agentThread.agentId,
+              conversationId: agentThread.id
+            }
+          };
           const exec = await handleToolByName(tc.name, argsWithContext);
           const toolMsg = {
             role: 'tool',
