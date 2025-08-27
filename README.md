@@ -54,7 +54,9 @@ Use `src/backend/.env.example` as a template.
   - `GET /api/auth/google/initiate` → returns a Google OAuth2 authorization URL (scopes: `openid email profile`).
   - `GET /api/auth/google/callback?code=...&state=...` → exchanges the code, upserts the user, and sets the `vx.session` cookie.
   - `GET /api/auth/whoami` → returns `{ user }` when authenticated, or HTTP 401.
+  - `POST /api/auth/logout` → clears the `vx.session` cookie and ends the session.
 - Route guard: Almost all API routes are protected by `requireAuth`. Public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`.
+  - Provider OAuth endpoints under `/api/oauth2/*` (Google/Outlook) are protected by `requireAuth`. Linking provider accounts requires an authenticated session.
 - Cookie flags: `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
 - Production hardening: in production, HTTP is redirected to HTTPS and HSTS is set (`Strict-Transport-Security: max-age=31536000; includeSubDomains`).
   
@@ -81,13 +83,14 @@ Frontend (`src/frontend`)
 
 - From the UI, start an OAuth flow → provider redirects to `http://localhost:3000/oauth/callback` (handled by `src/frontend/src/OAuthCallback.tsx`).
 - The frontend exchanges the `code` with the backend via `/api/oauth2/{google|outlook}/callback` to produce an `account` object, then persists it via `POST /api/accounts`.
-- If a Gmail refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with an `authorizeUrl` for re-auth. The UI should redirect the user to that URL to restore tokens.
+- If a Gmail/Outlook refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with an `authorizeUrl` for re-auth. The UI should redirect the user to that URL to restore tokens.
+- To verify provider access in development, call `GET /api/accounts/:id/gmail-test` or `GET /api/accounts/:id/outlook-test`.
 
 ## API Overview
 
 - Health: `GET /api/health`
-- Auth session: `/api/auth/google/initiate`, `/api/auth/google/callback`, `/api/auth/whoami`
-- OAuth: `/api/oauth2/google|outlook/{initiate,callback}`
+- Auth session: `/api/auth/google/initiate`, `/api/auth/google/callback`, `/api/auth/whoami`, `/api/auth/logout`
+- OAuth: `/api/oauth2/google|outlook/{initiate,callback}` (requires authentication)
 - Accounts: `GET/POST/PUT/DELETE /api/accounts[...]` (see `src/backend/routes/accounts.ts`)
 - Fetcher: status/start/stop/run/logs under `/api/fetcher` (see `src/backend/routes/fetcher.ts`)
 - Orchestration, prompts, agents, directors, conversations, templates, memory, diagnostics, workspaces: modular route files under `src/backend/routes/`

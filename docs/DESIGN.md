@@ -158,14 +158,17 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
   - `GET /api/auth/google/initiate` → returns authorization URL.
   - `GET /api/auth/google/callback` → exchanges code, upserts user, sets `vx.session` HttpOnly cookie.
   - `GET /api/auth/whoami` → returns `{ user }` or 401.
+  - `POST /api/auth/logout` → clears the `vx.session` cookie and ends the session.
 - Middleware `requireAuth` guards all non-public endpoints. Cookie flags: HttpOnly, SameSite=Lax; `Secure` in production.
+- Provider OAuth endpoints under `/api/oauth2/*` (Google/Outlook) are protected by `requireAuth`. Linking provider accounts is an authenticated action.
 - Production: trust proxy, redirect HTTP→HTTPS, set HSTS.
 
-###### Re-authorization Flow for Gmail Tokens
+###### Re-authorization Flow for Gmail/Outlook Tokens
 
-- For Gmail provider accounts, token refresh or API probe failures that require user action return `{ ok: false, error: <category>, authorizeUrl }` from `src/backend/routes/accounts.ts`.
+- For Gmail/Outlook provider accounts, token refresh or API probe failures that require user action return `{ ok: false, error: <category>, authorizeUrl }` from `src/backend/routes/accounts.ts`.
 - Error categories include: `missing_refresh_token`, `invalid_grant`, `network`, `other`. The frontend surfaces a re-authenticate action using the provided URL.
 - Structured JSON logs capture the error category and context; info-level events log when a re-auth URL is generated.
+  - Related endpoints for probes: `GET /api/accounts/:id/gmail-test` and `GET /api/accounts/:id/outlook-test`.
 
 #### 3.2.3 Director Orchestration
 - **Functionality**: Receive filtered emails and initialize a conversation using the director’s prompt and `ApiConfig`. The director’s model is in control and uses function-calling to invoke tools (calendar, to-do, filesystem, memory) and to message specialized agents via per-agent tools. Agents are not invoked independently.

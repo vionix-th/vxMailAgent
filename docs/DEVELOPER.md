@@ -19,7 +19,9 @@
   - `GET /api/auth/google/initiate` → returns Google OAuth2 authorization URL (scopes: `openid email profile`).
   - `GET /api/auth/google/callback?code=&state=` → exchanges code, upserts user, sets cookie, responds with `{ user }`.
   - `GET /api/auth/whoami` → returns `{ user }` when authenticated or HTTP 401.
+  - `POST /api/auth/logout` → clears the `vx.session` cookie and ends the session.
 - Route guard: `requireAuth` protects all routes except the public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`.
+- Provider OAuth endpoints under `/api/oauth2/*` (Google/Outlook) are protected by `requireAuth`. Linking provider accounts is an authenticated action.
 - Production security: HTTP→HTTPS redirect when behind a proxy and HSTS header `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
 
 ### Google OAuth Clients (Split)
@@ -63,11 +65,12 @@
 - Accounts/Directors/Agents/Filters/Templates/Memory/Conversations
   - Modular files exist under `src/backend/routes/`. See each file for exact shapes.
 
-### Gmail Token Refresh: Re-Auth and Structured Logging
+### Token Refresh (Gmail/Outlook): Re-Auth and Structured Logging
 
 - Endpoints (see `src/backend/routes/accounts.ts`):
   - `POST /api/accounts/:id/refresh` (Gmail/Outlook refresh)
   - `GET /api/accounts/:id/gmail-test` (Gmail API probe)
+  - `GET /api/accounts/:id/outlook-test` (Outlook/Microsoft Graph probe)
 - On Gmail token errors requiring user action, responses include a re-authorization URL:
   - Shape: `{ ok: false, error: <category>, authorizeUrl: <string> }`
   - Error categories: `missing_refresh_token`, `invalid_grant`, `network`, `other`.
