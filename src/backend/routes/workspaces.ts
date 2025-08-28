@@ -1,19 +1,18 @@
 import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
-import { Repository } from '../repository/core';
-import { UserRequest } from '../middleware/user-context';
+import { UserRequest, getUserContext } from '../middleware/user-context';
 
 export interface WorkspacesRoutesDeps {
   getConversations: (req?: UserRequest) => ConversationThread[];
   setConversations: (req: UserRequest, next: ConversationThread[]) => void;
-  workspaceRepo: Repository<WorkspaceItem>;
 }
 
 export default function registerWorkspacesRoutes(app: express.Express, deps: WorkspacesRoutesDeps) {
   // List all workspace items
   app.get('/api/workspaces/:id/items', (req, res) => {
     const includeDeleted = String(req.query.includeDeleted || 'false').toLowerCase() === 'true';
-    const items = deps.workspaceRepo.getAll();
+    const { repos } = getUserContext(req as UserRequest);
+    const items = repos.workspaceItems.getAll();
     res.json(includeDeleted ? items : items.filter(i => !i.deleted));
   });
 
@@ -22,7 +21,8 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
 
   app.get('/api/workspaces/:id/items/:itemId', (req, res) => {
     const { itemId } = req.params as { id: string; itemId: string };
-    const items = deps.workspaceRepo.getAll();
+    const { repos } = getUserContext(req as UserRequest);
+    const items = repos.workspaceItems.getAll();
     const item = items.find(i => i.id === itemId);
     if (!item) return res.status(404).json({ error: 'Item not found' });
     res.json(item);
@@ -32,7 +32,8 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const { itemId } = req.params as { id: string; itemId: string };
     const expectedRevision = typeof req.body?.expectedRevision === 'number' ? (req.body.expectedRevision as number) : undefined;
     const { label, description, tags, mimeType, encoding, data } = req.body as { label?: string; description?: string; tags?: string[]; mimeType?: string; encoding?: 'utf8'|'base64'|'binary'; data?: string };
-    const items = deps.workspaceRepo.getAll();
+    const { repos } = getUserContext(req as UserRequest);
+    const items = repos.workspaceItems.getAll();
     const itemIdx = items.findIndex(i => i.id === itemId);
     if (itemIdx === -1) return res.status(404).json({ error: 'Item not found' });
     const current = items[itemIdx];
@@ -57,7 +58,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     };
     const nextItems = items.slice();
     nextItems[itemIdx] = nextItem;
-    deps.workspaceRepo.setAll(nextItems);
+    repos.workspaceItems.setAll(nextItems);
     console.log(`[${now}] PUT /api/workspaces/items/${itemId} -> updated (rev ${nextItem.revision})`);
     res.json({ success: true, item: nextItem });
   });
@@ -72,13 +73,14 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const next = conversations.slice();
     next[idx] = updated;
     deps.setConversations(req as UserRequest, next);
-    const items = deps.workspaceRepo.getAll();
+    const { repos } = getUserContext(req as UserRequest);
+    const items = repos.workspaceItems.getAll();
     const itemIdx = items.findIndex(i => i.id === itemId);
     if (itemIdx === -1) return res.status(404).json({ error: 'Item not found' });
     const now = new Date().toISOString();
     if (hard) {
       const nextItems = items.filter(i => i.id !== itemId);
-      deps.workspaceRepo.setAll(nextItems);
+      repos.workspaceItems.setAll(nextItems);
       console.log(`[${now}] DELETE /api/workspaces/items/${itemId}?hard=true -> removed`);
       return res.json({ success: true });
     }
@@ -92,7 +94,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     };
     const nextItems = items.slice();
     nextItems[itemIdx] = nextItem;
-    deps.workspaceRepo.setAll(nextItems);
+    repos.workspaceItems.setAll(nextItems);
     console.log(`[${now}] DELETE /api/workspaces/items/${itemId} -> soft-deleted`);
     res.json({ success: true, item: nextItem });
   });

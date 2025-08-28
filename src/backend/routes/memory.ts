@@ -1,17 +1,16 @@
 import express from 'express';
 import { MemoryEntry } from '../../shared/types';
 import { newId } from '../utils/id';
+import { UserRequest, getUserContext } from '../middleware/user-context';
 
-export interface MemoryRoutesDeps {
-  getMemory: () => MemoryEntry[];
-  setMemory: (next: MemoryEntry[]) => void;
-}
+export interface MemoryRoutesDeps {}
 
-export default function registerMemoryRoutes(app: express.Express, deps: MemoryRoutesDeps) {
+export default function registerMemoryRoutes(app: express.Express, _deps: MemoryRoutesDeps) {
   // GET /api/memory
   app.get('/api/memory', (req, res) => {
     const { scope, query, owner, tag, q } = req.query as Record<string, string>;
-    let result = deps.getMemory();
+    const { repos } = getUserContext(req as UserRequest);
+    let result = repos.memory.getAll();
     if (scope) result = result.filter(e => e.scope === scope);
     if (owner) result = result.filter(e => e.owner === owner);
     if (tag) result = result.filter(e => e.tags && e.tags.includes(tag as string));
@@ -26,8 +25,9 @@ export default function registerMemoryRoutes(app: express.Express, deps: MemoryR
     entry.id = entry.id || newId();
     entry.created = entry.created || new Date().toISOString();
     entry.updated = new Date().toISOString();
-    const next = [...deps.getMemory(), entry];
-    deps.setMemory(next);
+    const { repos } = getUserContext(req as UserRequest);
+    const next = [...repos.memory.getAll(), entry];
+    repos.memory.setAll(next);
     console.log(`[${new Date().toISOString()}] POST /api/memory: added ${entry.id}`);
     res.json({ success: true, entry });
   });
@@ -35,13 +35,14 @@ export default function registerMemoryRoutes(app: express.Express, deps: MemoryR
   // PUT /api/memory/:id
   app.put('/api/memory/:id', (req, res) => {
     const id = req.params.id;
-    const current = deps.getMemory();
+    const { repos } = getUserContext(req as UserRequest);
+    const current = repos.memory.getAll();
     const idx = current.findIndex(e => e.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Memory entry not found' });
     const updated = { ...current[idx], ...req.body, id, updated: new Date().toISOString() } as MemoryEntry;
     const next = current.slice();
     next[idx] = updated;
-    deps.setMemory(next);
+    repos.memory.setAll(next);
     console.log(`[${new Date().toISOString()}] PUT /api/memory/${id}: updated`);
     res.json({ success: true, entry: updated });
   });
@@ -49,10 +50,11 @@ export default function registerMemoryRoutes(app: express.Express, deps: MemoryR
   // DELETE /api/memory/:id
   app.delete('/api/memory/:id', (req, res) => {
     const id = req.params.id;
-    const current = deps.getMemory();
+    const { repos } = getUserContext(req as UserRequest);
+    const current = repos.memory.getAll();
     const before = current.length;
     const next = current.filter(e => e.id !== id);
-    deps.setMemory(next);
+    repos.memory.setAll(next);
     const after = next.length;
     console.log(`[${new Date().toISOString()}] DELETE /api/memory/${id}: ${before - after} deleted`);
     res.json({ success: true });
@@ -64,11 +66,12 @@ export default function registerMemoryRoutes(app: express.Express, deps: MemoryR
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids array required' });
     }
-    const current = deps.getMemory();
+    const { repos } = getUserContext(req as UserRequest);
+    const current = repos.memory.getAll();
     const before = current.length;
     const setIds = new Set(ids);
     const next = current.filter(e => !setIds.has(e.id));
-    deps.setMemory(next);
+    repos.memory.setAll(next);
     const after = next.length;
     console.log(`[${new Date().toISOString()}] DELETE /api/memory: ${before - after} deleted`);
     res.json({ success: true, deleted: before - after });

@@ -1,6 +1,8 @@
 import { Repository } from './core';
 import { ProviderEventsRepository, TracesRepository, createUserJsonRepository, createUserProviderEventsRepository, createUserTracesRepository } from './fileRepositories';
 import { userPaths, UserPaths } from '../utils/paths';
+import fs from 'fs';
+import * as persistence from '../persistence';
 import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS } from '../config';
 import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem } from '../../shared/types';
 
@@ -61,6 +63,34 @@ export class RepoBundleRegistry {
     
     // Create new bundle
     const paths = userPaths(uid);
+
+    // Initialize missing per-user JSON files with empty arrays to avoid runtime errors
+    const filesToInit: string[] = [
+      paths.accounts,
+      paths.settings,
+      paths.prompts,
+      paths.agents,
+      paths.directors,
+      paths.filters,
+      paths.templates,
+      paths.imprints,
+      paths.conversations,
+      paths.workspaceItems,
+      paths.memory,
+      paths.logs.fetcher,
+      paths.logs.orchestration,
+      paths.logs.providerEvents,
+      paths.logs.traces,
+    ];
+    for (const f of filesToInit) {
+      try {
+        if (!fs.existsSync(f)) {
+          persistence.encryptAndPersist([], f, paths.root);
+        }
+      } catch (e) {
+        console.warn(`[REGISTRY] Failed to pre-create user file ${f}:`, e);
+      }
+    }
     
     bundle = {
       uid,

@@ -6,10 +6,9 @@ import { requireAuth } from './middleware/auth';
 import { loadSettings } from './services/settings';
 import { setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent, getOrchestrationLog, getTraces } from './services/logging';
 
-import { Filter, Director, Agent, Prompt, Imprint, MemoryEntry, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, WorkspaceItem, User } from '../shared/types';
-import { MEMORY_FILE, WORKSPACE_ITEMS_FILE, USERS_FILE } from './utils/paths';
+import { Filter, Director, Agent, Prompt, Imprint, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, User } from '../shared/types';
+import { USERS_FILE } from './utils/paths';
 import { newId } from './utils/id';
-import { setMemoryRepo, setWorkspaceRepo } from './toolCalls';
 import { createJsonRepository } from './repository/fileRepositories';
 import { setUsersRepo } from './services/users';
 import registerAuthSessionRoutes from './routes/auth-session';
@@ -177,19 +176,13 @@ export function createServer() {
   app.use(requireAuth);
   app.use(attachUserContext);
   app.use('/api', authRouter);
-  // Global conversations array removed - user isolation enforced
-  const memoryRepo = createJsonRepository<MemoryEntry>(MEMORY_FILE);
-  setMemoryRepo(memoryRepo);
-  const workspaceRepo = createJsonRepository<WorkspaceItem>(WORKSPACE_ITEMS_FILE);
-  setWorkspaceRepo(workspaceRepo);
-  // All global repositories removed - user isolation enforced
-  // Only system-level repositories remain (memory, workspace, users)
+  // System-level repositories: only users registry remains
   const usersRepo = createJsonRepository<User>(USERS_FILE);
   setUsersRepo(usersRepo);
   // Logging initialization removed - per-user logging only
   registerAuthSessionRoutes(app);
   registerTestRoutes(app, { getSettings: () => getSettingsLive(), getPrompts: () => getPromptsLive(), getDirectors: () => getDirectorsLive(), getAgents: () => getAgentsLive() });
-  registerMemoryRoutes(app, { getMemory: () => memoryRepo.getAll(), setMemory: (next: MemoryEntry[]) => { memoryRepo.setAll(next); } });
+  registerMemoryRoutes(app, {});
   registerOrchestrationRoutes(app, { getOrchestrationLog: () => getOrchestrationLogLive(), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[]) => { svcSetOrchestrationLog(next); }, getSettings: () => getSettingsLive() });
   registerSettingsRoutes(app, { getSettings: () => getSettingsLive() });
   registerAgentsRoutes(app, { 
@@ -224,8 +217,7 @@ export function createServer() {
   });
   registerWorkspacesRoutes(app, { 
     getConversations: (req?: UserRequest) => getConversationsLive(req), 
-    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next), 
-    workspaceRepo 
+    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next)
   });
   registerImprintsRoutes(app, { 
     getImprints: (req?: UserRequest) => getImprintsLive(req), 

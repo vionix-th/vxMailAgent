@@ -19,8 +19,9 @@ export const dataPath = (name: string) => path.join(baseDataDir(), name);
 // Export DATA_DIR derived locally to satisfy scripts that import it
 export const DATA_DIR = baseDataDir();
 
-// UID validation regex: alphanumeric, underscore, hyphen, 1-64 chars
-const UID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+// UID validation: allow either simple ids or provider-prefixed ids with a single colon.
+// Each segment limited to safe characters and reasonable length.
+const UID_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Validates a user ID for filesystem safety.
@@ -29,7 +30,11 @@ const UID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
  */
 export function validateUid(uid: string): boolean {
   if (!uid || typeof uid !== 'string') return false;
-  return UID_REGEX.test(uid);
+  if (uid.length > 96) return false;
+  const parts = uid.split(':');
+  if (parts.length === 1) return UID_SEGMENT.test(parts[0]);
+  if (parts.length === 2) return UID_SEGMENT.test(parts[0]) && UID_SEGMENT.test(parts[1]);
+  return false;
 }
 
 /**
@@ -50,9 +55,11 @@ export function userRoot(uid: string): string {
   const baseDir = envDir && envDir.trim()
     ? path.resolve(envDir)
     : path.resolve(process.cwd(), 'data');
-  const userDir = path.join(baseDir, 'users', uid);
+  // Sanitize uid for filesystem path safety (e.g., replace ':' to remain cross-platform safe)
+  const fsUid = uid.replace(/:/g, '_');
+  const userDir = path.join(baseDir, 'users', fsUid);
   const resolved = path.resolve(userDir);
-  const expectedPrefix = path.resolve(baseDir, 'users', uid);
+  const expectedPrefix = path.resolve(baseDir, 'users', fsUid);
   
   // Ensure the resolved path is exactly what we expect (no traversal)
   if (resolved !== expectedPrefix) {

@@ -4,37 +4,27 @@ import { Account } from '../../shared/types';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt } from '../utils/jwt';
 import { UserRequest, getUserContext, hasUserContext } from '../middleware/user-context';
-import fs from 'fs';
-import { ACCOUNTS_FILE } from '../utils/paths';
 
 /**
- * Gets accounts from the appropriate source (per-user or global).
+ * Gets accounts from the per-user repository (user context required).
  */
 function getAccounts(req: UserRequest): Account[] {
-  if (hasUserContext(req)) {
-    const { repos } = getUserContext(req);
-    return repos.accounts.getAll();
+  if (!hasUserContext(req)) {
+    throw new Error('User context required - per-user accounts only');
   }
-  
-  // Fallback to global accounts file
-  if (!fs.existsSync(ACCOUNTS_FILE)) {
-    return [];
-  }
-  return persistence.loadAndDecrypt(ACCOUNTS_FILE) as Account[];
+  const { repos } = getUserContext(req);
+  return repos.accounts.getAll();
 }
 
 /**
- * Saves accounts to the appropriate destination (per-user or global).
+ * Saves accounts to the per-user repository (user context required).
  */
 function saveAccounts(req: UserRequest, accounts: Account[]): void {
-  if (hasUserContext(req)) {
-    const { repos } = getUserContext(req);
-    repos.accounts.setAll(accounts);
-    return;
+  if (!hasUserContext(req)) {
+    throw new Error('User context required - per-user accounts only');
   }
-  
-  // Fallback to global accounts file
-  persistence.encryptAndPersist(accounts, ACCOUNTS_FILE);
+  const { repos } = getUserContext(req);
+  repos.accounts.setAll(accounts);
 }
 
 /** Register routes for managing accounts and tokens. */
@@ -42,8 +32,7 @@ export default function registerAccountsRoutes(app: express.Express) {
   app.get('/api/accounts', (req: UserRequest, res) => {
     try {
       const accounts = getAccounts(req);
-      const source = hasUserContext(req) ? `user ${getUserContext(req).uid}` : 'global';
-      console.log(`[${new Date().toISOString()}] Loaded ${accounts.length} accounts from ${source} store`);
+      console.log(`[${new Date().toISOString()}] Loaded ${accounts.length} accounts for user ${getUserContext(req).uid}`);
       res.json(accounts);
     } catch (e) {
       console.error(`[${new Date().toISOString()}] Error loading accounts:`, e);
