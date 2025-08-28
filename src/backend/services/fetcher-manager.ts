@@ -4,14 +4,12 @@ import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-
 /**
  * Per-user fetcher dependencies that include user context
  */
-export interface UserFetcherDeps extends Omit<FetcherDeps, 'getConversations' | 'setConversations' | 'logOrch' | 'logProviderEvent' | 'getAccounts' | 'setAccounts' | 'getFetcherLog' | 'setFetcherLog' | 'getToolHandler'> {
+export interface UserFetcherDeps extends Omit<FetcherDeps, 'getConversations' | 'setConversations' | 'logOrch' | 'logProviderEvent' | 'getFetcherLog' | 'setFetcherLog' | 'getToolHandler'> {
   uid: string;
   getConversations: (req?: UserRequest) => any[];
   setConversations: (req: UserRequest, next: any[]) => void;
   logOrch: (e: any, req?: UserRequest) => void;
   logProviderEvent: (e: any, req?: UserRequest) => void;
-  getAccounts: (req?: UserRequest) => any[];
-  setAccounts: (req: UserRequest, next: any[]) => void;
   getFetcherLog: (req?: UserRequest) => any[];
   setFetcherLog: (req: UserRequest, next: any[]) => void;
   getToolHandler: (req?: UserRequest) => (name: string, params: any) => Promise<any>;
@@ -52,9 +50,6 @@ export class FetcherManager {
           setConversations: (next) => userDeps.setConversations(req, next),
           logOrch: (e) => userDeps.logOrch(e, req),
           logProviderEvent: (e) => userDeps.logProviderEvent(e, req),
-          isDirectorFinalized: userDeps.isDirectorFinalized,
-          getAccounts: () => userDeps.getAccounts(req),
-          setAccounts: (next) => userDeps.setAccounts(req, next),
           getFetcherLog: () => userDeps.getFetcherLog(req),
           setFetcherLog: (next) => userDeps.setFetcherLog(req, next),
           getToolHandler: () => userDeps.getToolHandler(req),

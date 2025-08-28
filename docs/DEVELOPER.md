@@ -14,6 +14,8 @@
 
 ## Per-User Isolation & Repository Registry
 
+**CRITICAL SECURITY REQUIREMENT**: All data access must be user-isolated. Only `users.json` is allowed as global application data.
+
 - Middleware: `src/backend/middleware/user-context.ts`
   - `attachUserContext` requires prior auth and validates `uid` (alphanumeric/underscore/hyphen, 1–64 chars). Forbids `uid`/`userId` in params, query, or body.
   - Attaches `{ uid, repos }` where `repos` is a per-user bundle from the repository registry.
@@ -27,10 +29,22 @@
 - Paths and safety: `src/backend/utils/paths.ts`
   - `userPaths(uid)` derives absolute, validated paths under `DATA_DIR/users/{uid}` and creates directories with 0700 permissions.
   - Disallows symlinks and path traversal; validates containment under the per-user root.
+  - **SECURITY**: Only `USERS_FILE` constant exists - all other global file constants have been removed to prevent data leakage.
 - Config (multi-user limits): `src/backend/config.ts`
   - `USER_REGISTRY_TTL_MINUTES`, `USER_REGISTRY_MAX_ENTRIES`
   - `USER_MAX_CONVERSATIONS`, `USER_MAX_LOGS_PER_TYPE`, `USER_MAX_FILE_SIZE_MB`
   - Behavior is always per-user; no legacy global stores.
+
+### User Isolation Enforcement
+
+- **Settings Service**: `src/backend/services/settings.ts`
+  - `loadSettings(req)` and `saveSettings(settings, req)` require user context
+  - No global settings access - throws error if user context missing
+- **Logging Service**: `src/backend/services/logging.ts`
+  - All logging functions require user context parameter
+  - No global repository fallbacks - throws error if user context missing
+- **Route Dependencies**: All route registrations pass user context to data access functions
+- **Fetcher Manager**: Per-user fetcher instances with isolated settings persistence
 
 ## Authentication & Sessions
 
@@ -164,7 +178,16 @@ Response shape:
   - `logOrch()` and `logProviderEvent()` append orchestration and provider diagnostic entries.
   - `beginTrace()`, `beginSpan()`, `endSpan()`, and `endTrace()` manage structured traces when `TRACE_PERSIST` is enabled.
   - `annotateSpan()` merges metadata into an existing span.
-- Repositories resolve per-user first and fall back to globals when no user context is attached.
+- **CRITICAL**: All repositories require user context - no global fallbacks exist to prevent data leakage between users.
+
+### Fetcher Manager
+
+- Module: `src/backend/services/fetcher-manager.ts`
+- Manages per-user fetcher instances with lifecycle (start/stop/fetch/run).
+- Dependencies: `UserFetcherDeps` includes `settings` and repository accessors for user-isolated data access.
+- **SECURITY**: Account-related dependencies (`getAccounts`, `setAccounts`) have been removed - accounts are accessed through user-scoped repositories only.
+- Fetcher state is tracked in-memory; settings are persisted to the user's `settings.json` via user context.
+- Orchestration integration: fetchers can trigger orchestration runs via the `runOrchestration` callback.
 
 ### Cleanup Service
 

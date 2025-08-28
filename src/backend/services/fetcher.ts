@@ -19,9 +19,6 @@ export interface FetcherDeps {
   setConversations: (next: ConversationThread[]) => void;
   logOrch: (e: OrchestrationDiagnosticEntry) => void;
   logProviderEvent: (e: ProviderEvent) => void;
-  isDirectorFinalized: (dirId: string) => boolean;
-  getAccounts: () => Account[];
-  setAccounts: (next: Account[]) => void;
   getFetcherLog: () => FetcherLogEntry[];
   setFetcherLog: (next: FetcherLogEntry[]) => void;
   getToolHandler: () => (name: string, params: any) => Promise<any>;

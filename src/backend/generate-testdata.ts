@@ -5,8 +5,8 @@ const path = require('path');
 const envPath = path.resolve(__dirname, '.env');
 require('dotenv').config({ path: envPath });
 
-// Use centralized DATA_DIR and file path constants from backend utils/paths
-const { DATA_DIR, ACCOUNTS_FILE, AGENTS_FILE, DIRECTORS_FILE, FILTERS_FILE, IMPRINTS_FILE, ORCHESTRATION_LOG_FILE, PROMPTS_FILE, SETTINGS_FILE, MEMORY_FILE } = require('./utils/paths');
+// Use centralized DATA_DIR from backend utils/paths
+const { DATA_DIR } = require('./utils/paths');
 
 function main() {
   const files = [
@@ -21,15 +21,15 @@ function main() {
     'memory.json',
   ];
   const FILE_PATHS: Record<string, string> = {
-    'accounts.json': ACCOUNTS_FILE,
-    'agents.json': AGENTS_FILE,
-    'directors.json': DIRECTORS_FILE,
-    'filters.json': FILTERS_FILE,
-    'imprints.json': IMPRINTS_FILE,
-    'orchestrationLog.json': ORCHESTRATION_LOG_FILE,
-    'prompts.json': PROMPTS_FILE,
-    'settings.json': SETTINGS_FILE,
-    'memory.json': MEMORY_FILE,
+    'accounts.json': path.join(DATA_DIR, 'accounts.json'),
+    'agents.json': path.join(DATA_DIR, 'agents.json'),
+    'directors.json': path.join(DATA_DIR, 'directors.json'),
+    'filters.json': path.join(DATA_DIR, 'filters.json'),
+    'imprints.json': path.join(DATA_DIR, 'imprints.json'),
+    'orchestrationLog.json': path.join(DATA_DIR, 'orchestrationLog.json'),
+    'prompts.json': path.join(DATA_DIR, 'prompts.json'),
+    'settings.json': path.join(DATA_DIR, 'settings.json'),
+    'memory.json': path.join(DATA_DIR, 'memory.json'),
   };
 
   const now = new Date();

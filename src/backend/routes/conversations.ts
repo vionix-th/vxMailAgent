@@ -9,8 +9,7 @@ import { createToolHandler } from '../toolCalls';
 export interface ConversationsRoutesDeps {
   getConversations: (req?: UserRequest) => ConversationThread[];
   setConversations: (req: UserRequest, next: ConversationThread[]) => void;
-  getSettings: () => any;
-  isDirectorFinalized: (dirId: string) => boolean;
+  getSettings: (req?: UserRequest) => any;
   logProviderEvent: (ev: ProviderEvent, req?: UserRequest) => void;
   newId: () => string;
   getDirectors: (req?: UserRequest) => Director[];
@@ -91,7 +90,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     const idx = conversations.findIndex((c) => c.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Conversation not found' });
     const t = conversations[idx];
-    if (deps.isDirectorFinalized(t.directorId) || (t as any).status === 'finalized' || t.finalized === true) {
+    if ((t as any).status === 'finalized' || t.finalized === true) {
       return res.status(400).json({ error: 'Conversation is finalized' });
     }
     const now = new Date().toISOString();
@@ -116,7 +115,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
       const idx = conversations.findIndex((c) => c.id === id);
       if (idx === -1) return res.status(404).json({ error: 'Conversation not found' });
       const t = conversations[idx];
-      if (deps.isDirectorFinalized(t.directorId) || (t as any).status === 'finalized' || t.finalized === true) {
+      if ((t as any).status === 'finalized' || t.finalized === true) {
         return res.status(400).json({ error: 'Conversation is finalized' });
       }
 

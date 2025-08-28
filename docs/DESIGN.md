@@ -41,17 +41,45 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **AI Integration**: OpenAI API (`openai` library) for director-led orchestration and agent tasks, using function-calling (tools, `tool_choice`).
 - **OS Functions**: Node.js `fs` and `path` modules for file system access, restricted to virtual root.
 
+## User Isolation
+
+**CRITICAL SECURITY ARCHITECTURE**: The system enforces strict per-user data isolation with zero tolerance for data leakage:
+
+- **Authentication**: JWT-based sessions with Google OAuth2 OIDC for login
+- **User Context**: Middleware attaches `{ uid, repos }` to authenticated requests
+- **Repository Registry**: Per-user repository bundles with TTL-based eviction
+- **Path Safety**: User paths validated under `DATA_DIR/users/{uid}/` with 0700 permissions
+- **Zero Global Fallbacks**: All data access requires user context; throws errors if missing
+- **Global Data Restriction**: Only `users.json` permitted as global application data
+
+### Isolation Enforcement
+
+- **Settings Service**: Requires user context for all operations; no global settings access
+- **Logging Service**: All logging functions require user context parameter; no global repositories
+- **Route Dependencies**: All routes pass user context to data access functions
+- **Path Constants**: Only `USERS_FILE` constant exists; all other global file constants removed
+- **Fetcher Manager**: Per-user instances with isolated settings persistence
+
+Data files are organized as:
+```
+data/
+├── users.json              # Global user registry (login data only - NOT exposed via UI/API)
+└── users/{uid}/            # Per-user isolated data
+    ├── accounts.json
+    ├── settings.json
+    ├── conversations.json
+    ├── workspaceItems.json
+    └── logs/
+        ├── fetcher.json
+        ├── orchestration.json
+        ├── provider-events.json
+        └── traces.json
+```
+
 ### 3.2 Components
-#### 3.2.0 Diagnostics vs Workspace Results (Separation)
-* **Rationale**: Earlier iterations conflated orchestration diagnostics (process/audit trail) with deliverables. The system now strictly separates diagnostics from user-facing Results across API, types, persistence, and UI.
-* **Canonical data model**:
-  * Diagnostics: provider requests/responses/errors are modeled as `ProviderEvent`s (see 3.2.0b) and any orchestration traces required for audit. These are for admin/debugging only and are never rendered in the user Results UI.
-  * Results (end-user): Results are synonymous with `WorkspaceItem`s. The Workspace (latest state when the director completes its run) constitutes the deliverables. No separate "orchestration result" type exists for the end-user UI.
-* **API**:
-  * Diagnostics (admin-only):
-    - `GET /api/diagnostics/runtime` returns runtime status including encryption mode, data directory, and counts. See `src/backend/routes/diagnostics.ts`.
-    - `GET /api/diagnostics/unified` returns a hierarchical diagnostics tree; `GET /api/diagnostics/unified/:nodeId` returns details for a specific node. See `src/backend/routes/unified-diagnostics.ts`.
-  * Results (end-user):
+#### 3.2.0 Diagnostics vs Workspace Results
+
+* **Diagnostics**: Admin/debug only. Includes structured debug artifacts such as function returns and provider payload summaries.
     - Use Conversation/Workspace endpoints, e.g. `GET /api/conversations/byDirectorEmail?directorId=&emailId=` to locate the thread, then `GET /api/workspaces/:id/items` (and related) to list/preview artifacts.
     - There are no user-facing "orchestration results" endpoints; use Conversations/Workspaces exclusively.
 * **Persistence**:

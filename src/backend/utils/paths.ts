@@ -192,16 +192,6 @@ export function userPaths(uid: string): UserPaths {
 
 
 // System-level JSON files (non user-isolated)
-export const MEMORY_FILE = dataPath('memory.json');
-export const WORKSPACE_ITEMS_FILE = dataPath('workspaceItems.json');
+// Only users.json is allowed as global application data
 export const USERS_FILE = dataPath('users.json');
-export const ACCOUNTS_FILE = dataPath('accounts.json');
-export const AGENTS_FILE = dataPath('agents.json');
-export const DIRECTORS_FILE = dataPath('directors.json');
-export const FILTERS_FILE = dataPath('filters.json');
-export const IMPRINTS_FILE = dataPath('imprints.json');
-export const ORCHESTRATION_LOG_FILE = dataPath('orchestrationLog.json');
-export const PROMPTS_FILE = dataPath('prompts.json');
-export const SETTINGS_FILE = dataPath('settings.json');
-export const FETCHER_LOG_FILE = dataPath('fetcherLog.json');
 

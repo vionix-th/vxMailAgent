@@ -81,9 +81,13 @@ Frontend (`src/frontend`)
 
 ## Data & Security
 
-- Storage: JSON files under `data/users/{uid}/` (per-user isolation). Examples within a user root: `accounts.json`, `directors.json`, `conversations.json`, `workspaceItems.json`, and `logs/{fetcher,orchestration,provider-events,traces}.json`.
-- Encryption: AES‑256‑GCM with random IV; enabled when `VX_MAILAGENT_KEY` is a valid 64‑char hex. When not set, files are plaintext JSON for development convenience.
-- Secrets: never commit `.env` or tokens. Use the example template and export env vars locally.
+**CRITICAL**: Strict per-user data isolation enforced throughout the system.
+
+- **Storage**: JSON files under `data/users/{uid}/` (per-user isolation). Examples within a user root: `accounts.json`, `directors.json`, `conversations.json`, `workspaceItems.json`, and `logs/{fetcher,orchestration,provider-events,traces}.json`.
+- **Global Data Restriction**: Only `data/users.json` contains global application data (user registry for login). This file is NOT exposed via UI or APIs.
+- **User Context Required**: All data access requires authenticated user context. No global fallbacks exist to prevent data leakage between users.
+- **Encryption**: AES‑256‑GCM with random IV; enabled when `VX_MAILAGENT_KEY` is a valid 64‑char hex. When not set, files are plaintext JSON for development convenience.
+- **Secrets**: never commit `.env` or tokens. Use the example template and export env vars locally.
 
 ## OAuth Flow (Gmail/Outlook)
 

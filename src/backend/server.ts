@@ -41,8 +41,6 @@ import { attachUserContext, UserRequest, hasUserContext, getUserContext } from '
 export function createServer() {
   const app = express();
 
-  let settings = loadSettings();
-
   function getPromptsLive(req?: UserRequest): Prompt[] { 
     if (req && hasUserContext(req)) {
       return getUserContext(req).repos.prompts.getAll();
@@ -86,7 +84,9 @@ export function createServer() {
     }
     throw new Error('User context required - no global conversations available');
   }
-  function getSettingsLive() { settings = loadSettings(); return settings; }
+  function getSettingsLive(req?: UserRequest) { 
+    return loadSettings(req); 
+  }
 
   // Setter functions for per-user repositories
   function setPromptsLive(req: UserRequest, next: Prompt[]): void {
@@ -189,8 +189,8 @@ export function createServer() {
     getAgents: (req?: UserRequest) => getAgentsLive(req) 
   });
   registerMemoryRoutes(app, {});
-  registerOrchestrationRoutes(app, { getOrchestrationLog: () => getOrchestrationLogLive(), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[]) => { svcSetOrchestrationLog(next); }, getSettings: () => getSettingsLive() });
-  registerSettingsRoutes(app, { getSettings: () => getSettingsLive() });
+  registerOrchestrationRoutes(app, { getOrchestrationLog: (req?: UserRequest) => getOrchestrationLogLive(req), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[], req?: UserRequest) => { svcSetOrchestrationLog(next, req); }, getSettings: (req?: UserRequest) => getSettingsLive(req) });
+  registerSettingsRoutes(app, { getSettings: (req?: UserRequest) => getSettingsLive(req) });
   registerAgentsRoutes(app, { 
     getAgents: (req?: UserRequest) => getAgentsLive(req), 
     setAgents: (req: UserRequest, next: Agent[]) => setAgentsLive(req, next) 
@@ -206,7 +206,7 @@ export function createServer() {
   registerPromptsRoutes(app, { 
     getPrompts: (req?: UserRequest) => getPromptsLive(req), 
     setPrompts: (req: UserRequest, next: Prompt[]) => setPromptsLive(req, next), 
-    getSettings: () => getSettingsLive(), 
+    getSettings: (req?: UserRequest) => getSettingsLive(req), 
     getAgents: (req?: UserRequest) => getAgentsLive(req), 
     getDirectors: (req?: UserRequest) => getDirectorsLive(req) 
   });
@@ -214,8 +214,7 @@ export function createServer() {
   registerConversationsRoutes(app, { 
     getConversations: (req?: UserRequest) => getConversationsLive(req), 
     setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next), 
-    getSettings: () => getSettingsLive(), 
-    isDirectorFinalized: () => { throw new Error('Director finalization requires user context'); }, 
+    getSettings: (req?: UserRequest) => getSettingsLive(req), 
     logProviderEvent: (e: ProviderEvent, req?: UserRequest) => { svcLogProviderEvent(e, req); }, 
     newId, 
     getDirectors: (req?: UserRequest) => getDirectorsLive(req), 
@@ -244,7 +243,7 @@ export function createServer() {
   // Initialize FetcherManager with per-user fetcher factory
   const fetcherManager = new FetcherManager((uid: string) => ({
     uid,
-    getSettings: () => getSettingsLive(),
+    getSettings: (req?: UserRequest) => getSettingsLive(req),
     getFilters: (req?: UserRequest) => getFiltersLive(req),
     getDirectors: (req?: UserRequest) => getDirectorsLive(req),
     getAgents: (req?: UserRequest) => getAgentsLive(req),
@@ -253,9 +252,6 @@ export function createServer() {
     setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next),
     logOrch: (e: OrchestrationDiagnosticEntry, req?: UserRequest) => { svcLogOrch(e, req); },
     logProviderEvent: (e: ProviderEvent, req?: UserRequest) => { svcLogProviderEvent(e, req); },
-    isDirectorFinalized: (_dirId: string) => { throw new Error('Director finalization requires user context'); },
-    getAccounts: (_req?: UserRequest) => { throw new Error('Accounts access requires user context'); },
-    setAccounts: (_req: UserRequest, _next: any[]) => { throw new Error('Accounts access requires user context'); },
     getFetcherLog: (req?: UserRequest) => getUserContext((req as UserRequest)).repos.fetcherLog.getAll(),
     setFetcherLog: (req: UserRequest, next: any[]) => getUserContext(req).repos.fetcherLog.setAll(next),
     getToolHandler: (req?: UserRequest) => createToolHandler(getUserContext((req as UserRequest)).repos),
@@ -268,7 +264,7 @@ export function createServer() {
     startFetcherLoop: (req?: UserRequest) => fetcherManager.startFetcherLoop(req),
     stopFetcherLoop: (req?: UserRequest) => fetcherManager.stopFetcherLoop(req),
     fetchEmails: (req?: UserRequest) => fetcherManager.fetchEmails(req),
-    getSettings: () => getSettingsLive(),
+    getSettings: (req?: UserRequest) => getSettingsLive(req),
     getFetcherLog: (req?: UserRequest) => fetcherManager.getFetcherLog(req),
     setFetcherLog: (req: UserRequest, next) => fetcherManager.setFetcherLog(req, next)
   });

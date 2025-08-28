@@ -5,51 +5,33 @@ import { Repository } from '../repository/core';
 import { ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
 import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
 
-// Global fallback repositories used when no user context is available
-let globalOrchRepo: Repository<OrchestrationDiagnosticEntry> | null = null;
-let globalProviderRepo: ProviderEventsRepository | null = null;
-let globalTracesRepo: TracesRepository | null = null;
+// Global fallback repositories removed - user isolation enforced
 
-/**
- * Initialize global logging repositories. These act as fallbacks when a
- * request does not carry a user context.
- */
-export function initLogging(input: {
-  orchRepo: Repository<OrchestrationDiagnosticEntry>;
-  providerRepo: ProviderEventsRepository;
-  tracesRepo: TracesRepository;
-}) {
-  globalOrchRepo = input.orchRepo;
-  globalProviderRepo = input.providerRepo;
-  globalTracesRepo = input.tracesRepo;
-}
-
-// Resolve per-user repositories or fall back to the globals above
-function getOrchRepo(req?: UserRequest): Repository<OrchestrationDiagnosticEntry> | null {
+// Resolve per-user repositories - user context required
+function getOrchRepo(req?: UserRequest): Repository<OrchestrationDiagnosticEntry> {
   if (req && hasUserContext(req)) {
     return getUserContext(req).repos.orchestrationLog;
   }
-  return globalOrchRepo;
+  throw new Error('User context required - no global orchestration log available');
 }
 
-function getProviderRepo(req?: UserRequest): ProviderEventsRepository | null {
+function getProviderRepo(req?: UserRequest): ProviderEventsRepository {
   if (req && hasUserContext(req)) {
     return getUserContext(req).repos.providerEvents;
   }
-  return globalProviderRepo;
+  throw new Error('User context required - no global provider events available');
 }
 
-function getTracesRepo(req?: UserRequest): TracesRepository | null {
+function getTracesRepo(req?: UserRequest): TracesRepository {
   if (req && hasUserContext(req)) {
     return getUserContext(req).repos.traces;
   }
-  return globalTracesRepo;
+  throw new Error('User context required - no global traces available');
 }
 
 /** Append an orchestration diagnostic entry to the log. */
 export function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest) {
   const repo = getOrchRepo(req);
-  if (!repo) return;
   const list = repo.getAll();
   list.push(e);
   repo.setAll(list);
@@ -58,20 +40,18 @@ export function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest) {
 /** Persist a provider request/response diagnostic entry. */
 export function logProviderEvent(e: ProviderEvent, req?: UserRequest) {
   const repo = getProviderRepo(req);
-  if (!repo) return;
   repo.append(e);
 }
 
 /** Retrieve all orchestration diagnostic entries. */
 export function getOrchestrationLog(req?: UserRequest) {
   const repo = getOrchRepo(req);
-  return repo ? repo.getAll() : [];
+  return repo.getAll();
 }
 
 /** Replace the orchestration diagnostic log with the provided list. */
 export function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: UserRequest) {
   const repo = getOrchRepo(req);
-  if (!repo) return;
   repo.setAll(next);
 }
 

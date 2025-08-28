@@ -1,9 +1,8 @@
 import express from 'express';
-import * as persistence from '../persistence';
 import { FetcherLogEntry } from '../../shared/types';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { UserRequest } from '../middleware/user-context';
-import { SETTINGS_FILE } from '../utils/paths';
+import { saveSettings } from '../services/settings';
 
 /** Dependencies for fetcher routes. */
 export interface FetcherRoutesDeps {
@@ -44,7 +43,7 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     deps.startFetcherLoop(req as UserRequest);
     const settings = deps.getSettings();
     settings.fetcherAutoStart = true;
-    try { persistence.encryptAndPersist(settings, SETTINGS_FILE); } catch {}
+    try { saveSettings(settings, req as UserRequest); } catch {}
     res.json({ success: true, active: deps.getStatus(req as UserRequest).active });
   });
 
@@ -52,7 +51,7 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     deps.stopFetcherLoop(req as UserRequest);
     const settings = deps.getSettings();
     settings.fetcherAutoStart = false;
-    try { persistence.encryptAndPersist(settings, SETTINGS_FILE); } catch {}
+    try { saveSettings(settings, req as UserRequest); } catch {}
     res.json({ success: true, active: deps.getStatus(req as UserRequest).active });
   });
 

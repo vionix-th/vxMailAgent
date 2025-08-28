@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { loadAndDecrypt } from '../persistence';
-import { dataPath } from '../utils/paths';
+import { userPaths } from '../utils/paths';
+import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
 
 import type { ApiConfig } from '../../shared/types';
 
@@ -14,11 +15,17 @@ export interface Settings {
   [key: string]: any;
 }
 
-/** Load settings from the encrypted JSON file. */
-export function loadSettings(): Settings {
+/** Load settings from the encrypted JSON file for a specific user. */
+export function loadSettings(req?: UserRequest): Settings {
   let settings: Settings;
   try {
-    const settingsFile = dataPath('settings.json');
+    if (!req || !hasUserContext(req)) {
+      throw new Error('User context required - no global settings available');
+    }
+    
+    const userContext = getUserContext(req);
+    const settingsFile = userPaths(userContext.uid).settings;
+    
     if (fs.existsSync(settingsFile)) {
       settings = loadAndDecrypt(settingsFile) as Settings;
     } else {
@@ -29,12 +36,31 @@ export function loadSettings(): Settings {
     if (typeof settings.fetcherAutoStart !== 'boolean') settings.fetcherAutoStart = true;
     if (typeof settings.sessionTimeoutMinutes !== 'number') settings.sessionTimeoutMinutes = 15;
 
-    console.log('[DEBUG] Loaded settings from disk');
+    console.log(`[DEBUG] Loaded settings for user ${userContext.uid}`);
   } catch (e) {
     console.error('[ERROR] Failed to load settings:', e);
     settings = defaultSettings();
   }
   return settings;
+}
+
+/** Save settings to the encrypted JSON file for a specific user. */
+export function saveSettings(settings: Settings, req: UserRequest): void {
+  if (!hasUserContext(req)) {
+    throw new Error('User context required - no global settings available');
+  }
+  
+  const userContext = getUserContext(req);
+  const settingsFile = userPaths(userContext.uid).settings;
+  
+  try {
+    const { encryptAndPersist } = require('../persistence');
+    encryptAndPersist(settings, settingsFile);
+    console.log(`[DEBUG] Saved settings for user ${userContext.uid}`);
+  } catch (e) {
+    console.error('[ERROR] Failed to save settings:', e);
+    throw e;
+  }
 }
 
 /** Default settings when none exist on disk. */
