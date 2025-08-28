@@ -81,11 +81,14 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 #### 3.2.0a Workspace (Shared, Mutable, Conversation-centric)
 - **Concept**: For each routed email/run, the director opens a shared `Workspace`. Director and agents can add, list, update, and remove items (arbitrary MIME-typed content). All participants have equal access. When done, the director completes its run; the Workspace is the deliverable. Status exists but is non-gating.
 - **Shared Types** (`src/shared/types.ts`):
-  - `WorkspaceItem`: `{ id: string; label?: string; description?: string; mimeType?: string; encoding?: 'utf8'|'base64'|'binary'; data?: string; provenance: { by: 'director'|'agent'|'tool'; agentId?: string; tool?: ToolCallKind | string; conversationId?: string }; tags?: string[]; created: string; updated: string; revision?: number; deleted?: boolean }`.
-    - MIME-first model: there is no `type` enum; rendering is driven by `mimeType` and `encoding`. Unknown MIME types fall back to raw views.
-    - Encoding and data: `data` holds the entire payload when present. If `encoding === 'base64'`, `data` is base64-encoded. If `encoding === 'utf8'` or omitted, `data` is treated as UTF-8 text. There is no `filename`, `sizeBytes`, or `url`.
+  - `WorkspaceItem` (MIME-first, provenance in `context`):
+    - Shape:
+      `{ id: string; label?: string; description?: string; mimeType?: string; encoding?: 'utf8'|'base64'|'binary'; data?: string; tags?: string[]; created: string; updated: string; revision?: number; deleted?: boolean; context: { email: { id: string; subject?: string; from?: string; date?: string }; director: { id: string; name?: string }; agent?: { id?: string; name?: string }; createdBy: 'director'|'agent'|'tool'; agentId?: string; tool?: string; conversationId?: string } }`.
+    - MIME-first model: no `type` enum; rendering is driven by `mimeType` and `encoding`. Unknown MIME types fall back to raw views.
+    - Encoding and data: `data` holds the payload when present. If `encoding === 'base64'`, `data` is base64-encoded. If `encoding === 'utf8'` or omitted, `data` is UTF-8 text. There is no `filename`, `sizeBytes`, or `url`.
     - Titles/display: derive labels from `mimeType` and/or `tags` rather than filenames.
-  - Note: Although `ConversationThread` in code currently includes an optional `workspaceItems?: WorkspaceItem[]` field, the persisted source of truth for workspace content is the Workspaces repository exposed via `src/backend/routes/workspaces.ts`. Do not embed items in conversations; use the Workspaces API.
+  - `WorkspaceItemInput` supports optional `context` snapshot and a `provenance` override that the backend collapses into `context` on write.
+  - Note: While `ConversationThread` has an optional `workspaceItems?: WorkspaceItem[]`, the persisted source of truth is the Workspaces repository via `src/backend/routes/workspaces.ts`. Do not embed items in conversations; use the Workspaces API.
 - **API Endpoints (Workspace)**:
   - `GET /api/workspaces/:id/items` — list items (supports filter/paging). Use `?includeDeleted=true` to include soft-deleted items.
   - `POST /api/workspaces/:id/items` — add item.
@@ -143,7 +146,7 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
   - Emitting a tool event without `detail.tool`, omitting required fields, or missing result/error where expected is a defect. New tool branches MUST add compliant `logOrch()` calls.
 
 #### 3.2.1 Email Fetcher
-- **Functionality**: Fetches emails from all configured accounts periodically (background loop controlled by API) or on-demand. Runs only while the application is active. Applies regex filters to route emails to directors, supporting multiple directors per email. Control endpoints: `/api/fetcher/status|start|stop|trigger|run` (see `src/backend/routes/fetcher.ts`).
+- **Functionality**: Fetches emails from all configured accounts periodically (background loop controlled by API) or on-demand. Runs only while the application is active. Applies regex filters to route emails to directors, supporting multiple directors per email. Control endpoints: `/api/fetcher/status|start|stop|fetch|run` (see `src/backend/routes/fetcher.ts`).
 - **Configuration**: Filter rules defined in UI, stored in JSON (e.g., `{ field: "From", regex: "client[0-9]+@domain\.com", directorId: "director1" }`).
 - **Implementation**: Uses Gmail API (`gmail.users.messages.list/get`) or Microsoft Graph API (`me/messages`) with Node.js `RegExp` for filtering. Errors (e.g., invalid regex) trigger UI alerts (e.g., “Invalid regex pattern”) and log to console.
 

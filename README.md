@@ -25,7 +25,7 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 - `src/backend`: Express API (OAuth, persistence, orchestration). Entry: `index.ts`
 - `src/frontend`: Vite + React UI (Material‑UI + Tailwind)
 - `src/shared`: Cross‑package TypeScript types used by backend and frontend
-- `docs/DEVELOPER.md`: API details and developer notes; `Design.md` for architecture context
+- `docs/DEVELOPER.md`: API details and developer notes; `DESIGN.md` for architecture context
 - `data/`: Local runtime store (accounts, prompts, logs, etc.)
 
 ## Environment Variables (Backend)
@@ -44,6 +44,12 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 - Optional:
   - `PORT` → backend port (default `3001`)
   - `VX_MAILAGENT_DATA_DIR` → override `data/` path (absolute or relative to process cwd)
+  - Multi-user isolation and limits (see `src/backend/config.ts`):
+    - `USER_REGISTRY_TTL_MINUTES` (default 60)
+    - `USER_REGISTRY_MAX_ENTRIES` (default 1000)
+    - `USER_MAX_FILE_SIZE_MB` (default 50)
+    - `USER_MAX_CONVERSATIONS` (default 10000)
+    - `USER_MAX_LOGS_PER_TYPE` (default 10000)
 
 Use `src/backend/.env.example` as a template.
 
@@ -75,7 +81,7 @@ Frontend (`src/frontend`)
 
 ## Data & Security
 
-- Storage: JSON files under `data/` (e.g., `accounts.json`, `directors.json`, `orchestrationConversations.json`).
+- Storage: JSON files under `data/users/{uid}/` (per-user isolation). Examples within a user root: `accounts.json`, `directors.json`, `conversations.json`, `workspaceItems.json`, and `logs/{fetcher,orchestration,provider-events,traces}.json`.
 - Encryption: AES‑256‑GCM with random IV; enabled when `VX_MAILAGENT_KEY` is a valid 64‑char hex. When not set, files are plaintext JSON for development convenience.
 - Secrets: never commit `.env` or tokens. Use the example template and export env vars locally.
 
@@ -92,7 +98,8 @@ Frontend (`src/frontend`)
 - Auth session: `/api/auth/google/initiate`, `/api/auth/google/callback`, `/api/auth/whoami`, `/api/auth/logout`
 - OAuth: `/api/oauth2/google|outlook/{initiate,callback}` (requires authentication)
 - Accounts: `GET/POST/PUT/DELETE /api/accounts[...]` (see `src/backend/routes/accounts.ts`)
-- Fetcher: status/start/stop/run/logs under `/api/fetcher` (see `src/backend/routes/fetcher.ts`)
+- Fetcher: status/start/stop/fetch/run; logs under `/api/fetcher` (see `src/backend/routes/fetcher.ts`)
+  - Logs endpoints: `GET /api/fetcher/log`, `GET /api/fetcher/logs`, `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (body `{ ids: string[] }`)
 - Orchestration, prompts, agents, directors, conversations, templates, memory, diagnostics, workspaces: modular route files under `src/backend/routes/`
 - Types: shared request/response models in `src/shared/types.ts`
 - More details: `docs/DEVELOPER.md`

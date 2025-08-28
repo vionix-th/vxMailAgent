@@ -12,6 +12,26 @@
 - If missing/invalid, the backend still starts in PLAINTEXT mode and logs a warning. See `src/backend/config.ts::warnIfInsecure()` and `src/backend/persistence.ts`.
 - Tracing/provider events retention settings are in `src/backend/config.ts` (e.g., `TRACE_MAX_TRACES`, `PROVIDER_TTL_DAYS`).
 
+## Per-User Isolation & Repository Registry
+
+- Middleware: `src/backend/middleware/user-context.ts`
+  - `attachUserContext` requires prior auth and validates `uid` (alphanumeric/underscore/hyphen, 1–64 chars). Forbids `uid`/`userId` in params, query, or body.
+  - Attaches `{ uid, repos }` where `repos` is a per-user bundle from the repository registry.
+  - `requireUserContext` enforces presence of user context for protected routes.
+- Repository Registry: `src/backend/repository/registry.ts`
+  - Provides per-user repositories backed by JSON files under `data/users/{uid}/` with TTL-based eviction.
+  - Core repos: `accounts`, `settings`.
+  - Inventory: `prompts`, `agents`, `directors`, `filters`, `imprints`, `workspaceItems`.
+  - Conversations/memory: `conversations`, `memory`.
+  - Logs: `logs/provider-events.json`, `logs/traces.json`, `logs/orchestration.json`; fetcher logs at `logs/fetcher.json`.
+- Paths and safety: `src/backend/utils/paths.ts`
+  - `userPaths(uid)` derives absolute, validated paths under `DATA_DIR/users/{uid}` and creates directories with 0700 permissions.
+  - Disallows symlinks and path traversal; validates containment under the per-user root.
+- Config (multi-user limits): `src/backend/config.ts`
+  - `USER_REGISTRY_TTL_MINUTES`, `USER_REGISTRY_MAX_ENTRIES`
+  - `USER_MAX_CONVERSATIONS`, `USER_MAX_LOGS_PER_TYPE`, `USER_MAX_FILE_SIZE_MB`
+  - Behavior is always per-user; no legacy global stores.
+
 ## Authentication & Sessions
 
 - Stateless login backed by a signed JWT stored in `vx.session` (HttpOnly, SameSite=Lax; `Secure` in production).
@@ -36,7 +56,7 @@
 
 ## Workspace Semantics (Current)
 
-- Routes are namespaced by `:id`, but items are stored in a shared repository irrespective of `:id` (partitioning can be added later). See `src/backend/routes/workspaces.ts`.
+- Routes are namespaced by `:id`, but items are stored in a per-user shared repository irrespective of `:id` (partitioning can be added later). See `src/backend/routes/workspaces.ts`.
 - Endpoints implemented:
   - `GET /api/workspaces/:id/items` (supports `?includeDeleted=true`)
   - `POST /api/workspaces/:id/items`
@@ -58,8 +78,9 @@
 - Fetcher (email retrieval controller and logs)
   - `GET /api/fetcher/status` — loop active/running timestamps
   - `POST /api/fetcher/start`, `POST /api/fetcher/stop` — toggles and persists `fetcherAutoStart`
-  - `POST /api/fetcher/trigger` (fire‑and‑forget), `POST /api/fetcher/run` (awaits)
-  - `GET /api/fetcher/logs`, `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` — via cleanup service
+  - `POST /api/fetcher/fetch` (fire‑and‑forget), `POST /api/fetcher/run` (awaits)
+  - `GET /api/fetcher/log` (alias), `GET /api/fetcher/logs`
+  - `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (expects body `{ ids: string[] }`) — via cleanup service
 - Diagnostics
   - Unified/provider events and traces under `src/backend/routes/{diagnostics.ts, unified-diagnostics.ts}` (admin/debug). Keep separate from user Results.
 - Accounts/Directors/Agents/Filters/Templates/Memory/Conversations
