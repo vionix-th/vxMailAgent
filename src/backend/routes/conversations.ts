@@ -11,28 +11,36 @@ export interface ConversationsRoutesDeps {
   setConversations: (req: UserRequest, next: ConversationThread[]) => void;
   getSettings: () => any;
   isDirectorFinalized: (dirId: string) => boolean;
-  logProviderEvent: (ev: ProviderEvent) => void;
+  logProviderEvent: (ev: ProviderEvent, req?: UserRequest) => void;
   newId: () => string;
   getDirectors: (req?: UserRequest) => Director[];
   getAgents: (req?: UserRequest) => Agent[];
 }
 
 export default function registerConversationsRoutes(app: express.Express, deps: ConversationsRoutesDeps) {
-  const hub: RepositoryHub = {
-    getFetcherLog: () => [],
-    setFetcherLog: () => {},
-    getOrchestrationLog: () => [],
-    setOrchestrationLog: () => {},
-    getConversations: () => deps.getConversations() as any[],
-    setConversations: (_next: any[]) => { /* Per-user conversations handled elsewhere */ },
-    getProviderEvents: () => [],
-    setProviderEvents: () => {},
-    getTraces: () => [],
-    setTraces: () => {},
-    getWorkspaceItems: () => [],
-    setWorkspaceItems: () => {},
-  };
-  const cleanup = createCleanupService(hub);
+  function makeCleanup(req: UserRequest) {
+    const hub: RepositoryHub = {
+      // Conversations
+      getConversations: () => deps.getConversations(req) as any[],
+      setConversations: (next: any[]) => deps.setConversations(req, next as ConversationThread[]),
+      // Orchestration log (per-user repo)
+      getOrchestrationLog: () => getUserContext(req).repos.orchestrationLog.getAll() as any[],
+      setOrchestrationLog: (next: any[]) => getUserContext(req).repos.orchestrationLog.setAll(next as any[]),
+      // Provider events (per-user repo)
+      getProviderEvents: () => getUserContext(req).repos.providerEvents.getAll() as any[],
+      setProviderEvents: (next: any[]) => getUserContext(req).repos.providerEvents.setAll(next as any[]),
+      // Traces (per-user repo)
+      getTraces: () => getUserContext(req).repos.traces.getAll() as any[],
+      setTraces: (next: any[]) => getUserContext(req).repos.traces.setAll(next as any[]),
+      // Fetcher log (per-user repo)
+      getFetcherLog: () => getUserContext(req).repos.fetcherLog.getAll() as any[],
+      setFetcherLog: (next: any[]) => getUserContext(req).repos.fetcherLog.setAll(next as any[]),
+      // Workspace items (per-user repo)
+      getWorkspaceItems: () => getUserContext(req).repos.workspaceItems.getAll(),
+      setWorkspaceItems: (next: any[]) => getUserContext(req).repos.workspaceItems.setAll(next),
+    };
+    return createCleanupService(hub);
+  }
   // LIST conversations (canonical). Supports optional pagination only; no filters, no sorting.
   // GET /api/conversations?limit=&offset=
   app.get('/api/conversations', (req, res) => {
@@ -177,9 +185,9 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             deps.setConversations(req as UserRequest, next);
           }
         }
-        // Provider events
+        // Provider events (req-aware)
         try {
-          if (result.request) deps.logProviderEvent({ id: deps.newId(), conversationId: id, provider: 'openai', type: 'request', timestamp: now, payload: result.request });
+          if (result.request) deps.logProviderEvent({ id: deps.newId(), conversationId: id, provider: 'openai', type: 'request', timestamp: now, payload: result.request }, req as UserRequest);
           const usage = (result.response && (result.response as any).usage) || undefined;
           deps.logProviderEvent({
             id: deps.newId(),
@@ -190,7 +198,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             latencyMs,
             usage: usage ? { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } : undefined,
             payload: result.response,
-          });
+          }, req as UserRequest);
         } catch {}
         lastStep = result;
       } else {
@@ -207,7 +215,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             (next: ConversationThread[]) => deps.setConversations(req as UserRequest, next),
             createToolHandler(getUserContext(req as UserRequest).repos),
             undefined, // No traceId in routes path
-            deps.logProviderEvent // Add provider event logging
+            (ev: ProviderEvent) => deps.logProviderEvent(ev, req as UserRequest) // Req-aware provider logging
           );
           
           if (agentResult.success) {
@@ -232,6 +240,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
   app.delete('/api/conversations/:id', (req, res) => {
     try {
       const id = req.params.id;
+      const cleanup = makeCleanup(req as UserRequest);
       const { deleted } = cleanup.removeConversationsByIds([id]);
       if (deleted === 0) return res.status(404).json({ error: 'Conversation not found' });
       return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
@@ -245,6 +254,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     try {
       const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];
       if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
+      const cleanup = makeCleanup(req as UserRequest);
       const { deleted } = cleanup.removeConversationsByIds(ids);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
     } catch (e: any) {

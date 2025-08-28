@@ -18,21 +18,23 @@ export interface FetcherRoutesDeps {
 
 /** Register routes controlling the email fetcher. */
 export default function registerFetcherRoutes(app: express.Express, deps: FetcherRoutesDeps) {
-  const hub: RepositoryHub = {
-    getFetcherLog: () => deps.getFetcherLog(),
-    setFetcherLog: (next: FetcherLogEntry[]) => deps.setFetcherLog({} as UserRequest, next),
-    getOrchestrationLog: () => [],
-    setOrchestrationLog: () => {},
-    getConversations: () => [],
-    setConversations: () => {},
-    getProviderEvents: () => [],
-    setProviderEvents: () => {},
-    getTraces: () => [],
-    setTraces: () => {},
-    getWorkspaceItems: () => [],
-    setWorkspaceItems: () => {},
-  };
-  const cleanup = createCleanupService(hub);
+  function makeCleanup(req: UserRequest) {
+    const hub: RepositoryHub = {
+      getFetcherLog: () => deps.getFetcherLog(req),
+      setFetcherLog: (next: FetcherLogEntry[]) => deps.setFetcherLog(req, next),
+      getOrchestrationLog: () => [],
+      setOrchestrationLog: () => {},
+      getConversations: () => [],
+      setConversations: () => {},
+      getProviderEvents: () => [],
+      setProviderEvents: () => {},
+      getTraces: () => [],
+      setTraces: () => {},
+      getWorkspaceItems: () => [],
+      setWorkspaceItems: () => {},
+    };
+    return createCleanupService(hub);
+  }
   app.get('/api/fetcher/status', (req, res) => {
     const status = deps.getStatus(req as UserRequest);
     res.json(status);
@@ -84,9 +86,21 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     }
   });
 
+  // Purge all fetcher logs for current user
+  app.delete('/api/fetcher/logs/purge', (req, res) => {
+    try {
+      const cleanup = makeCleanup(req as UserRequest);
+      const out = cleanup.purge('fetcher');
+      res.json({ success: true, ...out });
+    } catch (e: any) {
+      return res.status(500).json({ error: String(e?.message || e) });
+    }
+  });
+
   app.delete('/api/fetcher/logs/:id', (req, res) => {
     try {
       const id = req.params.id;
+      const cleanup = makeCleanup(req as UserRequest);
       const { deleted } = cleanup.removeFetcherLogsByIds([id]);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} fetcher logs` });
     } catch (e: any) {
@@ -98,6 +112,7 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     try {
       const ids = Array.isArray(req.body.ids) ? (req.body.ids as string[]) : [];
       if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
+      const cleanup = makeCleanup(req as UserRequest);
       const { deleted } = cleanup.removeFetcherLogsByIds(ids);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} fetcher logs` });
     } catch (e: any) {

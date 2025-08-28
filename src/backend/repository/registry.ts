@@ -3,7 +3,7 @@ import { ProviderEventsRepository, TracesRepository, createUserJsonRepository, c
 import { userPaths, UserPaths } from '../utils/paths';
 import fs from 'fs';
 import * as persistence from '../persistence';
-import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS } from '../config';
+import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS, USER_MAX_LOGS_PER_TYPE } from '../config';
 import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem } from '../../shared/types';
 
 /**
@@ -32,6 +32,7 @@ export interface RepoBundle {
   memory: Repository<any>;
   
   // Logging repositories
+  fetcherLog: Repository<any>;
   providerEvents: ProviderEventsRepository;
   traces: TracesRepository;
   orchestrationLog: Repository<any>;
@@ -115,6 +116,7 @@ export class RepoBundleRegistry {
       memory: createUserJsonRepository<any>(paths.memory, paths.root),
       
       // Logging repositories
+      fetcherLog: createUserJsonRepository<any>(paths.logs.fetcher, paths.root, USER_MAX_LOGS_PER_TYPE),
       providerEvents: createUserProviderEventsRepository(paths.logs.providerEvents, paths.root),
       traces: createUserTracesRepository(paths.logs.traces, paths.root),
       orchestrationLog: createUserJsonRepository<any>(paths.logs.orchestration, paths.root),

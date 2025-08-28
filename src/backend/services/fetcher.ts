@@ -5,6 +5,7 @@ import { conversationEngine } from './engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { FetcherLogEntry, Account, ConversationThread, OrchestrationDiagnosticEntry, ProviderEvent, Filter, Director, Agent, Prompt } from '../../shared/types';
 import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread } from './orchestration';
+import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE } from '../config';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
 
 /** Dependencies required by the fetcher service. */
@@ -46,8 +47,29 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
   let fetcherLog: FetcherLogEntry[] = [];
   let fetcherAccountStatus: Record<string, { lastRun: string | null; lastError: string | null }> = {};
 
+  function pruneFetcher(list: FetcherLogEntry[]): FetcherLogEntry[] {
+    try {
+      const ttlMs = Math.max(0, FETCHER_TTL_DAYS) * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      let next = list;
+      if (ttlMs > 0) {
+        next = next.filter(e => {
+          const ts = Date.parse(e.timestamp || '');
+          return isNaN(ts) ? true : (now - ts) <= ttlMs;
+        });
+      }
+      const cap = Math.max(0, USER_MAX_LOGS_PER_TYPE);
+      if (cap > 0 && next.length > cap) {
+        next = next.slice(Math.max(0, next.length - cap));
+      }
+      return next;
+    } catch {
+      return list;
+    }
+  }
+
   try {
-    fetcherLog = deps.getFetcherLog().map(e => ({ ...e, id: e.id || newId() }));
+    fetcherLog = pruneFetcher(deps.getFetcherLog().map(e => ({ ...e, id: e.id || newId() })));
   } catch (e) {
     console.error('[ERROR] Failed to initialize fetcherLog:', e);
   }
@@ -56,6 +78,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
     try {
       const withId: FetcherLogEntry = { ...entry, id: entry.id || newId() };
       fetcherLog.push(withId);
+      fetcherLog = pruneFetcher(fetcherLog);
       deps.setFetcherLog(fetcherLog);
     } catch (e) {
       console.error('[ERROR] Failed to persist fetcherLog entry:', e);
@@ -438,12 +461,13 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
     getFetcherLog: () => fetcherLog,
     setFetcherLog: (next: FetcherLogEntry[]) => {
       const before = fetcherLog.length;
-      fetcherLog = (next || []).map(e => ({ ...e, id: e.id || newId() }));
+      fetcherLog = pruneFetcher((next || []).map(e => ({ ...e, id: e.id || newId() })));
       try {
-        // Fetcher log persistence removed - using per-user logs
-        console.log(`[${new Date().toISOString()}] [FETCHER] setFetcherLog: ${before} -> ${fetcherLog.length}`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[${new Date().toISOString()}] [FETCHER] setFetcherLog: ${before} -> ${fetcherLog.length}`);
+        }
       } catch (e) {
-        console.error('[ERROR] Failed to persist fetcherLog after setFetcherLog:', e);
+        console.error('[ERROR] Failed after setFetcherLog:', e);
       }
     },
   };

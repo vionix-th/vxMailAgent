@@ -30,6 +30,7 @@ import registerFetcherRoutes from './routes/fetcher';
 import registerDiagnosticsRoutes from './routes/diagnostics';
 import registerDiagnosticTracesRoutes from './routes/diagnostic-traces';
 import registerUnifiedDiagnosticsRoutes from './routes/unified-diagnostics';
+import registerCleanupRoutes from './routes/cleanup';
 // Health and cleanup routes removed - user isolation enforced
 // initFetcher removed - using FetcherManager
 import { FetcherManager } from './services/fetcher-manager';
@@ -234,18 +235,7 @@ export function createServer() {
     getTraces: (req?: UserRequest) => getTraces(req)
   });
 
-  // Conversations routes registration moved to proper location
-
-  registerConversationsRoutes(app, {
-    getConversations: (req?: UserRequest) => getConversationsLive(req),
-    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next),
-    getSettings: () => getSettingsLive(),
-    getDirectors: (req?: UserRequest) => getDirectorsLive(req),
-    getAgents: (req?: UserRequest) => getAgentsLive(req),
-    isDirectorFinalized: () => { throw new Error('Director finalization requires user context'); },
-    logProviderEvent: (e: ProviderEvent) => { svcLogProviderEvent(e); },
-    newId
-  });
+  // Conversations routes registration moved to proper location (single registration only)
 
   // Initialize FetcherManager with per-user fetcher factory
   const fetcherManager = new FetcherManager((uid: string) => ({
@@ -262,8 +252,8 @@ export function createServer() {
     isDirectorFinalized: (_dirId: string) => { throw new Error('Director finalization requires user context'); },
     getAccounts: (_req?: UserRequest) => { throw new Error('Accounts access requires user context'); },
     setAccounts: (_req: UserRequest, _next: any[]) => { throw new Error('Accounts access requires user context'); },
-    getFetcherLog: (_req?: UserRequest) => [], // Per-user fetcher log not implemented yet
-    setFetcherLog: (_req: UserRequest, _next: any[]) => {}, // Per-user fetcher log not implemented yet
+    getFetcherLog: (req?: UserRequest) => getUserContext((req as UserRequest)).repos.fetcherLog.getAll(),
+    setFetcherLog: (req: UserRequest, next: any[]) => getUserContext(req).repos.fetcherLog.setAll(next),
     getToolHandler: (req?: UserRequest) => createToolHandler(getUserContext((req as UserRequest)).repos),
   }));
 
@@ -278,6 +268,8 @@ export function createServer() {
     getFetcherLog: (req?: UserRequest) => fetcherManager.getFetcherLog(req),
     setFetcherLog: (req: UserRequest, next) => fetcherManager.setFetcherLog(req, next)
   });
+  // Cleanup endpoints (per-user)
+  registerCleanupRoutes(app);
   // Cleanup routes removed - user isolation enforced
   // All cleanup operations must use per-user repositories
 

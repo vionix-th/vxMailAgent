@@ -1,105 +1,91 @@
 import express from 'express';
-import { FetcherLogEntry, CleanupStats } from '../../shared/types';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
+import { UserRequest, getUserContext } from '../middleware/user-context';
 
-/** Dependencies for cleanup routes. */
-export interface CleanupRoutesDeps {
-  getFetcherLog: () => FetcherLogEntry[];
-  setFetcherLog: (next: FetcherLogEntry[]) => void;
-  getOrchestrationLog: () => any[];
-  setOrchestrationLog: (next: any[]) => void;
-  getConversations: () => any[];
-  setConversations: (next: any[]) => void;
-  getWorkspaceItems: () => any[];
-  setWorkspaceItems: (next: any[]) => void;
-  getProviderEvents: () => any[];
-  setProviderEvents: (next: any[]) => void;
-  getTraces: () => any[];
-  setTraces: (next: any[]) => void;
-}
+export default function registerCleanupRoutes(app: express.Express) {
+  function makeCleanup(req: UserRequest) {
+    const { repos } = getUserContext(req);
+    const hub: RepositoryHub = {
+      getConversations: () => repos.conversations.getAll(),
+      setConversations: (next: any[]) => repos.conversations.setAll(next),
+      getOrchestrationLog: () => repos.orchestrationLog.getAll(),
+      setOrchestrationLog: (next: any[]) => repos.orchestrationLog.setAll(next),
+      getProviderEvents: () => repos.providerEvents.getAll(),
+      setProviderEvents: (next: any[]) => repos.providerEvents.setAll(next),
+      getTraces: () => repos.traces.getAll(),
+      setTraces: (next: any[]) => repos.traces.setAll(next),
+      getFetcherLog: () => repos.fetcherLog.getAll(),
+      setFetcherLog: (next: any[]) => repos.fetcherLog.setAll(next),
+      getWorkspaceItems: () => repos.workspaceItems.getAll(),
+      setWorkspaceItems: (next: any[]) => repos.workspaceItems.setAll(next),
+    };
+    return createCleanupService(hub);
+  }
 
-/** Register routes for diagnostics cleanup operations. */
-export default function registerCleanupRoutes(app: express.Express, deps: CleanupRoutesDeps) {
-  const router = express.Router();
-  const hub: RepositoryHub = {
-    getFetcherLog: () => deps.getFetcherLog(),
-    setFetcherLog: (next: FetcherLogEntry[]) => deps.setFetcherLog(next),
-    getOrchestrationLog: () => deps.getOrchestrationLog(),
-    setOrchestrationLog: (next: any[]) => deps.setOrchestrationLog(next),
-    getConversations: () => deps.getConversations(),
-    setConversations: (next: any[]) => deps.setConversations(next),
-    getWorkspaceItems: () => deps.getWorkspaceItems(),
-    setWorkspaceItems: (next: any[]) => deps.setWorkspaceItems(next),
-    getProviderEvents: () => deps.getProviderEvents(),
-    setProviderEvents: (next: any[]) => deps.setProviderEvents(next),
-    getTraces: () => deps.getTraces(),
-    setTraces: (next: any[]) => deps.setTraces(next),
-  };
-  const svc = createCleanupService(hub);
-  router.get('/cleanup/stats', (_req, res) => {
+  // Stats for current user (used by frontend settings)
+  app.get('/api/cleanup/stats', (req, res) => {
     try {
-      const stats: CleanupStats = svc.getStats();
+      const cleanup = makeCleanup(req as UserRequest);
+      const stats = cleanup.getStats();
       res.json(stats);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to get cleanup stats' });
-    }
-  });
-  router.delete('/cleanup/all', (_req, res) => {
-    try {
-      const { deleted, message } = svc.purgeAll();
-      res.json({ success: true, message, deleted });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to purge all logs' });
-    }
-  });
-  router.delete('/cleanup/fetcher-logs', (_req, res) => {
-    try {
-      const result = svc.purge('fetcher');
-      res.json({ success: true, ...result });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete fetcher logs' });
-    }
-  });
-  router.delete('/cleanup/orchestration-logs', (_req, res) => {
-    try {
-      const result = svc.purge('orchestration');
-      res.json({ success: true, ...result });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete orchestration logs' });
-    }
-  });
-  router.delete('/cleanup/conversations', (_req, res) => {
-    try {
-      const result = svc.purge('conversations');
-      res.json({ success: true, ...result });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete conversations' });
-    }
-  });
-  router.delete('/cleanup/workspace-items', (_req, res) => {
-    try {
-      const result = svc.purge('workspaceItems');
-      res.json({ success: true, ...result });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete workspace items' });
-    }
-  });
-  router.delete('/cleanup/provider-events', (_req, res) => {
-    try {
-      const result = svc.purge('providerEvents');
-      res.json({ success: true, ...result });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete provider events' });
-    }
-  });
-  router.delete('/cleanup/traces', (_req, res) => {
-    try {
-      const result = svc.purge('traces');
-      res.json({ success: true, ...result });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete traces' });
+    } catch (e: any) {
+      return res.status(500).json({ error: String(e?.message || e) });
     }
   });
 
-  app.use('/api', router);
+  // Purge all logs and data for the current user (frontend expects /api/cleanup/all)
+  app.delete('/api/cleanup/all', (req, res) => {
+    try {
+      const cleanup = makeCleanup(req as UserRequest);
+      const { deleted, message } = cleanup.purgeAll();
+      res.json({ success: true, deleted, message });
+    } catch (e: any) {
+      return res.status(500).json({ error: String(e?.message || e) });
+    }
+  });
+
+  // Individual purge endpoints expected by frontend
+  app.delete('/api/cleanup/fetcher-logs', (req, res) => {
+    try { const out = makeCleanup(req as UserRequest).purge('fetcher'); res.json({ success: true, ...out }); }
+    catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
+  });
+  app.delete('/api/cleanup/orchestration-logs', (req, res) => {
+    try { const out = makeCleanup(req as UserRequest).purge('orchestration'); res.json({ success: true, ...out }); }
+    catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
+  });
+  app.delete('/api/cleanup/conversations', (req, res) => {
+    try { const out = makeCleanup(req as UserRequest).purge('conversations'); res.json({ success: true, ...out }); }
+    catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
+  });
+  app.delete('/api/cleanup/workspace-items', (req, res) => {
+    try { const out = makeCleanup(req as UserRequest).purge('workspaceItems'); res.json({ success: true, ...out }); }
+    catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
+  });
+  app.delete('/api/cleanup/provider-events', (req, res) => {
+    try { const out = makeCleanup(req as UserRequest).purge('providerEvents'); res.json({ success: true, ...out }); }
+    catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
+  });
+  app.delete('/api/cleanup/traces', (req, res) => {
+    try { const out = makeCleanup(req as UserRequest).purge('traces'); res.json({ success: true, ...out }); }
+    catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
+  });
+
+  // Backward-compatible generic purge by type; maps hyphenated names
+  app.delete('/api/cleanup/:type', (req, res) => {
+    try {
+      const raw = String(req.params.type || '');
+      const map: Record<string, any> = {
+        'fetcher-logs': 'fetcher',
+        'orchestration-logs': 'orchestration',
+        'workspace-items': 'workspaceItems',
+        'provider-events': 'providerEvents',
+      };
+      const type = (map[raw] || raw) as any;
+      const cleanup = makeCleanup(req as UserRequest);
+      const out = cleanup.purge(type);
+      res.json({ success: true, ...out });
+    } catch (e: any) {
+      return res.status(400).json({ error: String(e?.message || e) });
+    }
+  });
 }
