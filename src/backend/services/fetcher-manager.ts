@@ -4,7 +4,7 @@ import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-
 /**
  * Per-user fetcher dependencies that include user context
  */
-export interface UserFetcherDeps extends Omit<FetcherDeps, 'getConversations' | 'setConversations' | 'logOrch' | 'logProviderEvent' | 'getAccounts' | 'setAccounts' | 'getFetcherLog' | 'setFetcherLog'> {
+export interface UserFetcherDeps extends Omit<FetcherDeps, 'getConversations' | 'setConversations' | 'logOrch' | 'logProviderEvent' | 'getAccounts' | 'setAccounts' | 'getFetcherLog' | 'setFetcherLog' | 'getToolHandler'> {
   uid: string;
   getConversations: (req?: UserRequest) => any[];
   setConversations: (req: UserRequest, next: any[]) => void;
@@ -14,6 +14,7 @@ export interface UserFetcherDeps extends Omit<FetcherDeps, 'getConversations' | 
   setAccounts: (req: UserRequest, next: any[]) => void;
   getFetcherLog: (req?: UserRequest) => any[];
   setFetcherLog: (req: UserRequest, next: any[]) => void;
+  getToolHandler: (req?: UserRequest) => (name: string, params: any) => Promise<any>;
 }
 
 /**
@@ -56,6 +57,7 @@ export class FetcherManager {
           setAccounts: (next) => userDeps.setAccounts(req, next),
           getFetcherLog: () => userDeps.getFetcherLog(req),
           setFetcherLog: (next) => userDeps.setFetcherLog(req, next),
+          getToolHandler: () => userDeps.getToolHandler(req),
         };
         this.fetchers.set(uid, initFetcher(fetcherDeps));
       }

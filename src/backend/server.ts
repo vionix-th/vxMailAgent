@@ -33,6 +33,7 @@ import registerUnifiedDiagnosticsRoutes from './routes/unified-diagnostics';
 // Health and cleanup routes removed - user isolation enforced
 // initFetcher removed - using FetcherManager
 import { FetcherManager } from './services/fetcher-manager';
+import { createToolHandler } from './toolCalls';
 import { attachUserContext, UserRequest, hasUserContext, getUserContext } from './middleware/user-context';
 
 /** Create and configure the backend Express server. */
@@ -263,6 +264,7 @@ export function createServer() {
     setAccounts: (_req: UserRequest, _next: any[]) => { throw new Error('Accounts access requires user context'); },
     getFetcherLog: (_req?: UserRequest) => [], // Per-user fetcher log not implemented yet
     setFetcherLog: (_req: UserRequest, _next: any[]) => {}, // Per-user fetcher log not implemented yet
+    getToolHandler: (req?: UserRequest) => createToolHandler(getUserContext((req as UserRequest)).repos),
   }));
 
   // Global fetcher initialization removed - user isolation enforced

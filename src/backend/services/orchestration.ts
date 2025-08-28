@@ -154,6 +154,7 @@ export async function runAgentConversation(
   apiConfig: any,
   toolRegistry: any[],
   setConversations: (next: ConversationThread[]) => void,
+  handleTool: (name: string, params: any) => Promise<any>,
   traceId?: string,
   logProviderEvent?: (event: any) => void,
 ): Promise<AgentConversationResult> {
@@ -174,7 +175,6 @@ export async function runAgentConversation(
       stepCount++;
       
       const { conversationEngine } = require('./engine');
-      const { handleToolByName } = require('../toolCalls');
 
       const t0 = Date.now();
       const result = await conversationEngine.run({
@@ -270,7 +270,7 @@ export async function runAgentConversation(
               conversationId: agentThread.id
             }
           };
-          const exec = await handleToolByName(tc.name, argsWithContext);
+          const exec = await handleTool(tc.name, argsWithContext);
           const toolMsg = {
             role: 'tool',
             name: tc.name,

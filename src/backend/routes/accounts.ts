@@ -1,5 +1,4 @@
 import express from 'express';
-import * as persistence from '../persistence';
 import { Account } from '../../shared/types';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt } from '../utils/jwt';
@@ -346,10 +345,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
         return res.status(400).json({ error: 'Missing Google OAuth env vars (GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI)' });
       }
-      if (!require('fs').existsSync(ACCOUNTS_FILE)) {
-        return res.status(404).json({ error: 'accounts store not found' });
-      }
-      const accounts = persistence.loadAndDecrypt(ACCOUNTS_FILE) as Account[];
+      const accounts = getAccounts(req as UserRequest);
       const idx = accounts.findIndex(a => a.id === id);
       if (idx === -1) return res.status(404).json({ error: 'account not found' });
       const account = accounts[idx];

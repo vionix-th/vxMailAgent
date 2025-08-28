@@ -23,6 +23,7 @@ export interface FetcherDeps {
   setAccounts: (next: Account[]) => void;
   getFetcherLog: () => FetcherLogEntry[];
   setFetcherLog: (next: FetcherLogEntry[]) => void;
+  getToolHandler: () => (name: string, params: any) => Promise<any>;
 }
 
 /** Interface for the fetcher service. */
@@ -327,6 +328,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                           conversations = next;
                           deps.setConversations(next);
                         },
+                        deps.getToolHandler(),
                         traceId,
                         deps.logProviderEvent
                       );

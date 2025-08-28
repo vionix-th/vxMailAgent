@@ -4,78 +4,81 @@ import { ToolCallResult } from '../shared/types';
 import { validateAgainstSchema } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
 
-export async function handleToolByName(name: string, params: any): Promise<ToolCallResult> {
-  const spec = TOOL_REGISTRY.find(t => t.name === name) || null;
-  if (!spec) return { kind: name, success: false, result: null, error: 'Unknown tool name' };
-  const errors: string[] = validateAgainstSchema(spec.parameters, params);
-  // Retain semantic validation where applicable (calendar/todo/filesystem/memory)
-  const semErrors = validateToolSemantics(name as any, params);
-  const allErrors = [...errors, ...semErrors];
-  if (allErrors.length) {
-    return { kind: name, success: false, result: { ok: false, errors: allErrors, received: sanitize(params) }, error: 'Invalid tool params' };
-  }
-  // Call underlying impls; adapt legacy kind-based internals behind the scenes
-  try {
-    switch (name) {
-      case 'calendar_read': {
-        const r = await handleCalendarToolCall({ ...params, action: 'read' });
-        return { ...r, kind: name };
-      }
-      case 'calendar_add': {
-        const r = await handleCalendarToolCall({ ...params, action: 'add' });
-        return { ...r, kind: name };
-      }
-      case 'todo_add': {
-        const r = await handleTodoToolCall({ ...params, action: 'add' });
-        return { ...r, kind: name };
-      }
-      case 'filesystem_search': {
-        const r = await handleFilesystemToolCall({ ...params, action: 'search' });
-        return { ...r, kind: name };
-      }
-      case 'filesystem_retrieve': {
-        const r = await handleFilesystemToolCall({ ...params, action: 'retrieve' });
-        return { ...r, kind: name };
-      }
-      case 'memory_search': {
-        const r = await handleMemoryToolCall({ ...params, action: 'search' });
-        return { ...r, kind: name };
-      }
-      case 'memory_add': {
-        const r = await handleMemoryToolCall({ ...params, action: 'add' });
-        return { ...r, kind: name };
-      }
-      case 'memory_edit': {
-        const r = await handleMemoryToolCall({ ...params, action: 'edit' });
-        return { ...r, kind: name };
-      }
-      // Workspace tools
-      case 'workspace_add_item': {
-        const r = await handleWorkspaceToolCall({ ...params, action: 'add' });
-        return { ...r, kind: name };
-      }
-      case 'workspace_list_items': {
-        const r = await handleWorkspaceToolCall({ ...params, action: 'list' });
-        return { ...r, kind: name };
-      }
-      case 'workspace_get_item': {
-        const r = await handleWorkspaceToolCall({ ...params, action: 'get' });
-        return { ...r, kind: name };
-      }
-      case 'workspace_update_item': {
-        const r = await handleWorkspaceToolCall({ ...params, action: 'update' });
-        return { ...r, kind: name };
-      }
-      case 'workspace_remove_item': {
-        const r = await handleWorkspaceToolCall({ ...params, action: 'remove' });
-        return { ...r, kind: name };
-      }
-      default:
-        return { kind: name, success: false, result: null, error: 'tool not implemented' };
+export function createToolHandler(repos: {
+  memory: Repository<MemoryEntry>;
+  workspaceItems: Repository<WorkspaceItem>;
+}) {
+  async function handleToolByName(name: string, params: any): Promise<ToolCallResult> {
+    const spec = TOOL_REGISTRY.find(t => t.name === name) || null;
+    if (!spec) return { kind: name, success: false, result: null, error: 'Unknown tool name' };
+    const errors: string[] = validateAgainstSchema(spec.parameters, params);
+    const semErrors = validateToolSemantics(name as any, params);
+    const allErrors = [...errors, ...semErrors];
+    if (allErrors.length) {
+      return { kind: name, success: false, result: { ok: false, errors: allErrors, received: sanitize(params) }, error: 'Invalid tool params' };
     }
-  } catch (e: any) {
-    return { kind: name, success: false, result: null, error: e?.message || String(e) };
+    try {
+      switch (name) {
+        case 'calendar_read': {
+          const r = await handleCalendarToolCall({ ...params, action: 'read' });
+          return { ...r, kind: name };
+        }
+        case 'calendar_add': {
+          const r = await handleCalendarToolCall({ ...params, action: 'add' });
+          return { ...r, kind: name };
+        }
+        case 'todo_add': {
+          const r = await handleTodoToolCall({ ...params, action: 'add' });
+          return { ...r, kind: name };
+        }
+        case 'filesystem_search': {
+          const r = await handleFilesystemToolCall({ ...params, action: 'search' });
+          return { ...r, kind: name };
+        }
+        case 'filesystem_retrieve': {
+          const r = await handleFilesystemToolCall({ ...params, action: 'retrieve' });
+          return { ...r, kind: name };
+        }
+        case 'memory_search': {
+          const r = await handleMemoryToolCall({ ...params, action: 'search' }, repos.memory);
+          return { ...r, kind: name };
+        }
+        case 'memory_add': {
+          const r = await handleMemoryToolCall({ ...params, action: 'add' }, repos.memory);
+          return { ...r, kind: name };
+        }
+        case 'memory_edit': {
+          const r = await handleMemoryToolCall({ ...params, action: 'edit' }, repos.memory);
+          return { ...r, kind: name };
+        }
+        case 'workspace_add_item': {
+          const r = await handleWorkspaceToolCall({ ...params, action: 'add' }, repos.workspaceItems);
+          return { ...r, kind: name };
+        }
+        case 'workspace_list_items': {
+          const r = await handleWorkspaceToolCall({ ...params, action: 'list' }, repos.workspaceItems);
+          return { ...r, kind: name };
+        }
+        case 'workspace_get_item': {
+          const r = await handleWorkspaceToolCall({ ...params, action: 'get' }, repos.workspaceItems);
+          return { ...r, kind: name };
+        }
+        case 'workspace_update_item': {
+          const r = await handleWorkspaceToolCall({ ...params, action: 'update' }, repos.workspaceItems);
+          return { ...r, kind: name };
+        }
+        case 'workspace_remove_item': {
+          const r = await handleWorkspaceToolCall({ ...params, action: 'remove' }, repos.workspaceItems);
+          return { ...r, kind: name };
+        }
+        default:
+          return { kind: name, success: false, result: null, error: 'tool not implemented' };
+      }
+    } catch (e: any) {
+      return { kind: name, success: false, result: null, error: e?.message || String(e) };
+    }
   }
+  return handleToolByName;
 }
 
 async function handleCalendarToolCall(payload: any): Promise<ToolCallResult> {
@@ -111,17 +114,8 @@ import { MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
 
 import { newId } from './utils/id';
 import { Repository } from './repository/core';
-let memoryRepo: Repository<MemoryEntry> | null = null;
-export function setMemoryRepo(repo: Repository<MemoryEntry>) {
-  memoryRepo = repo;
-}
 
-let workspaceRepo: Repository<WorkspaceItem> | null = null;
-export function setWorkspaceRepo(repo: Repository<WorkspaceItem>) {
-  workspaceRepo = repo;
-}
-
-export async function handleMemoryToolCall(payload: any): Promise<ToolCallResult> {
+export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<MemoryEntry>): Promise<ToolCallResult> {
   console.log('[TOOLCALL] memory', payload);
   try {
     if (payload.action === 'search') {
@@ -129,7 +123,7 @@ export async function handleMemoryToolCall(payload: any): Promise<ToolCallResult
       const scopes = ['local', 'shared', 'global'];
       let found: MemoryEntry[] = [];
 
-      const all = (memoryRepo?.getAll() || []) as MemoryEntry[];
+      const all = (memoryRepo.getAll() || []) as MemoryEntry[];
       for (const scope of (payload.scope ? [payload.scope, ...scopes.filter(s => s !== payload.scope)] : scopes)) {
         let filtered = all.filter((e: MemoryEntry) => e.scope === scope);
         if (payload.owner) filtered = filtered.filter((e: MemoryEntry) => e.owner === payload.owner);
@@ -181,9 +175,6 @@ export async function handleMemoryToolCall(payload: any): Promise<ToolCallResult
       if (!entry) {
         return { kind: 'memory', success: false, result: { ok: false, errors, received: sanitize(payload) }, error: 'Invalid memory add payload' };
       }
-      if (!memoryRepo) {
-        return { kind: 'memory', success: false, result: null, error: 'Memory repository not initialized' };
-      }
       const current = memoryRepo.getAll();
       const next = [...current, entry];
       memoryRepo.setAll(next);
@@ -193,9 +184,6 @@ export async function handleMemoryToolCall(payload: any): Promise<ToolCallResult
       const received = payload.entry;
       if (!received || typeof received !== 'object' || !received.id) {
         return { kind: 'memory', success: false, result: { ok: false, errors: ['Missing entry.id'], received: sanitize(payload) }, error: 'Invalid memory edit payload' };
-      }
-      if (!memoryRepo) {
-        return { kind: 'memory', success: false, result: null, error: 'Memory repository not initialized' };
       }
       const list = memoryRepo.getAll();
       const idx = list.findIndex((e: MemoryEntry) => e.id === received.id);
@@ -218,13 +206,9 @@ function validScope(s: any): s is MemoryScope {
   return s === 'global' || s === 'shared' || s === 'local';
 }
 
-async function handleWorkspaceToolCall(payload: any): Promise<ToolCallResult> {
+async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<WorkspaceItem>): Promise<ToolCallResult> {
   console.log('[TOOLCALL] workspace', payload);
   try {
-    if (!workspaceRepo) {
-      return { kind: 'workspace', success: false, result: null, error: 'Workspace repository not initialized' };
-    }
-
     if (payload.action === 'add') {
       const now = new Date().toISOString();
       const item: WorkspaceItem = {

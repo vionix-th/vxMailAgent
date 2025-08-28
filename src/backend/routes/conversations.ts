@@ -3,7 +3,8 @@ import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent } from '../../shared/types';
 import { conversationEngine } from '../services/engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
-import { UserRequest } from '../middleware/user-context';
+import { UserRequest, getUserContext } from '../middleware/user-context';
+import { createToolHandler } from '../toolCalls';
 
 export interface ConversationsRoutesDeps {
   getConversations: (req?: UserRequest) => ConversationThread[];
@@ -204,6 +205,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             api,
             TOOL_DESCRIPTORS,
             (next: ConversationThread[]) => deps.setConversations(req as UserRequest, next),
+            createToolHandler(getUserContext(req as UserRequest).repos),
             undefined, // No traceId in routes path
             deps.logProviderEvent // Add provider event logging
           );
