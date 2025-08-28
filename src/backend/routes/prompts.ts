@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import { Prompt } from '../../shared/types';
 import * as persistence from '../persistence';
-// dataPath import removed - using templatesFile variable
 import { chatCompletion } from '../providers/openai';
 
 import { UserRequest } from '../middleware/user-context';
@@ -208,7 +207,7 @@ const DEFAULT_OPTIMIZER: TemplateItem = {
 
 function loadTemplatesArray(): TemplateItem[] {
   try {
-    const templatesFile = 'templates.json'; // Hardcoded for now
+    const templatesFile = 'templates.json'; // Global fallback storage for templates
     if (!fs.existsSync(templatesFile)) {
       const seeded = DEFAULT_OPTIMIZER ? [DEFAULT_OPTIMIZER] : [];
       persistence.encryptAndPersist(seeded, templatesFile);

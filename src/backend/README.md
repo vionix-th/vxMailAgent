@@ -25,7 +25,5 @@ This is the Node.js/TypeScript backend for the vxMailAgent application. It provi
 - All persisted data is encrypted at rest.
 - OAuth tokens and account data are never logged.
 
-## TODO
-- Implement full OAuth flows for Gmail/Outlook
-- Implement account persistence endpoints
-- Integrate with frontend
+## Further Reading
+- See `docs/DEVELOPER.md` for a full API overview and developer notes.
