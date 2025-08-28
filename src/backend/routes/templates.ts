@@ -1,7 +1,6 @@
 import express from 'express';
 import fs from 'fs';
 import * as persistence from '../persistence';
-// dataPath import removed - using hardcoded paths
 import { UserRequest, hasUserContext } from '../middleware/user-context';
 
 export interface TemplateItem {

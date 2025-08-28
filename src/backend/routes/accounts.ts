@@ -1,7 +1,6 @@
 import express from 'express';
 import * as persistence from '../persistence';
 import { Account } from '../../shared/types';
-// dataPath import removed - not used
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt } from '../utils/jwt';
 import { UserRequest, getUserContext, hasUserContext } from '../middleware/user-context';

@@ -156,3 +156,18 @@ Response shape:
 - Provider events retention:
   - `PROVIDER_MAX_EVENTS`, `PROVIDER_TTL_DAYS`
 - Diagnostics endpoints surface traces/provider events for admin only; they are not rendered in the user Results view.
+
+### Logging Utilities
+
+- Module: `src/backend/services/logging.ts`
+- Core helpers:
+  - `logOrch()` and `logProviderEvent()` append orchestration and provider diagnostic entries.
+  - `beginTrace()`, `beginSpan()`, `endSpan()`, and `endTrace()` manage structured traces when `TRACE_PERSIST` is enabled.
+  - `annotateSpan()` merges metadata into an existing span.
+- Repositories resolve per-user first and fall back to globals when no user context is attached.
+
+### Cleanup Service
+
+- Module: `src/backend/services/cleanup.ts`
+- Exposes `createCleanupService()` which returns operations to remove logs, conversations, traces, and workspace items by id.
+- Backed by a `RepositoryHub` accessor that abstracts underlying persistence.

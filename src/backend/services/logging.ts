@@ -5,11 +5,15 @@ import { Repository } from '../repository/core';
 import { ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
 import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
 
-// Global repositories for fallback
+// Global fallback repositories used when no user context is available
 let globalOrchRepo: Repository<OrchestrationDiagnosticEntry> | null = null;
 let globalProviderRepo: ProviderEventsRepository | null = null;
 let globalTracesRepo: TracesRepository | null = null;
 
+/**
+ * Initialize global logging repositories. These act as fallbacks when a
+ * request does not carry a user context.
+ */
 export function initLogging(input: {
   orchRepo: Repository<OrchestrationDiagnosticEntry>;
   providerRepo: ProviderEventsRepository;
@@ -20,7 +24,7 @@ export function initLogging(input: {
   globalTracesRepo = input.tracesRepo;
 }
 
-// Helper functions to get per-user or global repositories
+// Resolve per-user repositories or fall back to the globals above
 function getOrchRepo(req?: UserRequest): Repository<OrchestrationDiagnosticEntry> | null {
   if (req && hasUserContext(req)) {
     return getUserContext(req).repos.orchestrationLog;
@@ -42,6 +46,7 @@ function getTracesRepo(req?: UserRequest): TracesRepository | null {
   return globalTracesRepo;
 }
 
+/** Append an orchestration diagnostic entry to the log. */
 export function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest) {
   const repo = getOrchRepo(req);
   if (!repo) return;
@@ -50,17 +55,20 @@ export function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest) {
   repo.setAll(list);
 }
 
+/** Persist a provider request/response diagnostic entry. */
 export function logProviderEvent(e: ProviderEvent, req?: UserRequest) {
   const repo = getProviderRepo(req);
   if (!repo) return;
   repo.append(e);
 }
 
+/** Retrieve all orchestration diagnostic entries. */
 export function getOrchestrationLog(req?: UserRequest) {
   const repo = getOrchRepo(req);
   return repo ? repo.getAll() : [];
 }
 
+/** Replace the orchestration diagnostic log with the provided list. */
 export function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: UserRequest) {
   const repo = getOrchRepo(req);
   if (!repo) return;
@@ -99,6 +107,10 @@ function redact(obj: any): any {
   }
 }
 
+/**
+ * Create a new trace and persist it if tracing is enabled.
+ * Returns the generated trace id.
+ */
 export function beginTrace(seed?: Partial<Trace>, req?: UserRequest): string {
   const id = seed?.id || newId();
   const t: Trace = {
@@ -115,6 +127,7 @@ export function beginTrace(seed?: Partial<Trace>, req?: UserRequest): string {
   return id;
 }
 
+/** Update a trace when it completes, optionally recording status or error. */
 export function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: UserRequest) {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
@@ -125,6 +138,9 @@ export function endTrace(id: string, status?: 'ok' | 'error', error?: string, re
   });
 }
 
+/**
+ * Start a new span within an existing trace. Returns the span id.
+ */
 export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }, req?: UserRequest): string {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return '';
@@ -153,6 +169,9 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
   return sid;
 }
 
+/**
+ * Finalize a span and optionally annotate its status, error, or response.
+ */
 export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: UserRequest) {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
@@ -170,6 +189,7 @@ export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok'
   });
 }
 
+/** Merge additional annotations into an existing span. */
 export function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: UserRequest) {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
@@ -180,6 +200,7 @@ export function annotateSpan(traceId: string, spanId: string, annotations: Recor
   });
 }
 
+/** Retrieve all traces available to the request. */
 export function getTraces(req?: UserRequest) {
   const repo = getTracesRepo(req);
   return repo ? repo.getAll() : [];

@@ -1,6 +1,5 @@
 import express from 'express';
 import * as persistence from '../persistence';
-// dataPath import removed - not used
 import { FetcherLogEntry } from '../../shared/types';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { UserRequest } from '../middleware/user-context';

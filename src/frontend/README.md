@@ -20,7 +20,5 @@ This is the React/TypeScript frontend for the vxMailAgent application. It provid
 - `src/` — React components, hooks, and utilities
 - `vite.config.ts` — Vite configuration (proxies `/api` to backend)
 
-## TODO
-- Implement UI shell and navigation
-- Integrate OAuth/account flows
-- Implement director/agent/filter/memory/results UIs
+## Further Reading
+- See `docs/DEVELOPER.md` for architecture and UI details.
