@@ -4,17 +4,22 @@ import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-
 /**
  * Per-user fetcher dependencies that include user context
  */
-export interface UserFetcherDeps extends Omit<FetcherDeps, 'getConversations' | 'setConversations' | 'getAccounts' | 'setAccounts' | 'logOrch' | 'logProviderEvent' | 'getFetcherLog' | 'setFetcherLog' | 'getToolHandler'> {
+export interface UserFetcherDeps {
   uid: string;
-  getConversations: (req?: UserRequest) => any[];
-  setConversations: (req: UserRequest, next: any[]) => void;
-  getAccounts: (req?: UserRequest) => any[];
-  setAccounts: (req: UserRequest, accounts: any[]) => void;
-  logOrch: (e: any, req?: UserRequest) => void;
-  logProviderEvent: (e: any, req?: UserRequest) => void;
-  getFetcherLog: (req?: UserRequest) => any[];
-  setFetcherLog: (req: UserRequest, next: any[]) => void;
-  getToolHandler: (req?: UserRequest) => (name: string, params: any) => Promise<any>;
+  getSettings: () => any;
+  getFilters: () => any[];
+  getDirectors: () => any[];
+  getAgents: () => any[];
+  getPrompts: () => any[];
+  getConversations: () => any[];
+  setConversations: (next: any[]) => void;
+  getAccounts: () => any[];
+  setAccounts: (accounts: any[]) => void;
+  logOrch: (e: any) => void;
+  logProviderEvent: (e: any) => void;
+  getFetcherLog: () => any[];
+  setFetcherLog: (next: any[]) => void;
+  getToolHandler: () => (name: string, params: any) => Promise<any>;
 }
 
 /**
@@ -48,15 +53,15 @@ export class FetcherManager {
           getDirectors: userDeps.getDirectors,
           getAgents: userDeps.getAgents,
           getPrompts: userDeps.getPrompts,
-          getConversations: () => userDeps.getConversations(req),
-          setConversations: (next) => userDeps.setConversations(req, next),
-          getAccounts: () => userDeps.getAccounts(req),
-          setAccounts: (accounts) => userDeps.setAccounts(req, accounts),
-          logOrch: (e) => userDeps.logOrch(e, req),
-          logProviderEvent: (e) => userDeps.logProviderEvent(e, req),
-          getFetcherLog: () => userDeps.getFetcherLog(req),
-          setFetcherLog: (next) => userDeps.setFetcherLog(req, next),
-          getToolHandler: () => userDeps.getToolHandler(req),
+          getConversations: userDeps.getConversations,
+          setConversations: userDeps.setConversations,
+          getAccounts: userDeps.getAccounts,
+          setAccounts: userDeps.setAccounts,
+          logOrch: userDeps.logOrch,
+          logProviderEvent: userDeps.logProviderEvent,
+          getFetcherLog: userDeps.getFetcherLog,
+          setFetcherLog: userDeps.setFetcherLog,
+          getToolHandler: userDeps.getToolHandler,
         };
         this.fetchers.set(uid, initFetcher(fetcherDeps));
       }

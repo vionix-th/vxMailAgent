@@ -10,6 +10,7 @@ import { USERS_FILE } from './utils/paths';
 import { newId } from './utils/id';
 import { createJsonRepository } from './repository/fileRepositories';
 import { setUsersRepo } from './services/users';
+import { repoBundleRegistry } from './repository/registry';
 import registerAuthSessionRoutes from './routes/auth-session';
 
 import registerTestRoutes from './routes/test';
@@ -243,23 +244,35 @@ export function createServer() {
   // Conversations routes registration moved to proper location (single registration only)
 
   // Initialize FetcherManager with per-user fetcher factory
-  const fetcherManager = new FetcherManager((uid: string) => ({
-    uid,
-    getSettings: (req?: UserRequest) => getSettingsLive(req),
-    getFilters: (req?: UserRequest) => getFiltersLive(req),
-    getDirectors: (req?: UserRequest) => getDirectorsLive(req),
-    getAgents: (req?: UserRequest) => getAgentsLive(req),
-    getPrompts: (req?: UserRequest) => getPromptsLive(req),
-    getConversations: (req?: UserRequest) => getConversationsLive(req),
-    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next),
-    getAccounts: (req?: UserRequest) => getUserContext((req as UserRequest)).repos.accounts.getAll(),
-    setAccounts: (req: UserRequest, accounts: any[]) => getUserContext(req).repos.accounts.setAll(accounts),
-    logOrch: (e: OrchestrationDiagnosticEntry, req?: UserRequest) => { svcLogOrch(e, req); },
-    logProviderEvent: (e: ProviderEvent, req?: UserRequest) => { svcLogProviderEvent(e, req); },
-    getFetcherLog: (req?: UserRequest) => getUserContext((req as UserRequest)).repos.fetcherLog.getAll(),
-    setFetcherLog: (req: UserRequest, next: any[]) => getUserContext(req).repos.fetcherLog.setAll(next),
-    getToolHandler: (req?: UserRequest) => createToolHandler(getUserContext((req as UserRequest)).repos),
-  }));
+  const fetcherManager = new FetcherManager((uid: string) => {
+    // Get user repository bundle directly for background operations
+    const userBundle = repoBundleRegistry.getBundle(uid);
+    
+    return {
+      uid,
+      getSettings: () => userBundle.settings.getAll()[0] || {},
+      getFilters: () => userBundle.filters.getAll(),
+      getDirectors: () => userBundle.directors.getAll(),
+      getAgents: () => userBundle.agents.getAll(),
+      getPrompts: () => userBundle.prompts.getAll(),
+      getConversations: () => userBundle.conversations.getAll(),
+      setConversations: (next: any[]) => userBundle.conversations.setAll(next),
+      getAccounts: () => userBundle.accounts.getAll(),
+      setAccounts: (accounts: any[]) => userBundle.accounts.setAll(accounts),
+      logOrch: (e: any) => { 
+        // Create mock request for logging service
+        const mockReq = { userContext: { uid, repos: userBundle } } as any;
+        svcLogOrch(e, mockReq); 
+      },
+      logProviderEvent: (e: any) => { 
+        const mockReq = { userContext: { uid, repos: userBundle } } as any;
+        svcLogProviderEvent(e, mockReq); 
+      },
+      getFetcherLog: () => userBundle.fetcherLog.getAll(),
+      setFetcherLog: (next: any[]) => userBundle.fetcherLog.setAll(next),
+      getToolHandler: () => createToolHandler(userBundle),
+    };
+  });
 
   // Global fetcher initialization removed - user isolation enforced
 
