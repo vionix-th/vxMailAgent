@@ -183,7 +183,11 @@ export function createServer() {
   setUsersRepo(usersRepo);
   // Logging initialization removed - per-user logging only
   registerAuthSessionRoutes(app);
-  registerTestRoutes(app, { getSettings: () => getSettingsLive(), getPrompts: () => getPromptsLive(), getDirectors: () => getDirectorsLive(), getAgents: () => getAgentsLive() });
+  registerTestRoutes(app, { 
+    getPrompts: (req?: UserRequest) => getPromptsLive(req), 
+    getDirectors: (req?: UserRequest) => getDirectorsLive(req), 
+    getAgents: (req?: UserRequest) => getAgentsLive(req) 
+  });
   registerMemoryRoutes(app, {});
   registerOrchestrationRoutes(app, { getOrchestrationLog: () => getOrchestrationLogLive(), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[]) => { svcSetOrchestrationLog(next); }, getSettings: () => getSettingsLive() });
   registerSettingsRoutes(app, { getSettings: () => getSettingsLive() });
