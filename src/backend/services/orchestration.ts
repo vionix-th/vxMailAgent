@@ -57,7 +57,6 @@ export function shouldFinalizeDirector(): boolean {
 }
 
 export interface AgentSessionDeps {
-  isDirectorFinalized: (dirId: string) => boolean;
 }
 
 /**
@@ -71,16 +70,12 @@ export function ensureAgentThread(
   emailEnvelope: any,
   prompts: Prompt[],
   apiConfigs: any[],
-  deps: AgentSessionDeps,
   nowIso: string,
   newIdFn: () => string,
   traceId?: string,
 ): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'finalized' | 'invalid' } {
   const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }) : '';
-  if (deps.isDirectorFinalized(dirThreadId)) {
-    if (traceId && spanId) endSpan(traceId, spanId, { status: 'error', error: 'director conversation finalized; no further agent messages accepted' });
-    return { conversations, error: 'director conversation finalized; no further agent messages accepted', reason: 'finalized' } as const;
-  }
+  // Director finalization check removed - orchestration handles this automatically
 
   let agentThread = undefined as ConversationThread | undefined;
   if (!agentThread) {

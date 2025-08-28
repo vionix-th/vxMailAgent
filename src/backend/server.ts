@@ -3,7 +3,6 @@ import cors from 'cors';
 
 import authRouter from './auth';
 import { requireAuth } from './middleware/auth';
-import { loadSettings } from './services/settings';
 import { setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent, getOrchestrationLog, getTraces } from './services/logging';
 
 import { Filter, Director, Agent, Prompt, Imprint, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, User } from '../shared/types';
@@ -85,7 +84,10 @@ export function createServer() {
     throw new Error('User context required - no global conversations available');
   }
   function getSettingsLive(req?: UserRequest) { 
-    return loadSettings(req); 
+    if (!req || !hasUserContext(req)) {
+      throw new Error('User context required - no global settings available');
+    }
+    return getUserContext(req).repos.settings.getAll()[0] || {};
   }
 
   // Setter functions for per-user repositories
@@ -250,6 +252,8 @@ export function createServer() {
     getPrompts: (req?: UserRequest) => getPromptsLive(req),
     getConversations: (req?: UserRequest) => getConversationsLive(req),
     setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next),
+    getAccounts: (req?: UserRequest) => getUserContext((req as UserRequest)).repos.accounts.getAll(),
+    setAccounts: (req: UserRequest, accounts: any[]) => getUserContext(req).repos.accounts.setAll(accounts),
     logOrch: (e: OrchestrationDiagnosticEntry, req?: UserRequest) => { svcLogOrch(e, req); },
     logProviderEvent: (e: ProviderEvent, req?: UserRequest) => { svcLogProviderEvent(e, req); },
     getFetcherLog: (req?: UserRequest) => getUserContext((req as UserRequest)).repos.fetcherLog.getAll(),

@@ -17,6 +17,8 @@ export interface FetcherDeps {
   getPrompts: () => Prompt[];
   getConversations: () => ConversationThread[];
   setConversations: (next: ConversationThread[]) => void;
+  getAccounts: () => Account[];
+  setAccounts: (accounts: Account[]) => void;
   logOrch: (e: OrchestrationDiagnosticEntry) => void;
   logProviderEvent: (e: ProviderEvent) => void;
   getFetcherLog: () => FetcherLogEntry[];
@@ -311,7 +313,6 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                       emailEnvelope,
                       deps.getPrompts(),
                       settings.apiConfigs,
-                      { isDirectorFinalized: deps.isDirectorFinalized },
                       new Date().toISOString(),
                       () => newId(),
                       traceId,

@@ -4,10 +4,12 @@ import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-
 /**
  * Per-user fetcher dependencies that include user context
  */
-export interface UserFetcherDeps extends Omit<FetcherDeps, 'getConversations' | 'setConversations' | 'logOrch' | 'logProviderEvent' | 'getFetcherLog' | 'setFetcherLog' | 'getToolHandler'> {
+export interface UserFetcherDeps extends Omit<FetcherDeps, 'getConversations' | 'setConversations' | 'getAccounts' | 'setAccounts' | 'logOrch' | 'logProviderEvent' | 'getFetcherLog' | 'setFetcherLog' | 'getToolHandler'> {
   uid: string;
   getConversations: (req?: UserRequest) => any[];
   setConversations: (req: UserRequest, next: any[]) => void;
+  getAccounts: (req?: UserRequest) => any[];
+  setAccounts: (req: UserRequest, accounts: any[]) => void;
   logOrch: (e: any, req?: UserRequest) => void;
   logProviderEvent: (e: any, req?: UserRequest) => void;
   getFetcherLog: (req?: UserRequest) => any[];
@@ -48,6 +50,8 @@ export class FetcherManager {
           getPrompts: userDeps.getPrompts,
           getConversations: () => userDeps.getConversations(req),
           setConversations: (next) => userDeps.setConversations(req, next),
+          getAccounts: () => userDeps.getAccounts(req),
+          setAccounts: (accounts) => userDeps.setAccounts(req, accounts),
           logOrch: (e) => userDeps.logOrch(e, req),
           logProviderEvent: (e) => userDeps.logProviderEvent(e, req),
           getFetcherLog: () => userDeps.getFetcherLog(req),
