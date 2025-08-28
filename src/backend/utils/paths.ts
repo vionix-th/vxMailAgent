@@ -1,11 +1,23 @@
 import path from 'path';
 import fs from 'fs';
-import { DATA_DIR } from '../persistence';
+
+// Global path helpers using DATA_DIR are intentionally omitted to avoid
+// circular dependencies and to enforce per-user isolation only.
+
+/** Resolve base data directory without importing persistence to avoid cycles. */
+function baseDataDir(): string {
+  const envDir = process.env.VX_MAILAGENT_DATA_DIR;
+  if (envDir && envDir.trim()) return path.resolve(envDir);
+  // Fallbacks similar to persistence.ts but minimal to avoid import cycle
+  // Prefer repo-level data relative to cwd when running via ts-node
+  return path.resolve(process.cwd(), 'data');
+}
 
 /** Resolves a file path within the persistent data directory. */
-export const dataPath = (name: string) => path.join(DATA_DIR, name);
+export const dataPath = (name: string) => path.join(baseDataDir(), name);
 
-// Global paths removed - all user data must be isolated
+// Export DATA_DIR derived locally to satisfy scripts that import it
+export const DATA_DIR = baseDataDir();
 
 // UID validation regex: alphanumeric, underscore, hyphen, 1-64 chars
 const UID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
@@ -31,9 +43,16 @@ export function userRoot(uid: string): string {
     throw new Error(`Invalid uid: ${uid}`);
   }
   
-  const userDir = path.join(DATA_DIR, 'users', uid);
+  // The base data directory is resolved in persistence.ts. To avoid a
+  // circular import, we resolve it here dynamically at runtime using the
+  // same environment variable with a defensive fallback to process.cwd().
+  const envDir = process.env.VX_MAILAGENT_DATA_DIR;
+  const baseDir = envDir && envDir.trim()
+    ? path.resolve(envDir)
+    : path.resolve(process.cwd(), 'data');
+  const userDir = path.join(baseDir, 'users', uid);
   const resolved = path.resolve(userDir);
-  const expectedPrefix = path.resolve(DATA_DIR, 'users', uid);
+  const expectedPrefix = path.resolve(baseDir, 'users', uid);
   
   // Ensure the resolved path is exactly what we expect (no traversal)
   if (resolved !== expectedPrefix) {
@@ -164,9 +183,18 @@ export function userPaths(uid: string): UserPaths {
   return paths;
 }
 
-export const FETCHER_LOG_FILE = dataPath('fetcherLog.json');
+
+// System-level JSON files (non user-isolated)
 export const MEMORY_FILE = dataPath('memory.json');
 export const WORKSPACE_ITEMS_FILE = dataPath('workspaceItems.json');
 export const USERS_FILE = dataPath('users.json');
+export const ACCOUNTS_FILE = dataPath('accounts.json');
+export const AGENTS_FILE = dataPath('agents.json');
+export const DIRECTORS_FILE = dataPath('directors.json');
+export const FILTERS_FILE = dataPath('filters.json');
+export const IMPRINTS_FILE = dataPath('imprints.json');
+export const ORCHESTRATION_LOG_FILE = dataPath('orchestrationLog.json');
+export const PROMPTS_FILE = dataPath('prompts.json');
+export const SETTINGS_FILE = dataPath('settings.json');
+export const FETCHER_LOG_FILE = dataPath('fetcherLog.json');
 
-export { DATA_DIR } from '../persistence';

@@ -5,6 +5,7 @@ import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CL
 import { signJwt } from '../utils/jwt';
 import { UserRequest, getUserContext, hasUserContext } from '../middleware/user-context';
 import fs from 'fs';
+import { ACCOUNTS_FILE } from '../utils/paths';
 
 /**
  * Gets accounts from the appropriate source (per-user or global).

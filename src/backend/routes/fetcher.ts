@@ -3,6 +3,7 @@ import * as persistence from '../persistence';
 import { FetcherLogEntry } from '../../shared/types';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { UserRequest } from '../middleware/user-context';
+import { SETTINGS_FILE } from '../utils/paths';
 
 /** Dependencies for fetcher routes. */
 export interface FetcherRoutesDeps {

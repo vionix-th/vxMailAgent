@@ -33,7 +33,7 @@ import registerDiagnosticTracesRoutes from './routes/diagnostic-traces';
 import registerUnifiedDiagnosticsRoutes from './routes/unified-diagnostics';
 // Health and cleanup routes removed - user isolation enforced
 // initFetcher removed - using FetcherManager
-import { FetcherManager } from './services/fetcher-manager.js';
+import { FetcherManager } from './services/fetcher-manager';
 import { attachUserContext, UserRequest, hasUserContext, getUserContext } from './middleware/user-context';
 
 /** Create and configure the backend Express server. */

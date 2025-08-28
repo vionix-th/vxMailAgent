@@ -1,5 +1,5 @@
-import { FetcherService, FetcherDeps, initFetcher } from './fetcher.js';
-import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context.js';
+import { FetcherService, FetcherDeps, initFetcher } from './fetcher';
+import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
 
 /**
  * Per-user fetcher dependencies that include user context
