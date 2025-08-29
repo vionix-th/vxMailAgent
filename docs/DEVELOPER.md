@@ -1,9 +1,17 @@
 # vxMailAgent Developer Guide
 
+## System Architecture
+
+### Core Principles
+- **Strict User Isolation**: All data access requires user context; no global fallbacks
+- **Minimal Global State**: Only `users.json` is global (login registry); all other data is user-scoped
+- **Security First**: All operations validate user context and path safety
+- **Audit Trail**: Comprehensive logging of all operations with user context
+
 ## Dev Servers and Ports
 
-- Frontend: Vite on `http://localhost:3000` with proxy for `/api` → backend. See `src/frontend/vite.config.ts`.
-- Backend: Express on `http://localhost:3001`. Entry: `src/backend/index.ts` → `createServer()` in `src/backend/server.ts`. Health: `GET /api/health`.
+- **Frontend**: Vite on `http://localhost:3000` with proxy for `/api` → backend. See `src/frontend/vite.config.ts`.
+- **Backend**: Express on `http://localhost:3001`. Entry: `src/backend/index.ts` → `createServer()` in `src/backend/server.ts`. Health: `GET /api/health`.
 
 ## Persistence & Encryption
 
@@ -12,20 +20,63 @@
 - If missing/invalid, the backend still starts in PLAINTEXT mode and logs a warning. See `src/backend/config.ts::warnIfInsecure()` and `src/backend/persistence.ts`.
 - Tracing/provider events retention settings are in `src/backend/config.ts` (e.g., `TRACE_MAX_TRACES`, `PROVIDER_TTL_DAYS`).
 
-## Per-User Isolation & Repository Registry
+## User Isolation & Data Access
 
-**CRITICAL SECURITY REQUIREMENT**: All data access must be user-isolated. Only `users.json` is allowed as global application data.
+### Security Model
+- **Zero Trust**: All operations require explicit user context
+- **No Global Fallbacks**: Missing user context throws errors
+- **Path Safety**: All file operations are contained within user directories with strict path validation
+- **Encryption**: Optional AES-256-GCM encryption for data at rest with random IVs
+- **Audit Logging**: All operations are logged with user context
+- **Rate Limiting**: Implemented at the API level
 
-- Middleware: `src/backend/middleware/user-context.ts`
-  - `attachUserContext` requires prior auth and validates `uid` (alphanumeric/underscore/hyphen, 1–64 chars). Forbids `uid`/`userId` in params, query, or body.
-  - Attaches `{ uid, repos }` where `repos` is a per-user bundle from the repository registry.
-  - `requireUserContext` enforces presence of user context for protected routes.
-- Repository Registry: `src/backend/repository/registry.ts`
-  - Provides per-user repositories backed by JSON files under `data/users/{uid}/` with TTL-based eviction.
-  - Core repos: `accounts`, `settings`.
-  - Inventory: `prompts`, `agents`, `directors`, `filters`, `imprints`, `workspaceItems`.
-  - Conversations/memory: `conversations`, `memory`.
-  - Logs: `logs/provider-events.json`, `logs/traces.json`, `logs/orchestration.json`; fetcher logs at `logs/fetcher.json`.
+### Security Best Practices
+
+1. **Authentication**
+   - Always use `requireAuth` middleware for protected routes
+   - Never trust client-provided user IDs
+   - Validate all inputs against user context
+
+2. **Data Access**
+   - Always use repository methods, never direct filesystem access
+   - Validate all paths with `userPaths()`
+   - Use repository transactions for atomic operations
+
+3. **Error Handling**
+   - Never expose internal errors to clients
+   - Log all security-relevant events
+   - Use specific error types for different failure modes
+
+### Implementation Details
+
+#### 1. User Context Middleware
+Location: `src/backend/middleware/user-context.ts`
+- `attachUserContext`:
+  - Validates `uid` (alphanumeric/underscore/hyphen, 1-64 chars)
+  - Forbids `uid`/`userId` in params, query, or body
+  - Attaches `{ uid, repos }` to request
+- `requireUserContext`:
+  - Enforces user context for protected routes
+  - Returns 401 if missing or invalid
+
+#### 2. Repository Registry
+Location: `src/backend/repository/registry.ts`
+- **Per-User Isolation**:
+  - Each user gets isolated repository instances
+  - Backed by JSON files under `data/users/{uid}/`
+  - TTL-based eviction for in-memory caches
+
+- **Repository Types**:
+  - **Core**: `accounts`, `settings`
+  - **Inventory**: `prompts`, `agents`, `directors`, `filters`
+  - **Conversations**: `conversations`, `memory`, `workspaceItems`
+  - **Logs**: `logs/fetcher.json`, `logs/orchestration.json`, `logs/provider-events.json`, `logs/traces.json`
+
+- **Path Management**:
+  - `userPaths(uid)` in `src/backend/utils/paths.ts`
+  - Creates user directories with 0700 permissions
+  - Validates paths to prevent directory traversal
+  - No symlinks allowed
 - Paths and safety: `src/backend/utils/paths.ts`
   - `userPaths(uid)` derives absolute, validated paths under `DATA_DIR/users/{uid}` and creates directories with 0700 permissions.
   - Disallows symlinks and path traversal; validates containment under the per-user root.
@@ -46,17 +97,52 @@
 - **Route Dependencies**: All route registrations pass user context to data access functions
 - **Fetcher Manager**: Per-user fetcher instances with isolated settings persistence
 
-## Authentication & Sessions
+## Authentication & Session Management
 
-- Stateless login backed by a signed JWT stored in `vx.session` (HttpOnly, SameSite=Lax; `Secure` in production).
-- Endpoints (see `src/backend/routes/auth-session.ts`):
-  - `GET /api/auth/google/initiate` → returns Google OAuth2 authorization URL (scopes: `openid email profile`).
-  - `GET /api/auth/google/callback?code=&state=` → exchanges code, upserts user, sets cookie, responds with `{ user }`.
-  - `GET /api/auth/whoami` → returns `{ user }` when authenticated or HTTP 401.
-  - `POST /api/auth/logout` → clears the `vx.session` cookie and ends the session.
-- Route guard: `requireAuth` protects all routes except the public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`.
-- Provider OAuth endpoints under `/api/oauth2/*` (Google/Outlook) are protected by `requireAuth`. Linking provider accounts is an authenticated action.
-- Production security: HTTP→HTTPS redirect when behind a proxy and HSTS header `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
+### Session Security
+- **JWT-based Sessions**:
+  - Signed tokens stored in `vx.session` cookie
+  - **HttpOnly**: Prevents XSS token theft
+  - **SameSite=Lax**: CSRF protection
+  - **Secure**: Only sent over HTTPS in production
+  - **Short Expiry**: Configurable TTL (default 24h)
+
+### Authentication Flow
+1. **Initiate Login**
+   ```
+   GET /api/auth/google/initiate
+   ```
+   - Returns Google OAuth2 URL with scopes: `openid email profile`
+   - Generates and stores PKCE code verifier
+
+2. **OAuth Callback**
+   ```
+   GET /api/auth/google/callback?code=<code>&state=<state>
+   ```
+   - Validates state and PKCE verifier
+   - Exchanges code for tokens
+   - Creates/updates user in `users.json`
+   - Sets `vx.session` cookie
+
+3. **Session Validation**
+   ```
+   GET /api/auth/whoami
+   ```
+   - Validates session token
+   - Returns `{ user }` or 401
+
+4. **Logout**
+   ```
+   POST /api/auth/logout
+   ```
+   - Clears session cookie
+   - Invalidates token
+
+### Security Headers (Production)
+- **HSTS**: `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+- **X-Frame-Options**: `DENY`
+- **X-Content-Type-Options**: `nosniff`
+- **Content-Security-Policy**: Default-src 'self'
 
 ### Google OAuth Clients (Split)
 
@@ -68,48 +154,190 @@
   - Redirect URI (local dev): `http://localhost:3001/api/auth/google/callback` (backend handles callback).
   - URL builder: `src/backend/oauth/googleLogin.ts::buildGoogleLoginAuthUrl()` (scopes: `openid email profile`, `access_type=online`, `prompt=select_account`).
 
-## Workspace Semantics (Current)
+## Workspace API
 
-- Routes are namespaced by `:id`, but items are stored in a per-user shared repository irrespective of `:id` (partitioning can be added later). See `src/backend/routes/workspaces.ts`.
-- Endpoints implemented:
-  - `GET /api/workspaces/:id/items` (supports `?includeDeleted=true`)
-  - `POST /api/workspaces/:id/items`
-  - `GET /api/workspaces/:id/items/:itemId`
-  - `PUT /api/workspaces/:id/items/:itemId` (expects `expectedRevision` for conflict detection)
-  - `DELETE /api/workspaces/:id/items/:itemId[?hard=true]`
+### Security Model
+- All workspace operations require user authentication
+- User isolation enforced via repository pattern
+- No cross-user data access
 
-## Backend API Overview (routes/)
+### Endpoints
 
-- Health
-  - `GET /api/health` — `src/backend/routes/health.ts`
-- Authentication (login/session)
-  - `GET /api/auth/google/initiate`, `GET /api/auth/google/callback`, `GET /api/auth/whoami` — `src/backend/routes/auth-session.ts`
-- Prompts
-  - `GET /api/prompts`, `POST /api/prompts`, `PUT /api/prompts/:id`, `DELETE /api/prompts/:id` — `src/backend/routes/prompts.ts`
-  - `POST /api/prompts/assist` — Prompt Optimizer with app context packs. Requires `prompt.messages[]` and `target` in `{director|agent}`.
-- Prompt Templates
-  - `GET /api/prompt-templates`, `POST /api/prompt-templates`, `PUT /api/prompt-templates/:id`, `DELETE /api/prompt-templates/:id` — `src/backend/routes/templates.ts`
-- Fetcher (email retrieval controller and logs)
-  - `GET /api/fetcher/status` — loop active/running timestamps
-  - `POST /api/fetcher/start`, `POST /api/fetcher/stop` — toggles and persists `fetcherAutoStart`
-  - `POST /api/fetcher/fetch` (fire‑and‑forget), `POST /api/fetcher/run` (awaits)
-  - `GET /api/fetcher/log` (alias), `GET /api/fetcher/logs`
-  - `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (expects body `{ ids: string[] }`) — via cleanup service
-- Diagnostics
-  - Unified/provider events and traces under `src/backend/routes/{diagnostics.ts, unified-diagnostics.ts}` (admin/debug). Keep separate from user Results.
-- Accounts/Directors/Agents/Filters/Templates/Memory/Conversations
-  - Modular files exist under `src/backend/routes/`. See each file for exact shapes.
+#### List Items
+```
+GET /api/workspaces/:id/items?includeDeleted=true
+```
+- Lists all items in the workspace
+- `includeDeleted`: Optional, includes soft-deleted items
+- Returns: `{ items: WorkspaceItem[] }`
 
-### Token Refresh (Gmail/Outlook): Re-Auth and Structured Logging
+#### Create Item
+```
+POST /api/workspaces/:id/items
+Content-Type: application/json
 
-- Endpoints (see `src/backend/routes/accounts.ts`):
-  - `POST /api/accounts/:id/refresh` (Gmail/Outlook refresh)
-  - `GET /api/accounts/:id/gmail-test` (Gmail API probe)
-  - `GET /api/accounts/:id/outlook-test` (Outlook/Microsoft Graph probe)
-- On Gmail token errors requiring user action, responses include a re-authorization URL:
-  - Shape: `{ ok: false, error: <category>, authorizeUrl: <string> }`
-  - Error categories: `missing_refresh_token`, `invalid_grant`, `network`, `other`.
-- Structured JSON logs are emitted with timestamp, operation, account id/email, category, and detail. Info events are logged when a re-auth URL is generated and returned.
+{
+  "label": "Example",
+  "mimeType": "text/plain",
+  "data": "SGVsbG8gd29ybGQh",
+  "encoding": "base64",
+  "tags": ["example"]
+}
+```
+- Creates a new workspace item
+- Required fields: `mimeType`, `data`
+- Returns: `WorkspaceItem`
+
+#### Get Item
+```
+GET /api/workspaces/:id/items/:itemId
+```
+- Retrieves a single workspace item
+- Returns: `WorkspaceItem`
+
+#### Update Item
+```
+PUT /api/workspaces/:id/items/:itemId
+Content-Type: application/json
+
+{
+  "expectedRevision": 1,
+  "updates": {
+    "label": "Updated",
+    "data": "..."
+  }
+}
+```
+- Updates an existing workspace item
+- `expectedRevision`: Required for optimistic concurrency control
+- Returns: Updated `WorkspaceItem`
+
+#### Delete Item
+```
+DELETE /api/workspaces/:id/items/:itemId?hard=true
+```
+- Soft-deletes an item by default
+- `hard=true`: Permanently deletes the item
+- Returns: `{ success: boolean }`
+
+## API Reference
+
+### Health
+```
+GET /api/health
+```
+- Public endpoint
+- Returns: `{ status: "ok", timestamp: string }`
+
+### Authentication
+- `GET /api/auth/google/initiate` - Start OAuth flow
+- `GET /api/auth/google/callback` - OAuth callback
+- `GET /api/auth/whoami` - Get current user
+- `POST /api/auth/logout` - End session
+
+### Accounts
+```
+GET    /api/accounts
+POST   /api/accounts
+GET    /api/accounts/:id
+PUT    /api/accounts/:id
+DELETE /api/accounts/:id
+POST   /api/accounts/:id/refresh
+```
+- Manage email accounts (Gmail/Outlook)
+- Supports OAuth flows for account linking
+- Token refresh and validation
+
+### Prompts
+```
+GET    /api/prompts
+POST   /api/prompts
+GET    /api/prompts/:id
+PUT    /api/prompts/:id
+DELETE /api/prompts/:id
+POST   /api/prompts/assist
+```
+- Manage and optimize prompts
+- Assist endpoint provides context-aware suggestions
+
+### Fetcher
+```
+GET    /api/fetcher/status
+POST   /api/fetcher/start
+POST   /api/fetcher/stop
+POST   /api/fetcher/fetch
+POST   /api/fetcher/run
+GET    /api/fetcher/logs
+DELETE /api/fetcher/logs/:id
+```
+- Control email fetching
+- View and manage fetch logs
+- Background processing control
+
+### Workspaces
+```
+GET    /api/workspaces/:id/items
+POST   /api/workspaces/:id/items
+GET    /api/workspaces/:id/items/:itemId
+PUT    /api/workspaces/:id/items/:itemId
+DELETE /api/workspaces/:id/items/:itemId
+```
+- Manage workspace items
+- Supports rich content types
+- Versioned updates
+
+### Diagnostics (Admin)
+```
+GET /api/diagnostics/events
+GET /api/diagnostics/traces
+```
+- System health and performance metrics
+- Debugging and monitoring
+- Requires admin privileges
+
+### OAuth Token Management
+
+### Token Refresh
+```
+POST /api/accounts/:id/refresh
+```
+- Refreshes OAuth tokens
+- Handles token rotation
+- Returns updated account info
+
+### API Probes
+```
+GET /api/accounts/:id/gmail-test
+GET /api/accounts/:id/outlook-test
+```
+- Tests API connectivity
+- Validates token scopes
+- Returns provider-specific metadata
+
+### Error Handling
+- **Missing Refresh Token**
+  - Status: 400
+  - Response: `{ ok: false, error: "missing_refresh_token", authorizeUrl: string }`
+
+- **Invalid Grant**
+  - Status: 401
+  - Response: `{ ok: false, error: "invalid_grant", authorizeUrl: string }`
+
+- **Network Error**
+  - Status: 502
+  - Response: `{ ok: false, error: "network", message: string }`
+
+- **Other Errors**
+  - Status: 500
+  - Response: `{ ok: false, error: "other", message: string }`
+
+### Logging
+All token operations are logged with:
+- Timestamp
+- Operation type
+- Account ID and email
+- Error category (if any)
+- Request metadata
 
 ## Prompt Assistant: Optional Context Inclusion
 

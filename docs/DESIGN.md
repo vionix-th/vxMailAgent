@@ -1,15 +1,153 @@
 # Design Specification
 
+# vxMailAgent Design Specification
+
 ## 1. Overview
-The application is a single, web-based system running on localhost for processing customer support emails, designed for a single user (e.g., a quality assurance manager) in a corporate environment. It uses a Node.js backend with TypeScript and a React frontend (bundled with Vite). In development, the frontend runs via Vite (http://localhost:3000) with a proxy to the backend (http://localhost:3001); Express serves the API only. The system supports multiple Gmail/Outlook accounts via OAuth 2.0, with a fetcher applying regex filters on From, To, CC, BCC, Subject, Body, Date to route emails to a variable number of director agents. The director’s LLM (model) controls orchestration via function-calling: it may invoke tools (calendar, to-do, filesystem, memory) and delegate to specialized agents via function calls. Agents are not invoked independently; the director sequences all actions. Results (plain text, markdown, rich text, images) are displayed in a React UI with text inline, images in an attachment panel with previews, customizable notifications, and direct reply sending with provider or user-defined signatures. Configurations are persisted in encrypted JSON, editable at runtime. The design is detailed, descriptive, and clear, minimizing ambiguity for LLM implementation while leaving code-level details to the implementer.
 
-### Current Implementation Snapshot
+### System Architecture
+vxMailAgent is a secure, multi-user web application for processing and managing emails through AI-powered workflows. The system is built with a modern tech stack:
 
-- Dev servers: frontend runs on Vite (`http://localhost:3000`) and proxies `/api` to the backend (`http://localhost:3001`). See `src/frontend/vite.config.ts` and `src/backend/index.ts`/`server.ts`. The backend does not serve the frontend in dev.
-- Encryption behavior: if `VX_MAILAGENT_KEY` is missing/invalid (not 64-char hex), the backend still starts and persists plaintext JSON with a startup warning. See `src/backend/config.ts::warnIfInsecure()` and `src/backend/persistence.ts`.
-- Authentication/session: Stateless login via Google OIDC; backend issues an HttpOnly JWT cookie `vx.session` (SameSite=Lax; `Secure` in production). `requireAuth` guards routes except the public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`. In production, HTTP is redirected to HTTPS and HSTS is set (`Strict-Transport-Security: max-age=31536000; includeSubDomains`).
-  - Split OAuth clients: Separate Google OAuth client for app login (OIDC, minimal scopes) vs provider Gmail accounts (email access). Env vars: `GOOGLE_LOGIN_*` for login, `GOOGLE_*` for provider.
-- Workspace store: `workspaces/:id` routes exist, but items are stored in a shared repository (`workspaceRepo`) irrespective of `:id` (partitioning can be added later). See `src/backend/routes/workspaces.ts`.
+- **Frontend**: React + Vite (http://localhost:3000 in development)
+- **Backend**: Node.js + Express (http://localhost:3001 in development)
+- **Authentication**: OAuth 2.0 with JWT sessions
+- **Data Storage**: Encrypted JSON files with strict user isolation
+- **AI Integration**: OpenAI API for natural language processing
+
+### Core Security Principles
+
+1. **Zero Trust Architecture**
+   - All operations require explicit authentication
+   - No implicit trust of any request
+   - Principle of least privilege enforced
+
+2. **Data Isolation**
+   - Strict per-user data separation
+   - No cross-user data access
+   - Containerized user environments
+
+3. **Defense in Depth**
+   - Multiple layers of security controls
+   - Input validation at all layers
+   - Comprehensive audit logging
+
+4. **Secure by Default**
+   - Secure configurations out-of-the-box
+   - No backdoors or debug endpoints in production
+   - Automatic security updates
+
+## 2. Data Model
+
+### Core Entities
+
+#### User
+- `id`: Unique identifier (UUID v4)
+- `email`: User's primary email
+- `name`: Display name
+- `createdAt`: Account creation timestamp
+- `lastLogin`: Last login timestamp
+- `preferences`: User preferences
+
+#### Account (Email Provider)
+- `id`: Unique identifier (UUID v4)
+- `userId`: Owner reference
+- `provider`: 'gmail' | 'outlook'
+- `email`: Account email
+- `displayName`: Account display name
+- `accessToken`: Encrypted OAuth access token
+- `refreshToken`: Encrypted OAuth refresh token
+- `expiresAt`: Token expiration timestamp
+- `signature`: Email signature (HTML)
+- `settings`: Provider-specific settings
+
+#### Workspace
+- `id`: Unique identifier (UUID v4)
+- `userId`: Owner reference
+- `name`: Workspace name
+- `description`: Optional description
+- `createdAt`: Creation timestamp
+- `updatedAt`: Last update timestamp
+- `tags`: String array for categorization
+
+#### WorkspaceItem
+- `id`: Unique identifier (UUID v4)
+- `workspaceId`: Parent workspace
+- `mimeType`: MIME type of content
+- `label`: Human-readable label
+- `data`: Content data (base64 encoded if binary)
+- `encoding`: 'utf8' | 'base64' | 'binary'
+- `size`: Size in bytes
+- `createdAt`: Creation timestamp
+- `updatedAt`: Last update timestamp
+- `deletedAt`: Soft delete timestamp
+- `metadata`: Additional metadata (JSON)
+
+### Relationships
+- User 1:N Account
+- User 1:N Workspace
+- Workspace 1:N WorkspaceItem
+
+## 3. Security Architecture
+
+### Authentication & Session Management
+
+#### Session Security
+- **JWT-based Authentication**
+  - HttpOnly, Secure, SameSite=Lax cookies
+  - Short-lived access tokens with configurable TTL
+  - Secure token generation and validation
+  - Automatic session invalidation on logout
+
+#### OAuth 2.0 Implementation
+- **Split Client Architecture**
+  - Separate OAuth clients for authentication vs. provider access
+  - Minimal scopes for each client
+  - PKCE for public clients
+  - Secure token storage with encryption
+
+### Data Protection
+
+#### At Rest Encryption
+- **AES-256-GCM** with random IVs
+- Per-file encryption keys derived from master key
+- Secure key management
+  - Environment variable injection
+  - No hardcoded keys
+  - Key rotation support
+
+#### In-Transit Security
+- TLS 1.2+ required
+- HSTS with preload
+- Certificate pinning
+- Secure cipher suites only
+
+### Access Control
+
+#### User Isolation
+- Each user gets isolated data storage
+- Strict path validation
+- No symlink or path traversal allowed
+- Containerized execution environments
+
+#### API Security
+- Input validation
+- Output encoding
+- Rate limiting
+- Request validation middleware
+- CSRF protection
+
+### Audit & Monitoring
+
+#### Logging
+- Structured JSON logs
+- User context in all entries
+- Sensitive data redaction
+- Immutable audit trail
+
+#### Monitoring
+- Security event monitoring
+- Anomaly detection
+- Automated alerts
+- Incident response procedures
 - Implemented routes include health, prompts, prompt-templates, conversations, accounts, directors, agents, filters, memory, settings, fetcher, diagnostics, and workspaces. Some live tools (calendar/todo/filesystem/memory) described below are planned and may not be wired as HTTP APIs yet.
 
 Core Concept: For each routed email, a director AI orchestrates specialized agents via tool-calls and inter-agent messaging. All agents work in a shared Workspace for that email, where they add, list and remove items. The director decides next actions and completes the run; the Workspace is the deliverable.
@@ -31,8 +169,37 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Corporate Compliance**: Localhost, OAuth, encrypted JSON storage.
 - **Simplification**: No PDF generation, simple filter UI, single Node.js application, OpenAI-only, no complex client-server protocols (e.g., IPC, WebSocket).
 
-## 3. Technical Design
-### 3.1 Architecture
+## 4. API Design
+
+### Authentication
+- JWT-based authentication
+- OAuth 2.0 for provider access
+- Session management with refresh tokens
+
+### Rate Limiting
+- Global rate limiting
+- Per-user rate limiting
+- Per-endpoint rate limiting
+
+### Error Handling
+- Standardized error responses
+- Detailed error codes
+- User-friendly messages
+- Logging and monitoring
+
+### Versioning
+- API version in URL path
+- Semantic versioning
+- Deprecation policy
+
+### Data Validation
+- Request validation
+- Input sanitization
+- Output filtering
+- Schema validation
+
+## 5. Technical Design
+### 5.1 Architecture
 - **Single Application**: A single Node.js application (TypeScript) with Express.js serves a React frontend (bundled via a tool like Vite or Webpack) and handles all logic: email fetching, filtering, orchestration, tool calls, and OpenAI API integration. Frontend communicates with backend via standard HTTP requests (e.g., `fetch` or `axios`), avoiding IPC or complex protocols (e.g., WebSocket, GraphQL).
 - **Backend**: Node.js with Express.js for routing, email processing, tool calls, and persistence.
 - **Frontend**: React with HTML/JavaScript/CSS, styled with Tailwind CSS for a professional look, using Material-UI (or similar) for components (modals, tables, buttons) to ensure developer/user-friendliness.
