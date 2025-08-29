@@ -7,6 +7,7 @@ import { FetcherLogEntry, Account, ConversationThread, OrchestrationDiagnosticEn
 import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread } from './orchestration';
 import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE } from '../config';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
+import { UserRequest } from '../middleware/user-context';
 
 /** Dependencies required by the fetcher service. */
 export interface FetcherDeps {
@@ -24,6 +25,8 @@ export interface FetcherDeps {
   getFetcherLog: () => FetcherLogEntry[];
   setFetcherLog: (next: FetcherLogEntry[]) => void;
   getToolHandler: () => (name: string, params: any) => Promise<any>;
+  // Provides the per-user request context for tracing/logging repositories
+  getUserReq: () => UserRequest;
 }
 
 /** Interface for the fetcher service. */
@@ -112,7 +115,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
     }
 
     for (const account of accounts) {
-      const accountTraceId = beginTrace({ accountId: account.id, provider: account.provider });
+      const accountTraceId = beginTrace({ accountId: account.id, provider: account.provider }, deps.getUserReq());
       if (!fetcherAccountStatus[account.id]) fetcherAccountStatus[account.id] = { lastRun: null, lastError: null };
       try {
         logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'account_start', message: 'Fetching emails...' });
@@ -122,9 +125,9 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
             logFetch({ timestamp: new Date().toISOString(), level: 'error', provider: account.provider, accountId: account.id, event: 'provider_missing', message: `${account.provider} provider not available` });
             continue;
           }
-          const sRefresh = beginSpan(accountTraceId, { type: 'token_refresh', name: 'ensureValidAccessToken', provider: account.provider });
+          const sRefresh = beginSpan(accountTraceId, { type: 'token_refresh', name: 'ensureValidAccessToken', provider: account.provider }, deps.getUserReq());
           const refreshResult = await provider.ensureValidAccessToken(account);
-          endSpan(accountTraceId, sRefresh, { status: (refreshResult as any)?.error ? 'error' : 'ok', error: (refreshResult as any)?.error });
+          endSpan(accountTraceId, sRefresh, { status: (refreshResult as any)?.error ? 'error' : 'ok', error: (refreshResult as any)?.error }, deps.getUserReq());
           if ((refreshResult as any)?.error) {
             const errMsg = (refreshResult as any).error;
             fetcherAccountStatus[account.id].lastError = errMsg;
@@ -144,13 +147,13 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
               logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'oauth_refreshed', message: 'Refreshed and persisted new access token' });
             }
           }
-          const sList = beginSpan(accountTraceId, { type: 'provider_fetch', name: 'fetchUnread', provider: account.provider });
+          const sList = beginSpan(accountTraceId, { type: 'provider_fetch', name: 'fetchUnread', provider: account.provider }, deps.getUserReq());
           const envelopes = await provider.fetchUnread(account, { max: 10, unreadOnly: true });
-          endSpan(accountTraceId, sList, { status: 'ok', response: { count: envelopes.length } });
+          endSpan(accountTraceId, sList, { status: 'ok', response: { count: envelopes.length } }, deps.getUserReq());
           logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'messages_listed', message: 'Listed unread messages', count: envelopes.length });
 
           for (const env of envelopes) {
-            const traceId = beginTrace({ emailId: env.id, accountId: account.id, provider: account.provider });
+            const traceId = beginTrace({ emailId: env.id, accountId: account.id, provider: account.provider }, deps.getUserReq());
             const msgId = env.id;
             const subject = String(env.subject || '');
             const from = String(env.from || '');
@@ -158,13 +161,13 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
             const snippet = String(env.snippet || '');
             const bodies = { bodyPlain: env.bodyPlain, bodyHtml: env.bodyHtml } as any;
 
-            const sFilters = beginSpan(traceId, { type: 'filters_eval', name: 'evaluateFilters', provider: account.provider, emailId: msgId, request: { filtersCount: filters.length } });
+            const sFilters = beginSpan(traceId, { type: 'filters_eval', name: 'evaluateFilters', provider: account.provider, emailId: msgId, request: { filtersCount: filters.length } }, deps.getUserReq());
             const filterEvaluations = evaluateFilters(filters, { from, subject, bodyPlain: bodies.bodyPlain, bodyHtml: bodies.bodyHtml, snippet, date });
-            endSpan(traceId, sFilters, { status: 'ok', response: { matches: filterEvaluations.filter(e => e.match).length } });
+            endSpan(traceId, sFilters, { status: 'ok', response: { matches: filterEvaluations.filter(e => e.match).length } }, deps.getUserReq());
 
-            const sSelect = beginSpan(traceId, { type: 'director_select', name: 'selectDirectorTriggers', provider: account.provider, emailId: msgId });
+            const sSelect = beginSpan(traceId, { type: 'director_select', name: 'selectDirectorTriggers', provider: account.provider, emailId: msgId }, deps.getUserReq());
             const directorTriggers: string[] = selectDirectorTriggers(filterEvaluations);
-            endSpan(traceId, sSelect, { status: 'ok', response: { triggers: directorTriggers } });
+            endSpan(traceId, sSelect, { status: 'ok', response: { triggers: directorTriggers } }, deps.getUserReq());
 
             for (const directorId of directorTriggers) {
               const director = directors.find(d => d.id === directorId);
@@ -191,8 +194,8 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
               } as ConversationThread;
               conversations = [...deps.getConversations(), dirThread];
               deps.setConversations(conversations);
-              const sConvCreate = beginSpan(traceId, { type: 'conversation_update', name: 'create_director_thread', emailId: msgId, directorId: director.id });
-              endSpan(traceId, sConvCreate, { status: 'ok' });
+              const sConvCreate = beginSpan(traceId, { type: 'conversation_update', name: 'create_director_thread', emailId: msgId, directorId: director.id }, deps.getUserReq());
+              endSpan(traceId, sConvCreate, { status: 'ok' }, deps.getUserReq());
 
               const dirApi = settings.apiConfigs.find((c: any) => c.id === director.apiConfigId);
               if (!dirApi || !directorPrompt) {
@@ -203,10 +206,10 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                   deps.setConversations(conversations);
                 }
                 try {
-                  const sFail = beginSpan(traceId, { type: 'conversation_update', name: 'director_thread_fail', emailId: msgId, directorId: director.id });
-                  endSpan(traceId, sFail, { status: 'error', error: 'missing director apiConfig or prompt' });
+                  const sFail = beginSpan(traceId, { type: 'conversation_update', name: 'director_thread_fail', emailId: msgId, directorId: director.id }, deps.getUserReq());
+                  endSpan(traceId, sFail, { status: 'error', error: 'missing director apiConfig or prompt' }, deps.getUserReq());
                 } catch {}
-                endTrace(traceId, 'error', 'missing director apiConfig or prompt');
+                endTrace(traceId, 'error', 'missing director apiConfig or prompt', deps.getUserReq());
                 continue;
               }
 
@@ -238,7 +241,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
               const LOOP_MAX = 8;
               while (loopGuard++ < LOOP_MAX) {
                 const t0 = Date.now();
-                const sLlm = beginSpan(traceId, { type: 'llm_call', name: 'director_chatCompletion', directorId: director.id, emailId: msgId });
+                const sLlm = beginSpan(traceId, { type: 'llm_call', name: 'director_chatCompletion', directorId: director.id, emailId: msgId }, deps.getUserReq());
                 let step: any;
                 let latencyMs = 0;
                 try {
@@ -257,10 +260,10 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                     response: engineOut.response,
                   } as any;
                   latencyMs = Date.now() - t0;
-                  endSpan(traceId, sLlm, { status: 'ok', response: { latencyMs } });
+                  endSpan(traceId, sLlm, { status: 'ok', response: { latencyMs } }, deps.getUserReq());
                 } catch (e: any) {
                   latencyMs = Date.now() - t0;
-                  endSpan(traceId, sLlm, { status: 'error', error: String(e?.message || e) });
+                  endSpan(traceId, sLlm, { status: 'error', error: String(e?.message || e) }, deps.getUserReq());
                   try {
                     const now = new Date().toISOString();
                     deps.logProviderEvent({ id: newId(), conversationId: dirThreadId, provider: 'openai', type: 'error', timestamp: now, latencyMs, error: String(e?.message || e) });
@@ -283,8 +286,8 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                 dirMsgs.push(step.assistantMessage as any);
                 if (!step.toolCalls || step.toolCalls.length === 0) {
                   try {
-                    const sFinalMsg = beginSpan(traceId, { type: 'conversation_update', name: 'director_final_message', directorId: director.id, emailId: msgId });
-                    endSpan(traceId, sFinalMsg, { status: 'ok', response: { contentPreview: String(step.assistantMessage?.content || '').slice(0, 200) } });
+                    const sFinalMsg = beginSpan(traceId, { type: 'conversation_update', name: 'director_final_message', directorId: director.id, emailId: msgId }, deps.getUserReq());
+                    endSpan(traceId, sFinalMsg, { status: 'ok', response: { contentPreview: String(step.assistantMessage?.content || '').slice(0, 200) } }, deps.getUserReq());
                   } catch {}
                   break;
                 }
@@ -294,8 +297,8 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                   try { args = tc.arguments ? JSON.parse(tc.arguments) : {}; }
                   catch (e: any) {
                     try {
-                      const sArgs = beginSpan(traceId, { type: 'tool_call', name: tc.name || 'unknown', directorId: director.id, emailId: msgId, toolCallId: tc.id });
-                      endSpan(traceId, sArgs, { status: 'error', error: `invalid tool arguments: ${String(e?.message || e)}` });
+                      const sArgs = beginSpan(traceId, { type: 'tool_call', name: tc.name || 'unknown', directorId: director.id, emailId: msgId, toolCallId: tc.id }, deps.getUserReq());
+                      endSpan(traceId, sArgs, { status: 'error', error: `invalid tool arguments: ${String(e?.message || e)}` }, deps.getUserReq());
                     } catch {}
                     appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: 'invalid tool arguments' }) });
                     continue;
@@ -304,7 +307,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                     const agentId = tc.name.replace(/^(agent__|actor__)/, '');
                     const agent = agents.find(a => a.id === agentId);
                     if (!agent) { appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: 'agent not found' }) }); continue; }
-                    const sTool = beginSpan(traceId, { type: 'tool_call', name: tc.name, directorId: director.id, agentId, emailId: msgId, request: { args } });
+                    const sTool = beginSpan(traceId, { type: 'tool_call', name: tc.name, directorId: director.id, agentId, emailId: msgId, request: { args } }, deps.getUserReq());
                     const ensured = ensureAgentThread(
                       conversations,
                       dirThreadId,
@@ -332,7 +335,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                     deps.logOrch({ timestamp: new Date().toISOString(), director: director.id, directorName: director.name, agent: agent.id, agentName: agent.name, emailSummary: subject || snippet || msgId, accountId: account.id, email: emailEnvelope as any, result: { content: `agentThreadId=${agentThread.id}; isNew=${isNew}`, attachments: [], notifications: [] }, detail: { tool: 'agent', agentId: agent.id, agentName: agent.name, agentThreadId: agentThread.id, isNew }, fetchCycleId: fetchStart, dirThreadId, agentThreadId: agentThread.id, phase: 'tool' });
 
                     const agentApi = settings.apiConfigs.find((c: any) => c.id === agent.apiConfigId)!;
-                    const sAgentLlm = beginSpan(traceId, { type: 'llm_call', name: 'agent_conversation', directorId: director.id, agentId, emailId: msgId });
+                    const sAgentLlm = beginSpan(traceId, { type: 'llm_call', name: 'agent_conversation', directorId: director.id, agentId, emailId: msgId }, deps.getUserReq());
                     const tAg0 = Date.now();
                     
                     try {
@@ -358,30 +361,30 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                       conversations = agentResult.conversations;
                       
                       if (agentResult.success) {
-                        endSpan(traceId, sAgentLlm, { status: 'ok', response: { latencyMs } });
+                        endSpan(traceId, sAgentLlm, { status: 'ok', response: { latencyMs } }, deps.getUserReq());
                         const finalContent = agentResult.finalAssistantMessage?.content || '';
                         appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(finalContent), context: { traceId, spanId: sTool } } as any);
-                        endSpan(traceId, sTool, { status: 'ok' });
+                        endSpan(traceId, sTool, { status: 'ok' }, deps.getUserReq());
                       } else {
-                        endSpan(traceId, sAgentLlm, { status: 'error', error: agentResult.error });
+                        endSpan(traceId, sAgentLlm, { status: 'error', error: agentResult.error }, deps.getUserReq());
                         appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: agentResult.error || 'agent conversation failed' }) });
-                        endSpan(traceId, sTool, { status: 'error', error: agentResult.error || 'agent conversation failed' });
+                        endSpan(traceId, sTool, { status: 'error', error: agentResult.error || 'agent conversation failed' }, deps.getUserReq());
                       }
                     } catch (e: any) {
                       const latencyMs = Date.now() - tAg0;
-                      endSpan(traceId, sAgentLlm, { status: 'error', error: String(e?.message || e) });
+                      endSpan(traceId, sAgentLlm, { status: 'error', error: String(e?.message || e) }, deps.getUserReq());
                       try {
                         const now = new Date().toISOString();
                         deps.logProviderEvent({ id: newId(), conversationId: agentThread.id, provider: 'openai', type: 'error', timestamp: now, latencyMs, error: String(e?.message || e) });
                       } catch {}
                       appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: 'agent conversation failed' }) });
-                      endSpan(traceId, sTool, { status: 'error', error: 'agent conversation failed' });
+                      endSpan(traceId, sTool, { status: 'error', error: 'agent conversation failed' }, deps.getUserReq());
                       continue;
                     }
                   } else {
                     try {
-                      const sUnsupported = beginSpan(traceId, { type: 'tool_call', name: tc.name || 'unknown', directorId: director.id, emailId: msgId, toolCallId: tc.id });
-                      endSpan(traceId, sUnsupported, { status: 'error', error: 'tool not implemented' });
+                      const sUnsupported = beginSpan(traceId, { type: 'tool_call', name: tc.name || 'unknown', directorId: director.id, emailId: msgId, toolCallId: tc.id }, deps.getUserReq());
+                      endSpan(traceId, sUnsupported, { status: 'error', error: 'tool not implemented' }, deps.getUserReq());
                     } catch {}
                     appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: 'tool not implemented' }) });
                   }
@@ -393,17 +396,17 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                 const di = conversations.findIndex(c => c.id === dirThreadId);
                 if (di !== -1) {
                   let sFinalize = '';
-                  try { sFinalize = beginSpan(traceId, { type: 'conversation_update', name: 'finalize_director_thread', emailId: msgId, directorId: director.id }); } catch {}
+                  try { sFinalize = beginSpan(traceId, { type: 'conversation_update', name: 'finalize_director_thread', emailId: msgId, directorId: director.id }, deps.getUserReq()); } catch {}
                   const updated = { ...conversations[di], status: 'completed', endedAt: new Date().toISOString(), finalized: true } as any;
                   conversations = [...conversations.slice(0, di), updated, ...conversations.slice(di + 1)];
                   deps.setConversations(conversations);
-                  try { if (sFinalize) endSpan(traceId, sFinalize, { status: 'ok' }); } catch {}
+                  try { if (sFinalize) endSpan(traceId, sFinalize, { status: 'ok' }, deps.getUserReq()); } catch {}
 
                   const childAgents = conversations
                     .filter(c => c.kind === 'agent' && c.parentId === dirThreadId && !c.finalized);
                   if (childAgents.length > 0) {
                     let sCascade = '';
-                    try { sCascade = beginSpan(traceId, { type: 'conversation_update', name: 'finalize_child_agent_threads', emailId: msgId, directorId: director.id }); } catch {}
+                    try { sCascade = beginSpan(traceId, { type: 'conversation_update', name: 'finalize_child_agent_threads', emailId: msgId, directorId: director.id }, deps.getUserReq()); } catch {}
                     const now = new Date().toISOString();
                     conversations = conversations.map(c => (
                       c.kind === 'agent' && c.parentId === dirThreadId && !c.finalized
@@ -411,22 +414,22 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                         : c
                     ));
                     deps.setConversations(conversations);
-                    try { if (sCascade) endSpan(traceId, sCascade, { status: 'ok', response: { count: childAgents.length } }); } catch {}
+                    try { if (sCascade) endSpan(traceId, sCascade, { status: 'ok', response: { count: childAgents.length } }, deps.getUserReq()); } catch {}
                   }
                 }
               }
-              endTrace(traceId, 'ok');
+              endTrace(traceId, 'ok', undefined, deps.getUserReq());
             }
           }
         }
         fetcherAccountStatus[account.id].lastRun = new Date().toISOString();
         fetcherAccountStatus[account.id].lastError = null;
         logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'account_complete', message: 'Account fetch completed' });
-        endTrace(accountTraceId, 'ok');
+        endTrace(accountTraceId, 'ok', undefined, deps.getUserReq());
       } catch (err: any) {
         fetcherAccountStatus[account.id].lastError = String(err);
         logFetch({ timestamp: new Date().toISOString(), level: 'error', provider: account.provider, accountId: account.id, event: 'account_error', message: 'Error during fetch', detail: String(err) });
-        endTrace(accountTraceId, 'error', String(err));
+        endTrace(accountTraceId, 'error', String(err), deps.getUserReq());
       }
     }
 

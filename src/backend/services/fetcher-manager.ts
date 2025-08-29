@@ -20,6 +20,8 @@ export interface UserFetcherDeps {
   getFetcherLog: () => any[];
   setFetcherLog: (next: any[]) => void;
   getToolHandler: () => (name: string, params: any) => Promise<any>;
+  // Provides a mock per-user request used by logging/tracing
+  getUserReq: () => UserRequest;
 }
 
 /**
@@ -56,6 +58,7 @@ export class FetcherManager {
         getFetcherLog: userDeps.getFetcherLog,
         setFetcherLog: userDeps.setFetcherLog,
         getToolHandler: userDeps.getToolHandler,
+        getUserReq: userDeps.getUserReq,
       };
       this.fetchers.set(uid, initFetcher(fetcherDeps));
     }

@@ -272,6 +272,7 @@ export function createServer() {
       getFetcherLog: () => userBundle.fetcherLog.getAll(),
       setFetcherLog: (next: any[]) => userBundle.fetcherLog.setAll(next),
       getToolHandler: () => createToolHandler(userBundle),
+      getUserReq: () => ({ userContext: { uid, repos: userBundle } } as any),
     };
   });
 
