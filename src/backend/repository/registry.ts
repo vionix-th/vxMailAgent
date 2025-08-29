@@ -99,27 +99,27 @@ export class RepoBundleRegistry {
       lastAccessed: Date.now(),
       
       // Core repositories
-      accounts: createUserJsonRepository<Account>(paths.accounts, paths.root),
-      settings: createUserJsonRepository<any>(paths.settings, paths.root),
+      accounts: createUserJsonRepository<Account>(paths.accounts, paths.root, undefined, uid),
+      settings: createUserJsonRepository<any>(paths.settings, paths.root, undefined, uid),
       
       // Inventory repositories  
-      prompts: createUserJsonRepository<Prompt>(paths.prompts, paths.root),
-      agents: createUserJsonRepository<Agent>(paths.agents, paths.root),
-      directors: createUserJsonRepository<Director>(paths.directors, paths.root),
-      filters: createUserJsonRepository<Filter>(paths.filters, paths.root),
+      prompts: createUserJsonRepository<Prompt>(paths.prompts, paths.root, undefined, uid),
+      agents: createUserJsonRepository<Agent>(paths.agents, paths.root, undefined, uid),
+      directors: createUserJsonRepository<Director>(paths.directors, paths.root, undefined, uid),
+      filters: createUserJsonRepository<Filter>(paths.filters, paths.root, undefined, uid),
       // templates: createUserJsonRepository<any>(paths.templates, paths.root), // Template type not available
-      imprints: createUserJsonRepository<Imprint>(paths.imprints, paths.root),
-      workspaceItems: createUserJsonRepository<WorkspaceItem>(paths.workspaceItems, paths.root),
+      imprints: createUserJsonRepository<Imprint>(paths.imprints, paths.root, undefined, uid),
+      workspaceItems: createUserJsonRepository<WorkspaceItem>(paths.workspaceItems, paths.root, undefined, uid),
       
       // Conversation and memory
-      conversations: createUserJsonRepository<ConversationThread>(paths.conversations, paths.root, USER_MAX_CONVERSATIONS),
-      memory: createUserJsonRepository<any>(paths.memory, paths.root),
+      conversations: createUserJsonRepository<ConversationThread>(paths.conversations, paths.root, USER_MAX_CONVERSATIONS, uid),
+      memory: createUserJsonRepository<any>(paths.memory, paths.root, undefined, uid),
       
       // Logging repositories
-      fetcherLog: createUserJsonRepository<any>(paths.logs.fetcher, paths.root, USER_MAX_LOGS_PER_TYPE),
-      providerEvents: createUserProviderEventsRepository(paths.logs.providerEvents, paths.root),
-      traces: createUserTracesRepository(paths.logs.traces, paths.root),
-      orchestrationLog: createUserJsonRepository<any>(paths.logs.orchestration, paths.root),
+      fetcherLog: createUserJsonRepository<any>(paths.logs.fetcher, paths.root, USER_MAX_LOGS_PER_TYPE, uid),
+      providerEvents: createUserProviderEventsRepository(paths.logs.providerEvents, paths.root, uid),
+      traces: createUserTracesRepository(paths.logs.traces, paths.root, uid),
+      orchestrationLog: createUserJsonRepository<any>(paths.logs.orchestration, paths.root, undefined, uid),
     };
     
     // Check registry size limits

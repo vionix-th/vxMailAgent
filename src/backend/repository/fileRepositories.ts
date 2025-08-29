@@ -4,24 +4,50 @@ import { Repository } from './core';
 import { dataPath } from '../utils/paths';
 import { ProviderEvent, Trace } from '../../shared/types';
 import { TRACE_MAX_TRACES, TRACE_TTL_DAYS, PROVIDER_MAX_EVENTS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE } from '../config';
+import { securityAudit } from '../services/security-audit';
+import { SecurityError } from '../services/error-handler';
 
 /** Repository backed by an encrypted JSON file with security. */
 export class FileJsonRepository<T> implements Repository<T> {
   constructor(
     private filePath: string, 
     private containerPath?: string,
-    private maxItems?: number
+    private maxItems?: number,
+    private uid?: string
   ) {}
+
+  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
+    securityAudit.logFileOperation(this.uid, {
+      filePath: this.filePath,
+      operation,
+      success,
+      error,
+      fileSize
+    });
+  }
   
   getAll(): T[] {
     try {
       if (fs.existsSync(this.filePath)) {
-        return persistence.loadAndDecrypt(this.filePath, this.containerPath) as T[];
+        const data = persistence.loadAndDecrypt(this.filePath, this.containerPath) as T[];
+        const fileStats = fs.statSync(this.filePath);
+        this.logFileOperation('read', true, undefined, fileStats.size);
+        return data;
       }
+      this.logFileOperation('read', true, 'File does not exist');
+      return [] as T[];
     } catch (e) {
-      console.error(`[ERROR] FileJsonRepository.getAll failed for ${this.filePath}:`, e);
+      const error = e as Error;
+      this.logFileOperation('read', false, error.message);
+      
+      // Use error handler for consistent error processing
+      if (error.message.includes('Security violation') || error.message.includes('Unsafe path')) {
+        throw new SecurityError(`Path security violation: ${this.filePath}`);
+      }
+      
+      console.error(`[ERROR] FileJsonRepository.getAll failed for ${this.filePath}:`, error);
+      return [] as T[];
     }
-    return [] as T[];
   }
   
   setAll(next: T[]): void {
@@ -34,9 +60,26 @@ export class FileJsonRepository<T> implements Repository<T> {
     
     try {
       persistence.encryptAndPersist(items, this.filePath, this.containerPath);
+      
+      // Log successful write operation
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
+      this.logFileOperation('write', true, undefined, fileStats?.size);
+      
     } catch (e) {
-      console.error(`[ERROR] FileJsonRepository.setAll failed for ${this.filePath}:`, e);
-      throw e;
+      const error = e as Error;
+      this.logFileOperation('write', false, error.message);
+      
+      // Use error handler for consistent error processing
+      if (error.message.includes('Security violation') || error.message.includes('Unsafe path')) {
+        throw new SecurityError(`Path security violation: ${this.filePath}`);
+      }
+      
+      if (error.message.includes('size exceeds limit')) {
+        throw new SecurityError(`File size limit exceeded: ${this.filePath}`);
+      }
+      
+      console.error(`[ERROR] FileJsonRepository.setAll failed for ${this.filePath}:`, error);
+      throw error;
     }
   }
 }
@@ -51,8 +94,19 @@ export class FileProviderEventsRepository implements ProviderEventsRepository {
   constructor(
     private filePath: string = dataPath('provider-events.json'), 
     private containerPath?: string,
-    private isPerUser: boolean = false
+    private isPerUser: boolean = true,
+    private uid?: string
   ) {}
+
+  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
+    securityAudit.logFileOperation(this.uid, {
+      filePath: this.filePath,
+      operation,
+      success,
+      error,
+      fileSize
+    });
+  }
   
   private prune(list: ProviderEvent[]): ProviderEvent[] {
     try {
@@ -81,21 +135,32 @@ export class FileProviderEventsRepository implements ProviderEventsRepository {
   getAll(): ProviderEvent[] {
     try {
       if (fs.existsSync(this.filePath)) {
-        return this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[]);
+        const data = this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[]);
+        const fileStats = fs.statSync(this.filePath);
+        this.logFileOperation('read', true, undefined, fileStats.size);
+        return data;
       }
-    } catch (e) { 
-      console.error('[ERROR] FileProviderEventsRepository.getAll failed:', e); 
+      this.logFileOperation('read', true, 'File does not exist');
+      return [];
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('read', false, error.message);
+      console.error('[ERROR] FileProviderEventsRepository.getAll failed:', error);
+      return [];
     }
-    return [];
   }
   
   setAll(next: ProviderEvent[]): void {
     const pruned = this.prune(next);
     try { 
-      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath); 
-    } catch (e) { 
-      console.error('[ERROR] FileProviderEventsRepository.setAll failed:', e);
-      throw e;
+      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
+      this.logFileOperation('write', true, undefined, fileStats?.size);
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('write', false, error.message);
+      console.error('[ERROR] FileProviderEventsRepository.setAll failed:', error);
+      throw error;
     }
   }
   
@@ -117,8 +182,19 @@ export class FileTracesRepository implements TracesRepository {
   constructor(
     private filePath: string = dataPath('traces.json'), 
     private containerPath?: string,
-    private isPerUser: boolean = false
+    private isPerUser: boolean = true,
+    private uid?: string
   ) {}
+
+  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
+    securityAudit.logFileOperation(this.uid, {
+      filePath: this.filePath,
+      operation,
+      success,
+      error,
+      fileSize
+    });
+  }
   
   private prune(list: Trace[]): Trace[] {
     try {
@@ -147,21 +223,32 @@ export class FileTracesRepository implements TracesRepository {
   getAll(): Trace[] {
     try {
       if (fs.existsSync(this.filePath)) {
-        return this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[]);
+        const data = this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[]);
+        const fileStats = fs.statSync(this.filePath);
+        this.logFileOperation('read', true, undefined, fileStats.size);
+        return data;
       }
-    } catch (e) { 
-      console.error('[ERROR] FileTracesRepository.getAll failed:', e); 
+      this.logFileOperation('read', true, 'File does not exist');
+      return [];
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('read', false, error.message);
+      console.error('[ERROR] FileTracesRepository.getAll failed:', error);
+      return [];
     }
-    return [];
   }
   
   setAll(next: Trace[]): void {
     const pruned = this.prune(next);
     try { 
-      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath); 
-    } catch (e) { 
-      console.error('[ERROR] FileTracesRepository.setAll failed:', e);
-      throw e;
+      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
+      this.logFileOperation('write', true, undefined, fileStats?.size);
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('write', false, error.message);
+      console.error('[ERROR] FileTracesRepository.setAll failed:', error);
+      throw error;
     }
   }
   
@@ -189,16 +276,26 @@ export function createJsonRepository<T>(filePath: string, containerPath?: string
 }
 
 /** Create a per-user JSON repository with security and size limits. */
-export function createUserJsonRepository<T>(filePath: string, containerPath: string, maxItems?: number): Repository<T> {
-  return new FileJsonRepository<T>(filePath, containerPath, maxItems);
+export function createUserJsonRepository<T>(filePath: string, containerPath: string, maxItems?: number, uid?: string): Repository<T> {
+  return new FileJsonRepository<T>(filePath, containerPath, maxItems, uid);
 }
 
 /** Create a per-user provider events repository. */
-export function createUserProviderEventsRepository(filePath: string, containerPath: string): ProviderEventsRepository {
-  return new FileProviderEventsRepository(filePath, containerPath, true);
+export function createUserProviderEventsRepository(filePath: string, containerPath: string, uid?: string): ProviderEventsRepository {
+  return new FileProviderEventsRepository(filePath, containerPath, true, uid);
+}
+
+/** Create a global provider events repository (legacy). */
+export function createGlobalProviderEventsRepository(filePath: string, containerPath?: string): ProviderEventsRepository {
+  return new FileProviderEventsRepository(filePath, containerPath, false);
 }
 
 /** Create a per-user traces repository. */
-export function createUserTracesRepository(filePath: string, containerPath: string): TracesRepository {
-  return new FileTracesRepository(filePath, containerPath, true);
+export function createUserTracesRepository(filePath: string, containerPath: string, uid?: string): TracesRepository {
+  return new FileTracesRepository(filePath, containerPath, true, uid);
+}
+
+/** Create a global traces repository (legacy). */
+export function createGlobalTracesRepository(filePath: string, containerPath?: string): TracesRepository {
+  return new FileTracesRepository(filePath, containerPath, false);
 }
