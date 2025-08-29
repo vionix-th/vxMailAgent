@@ -5,11 +5,11 @@ import authRouter from './auth';
 import { requireAuth } from './middleware/auth';
 import { setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent, getOrchestrationLog, getTraces } from './services/logging';
 
-import { Filter, Director, Agent, Prompt, Imprint, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, User } from '../shared/types';
+import { Filter, Director, Agent, Prompt, Imprint, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, User, FetcherLogEntry } from '../shared/types';
 import { USERS_FILE } from './utils/paths';
 import { newId } from './utils/id';
 import { createJsonRepository } from './repository/fileRepositories';
-import { setUsersRepo } from './services/users';
+import { setUsersRepo, getUsersRepo } from './services/users';
 import { repoBundleRegistry } from './repository/registry';
 import registerAuthSessionRoutes from './routes/auth-session';
 
@@ -162,6 +162,7 @@ export function createServer() {
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
+  
   const origin = (process.env.CORS_ORIGIN || '*');
   if (origin && origin !== '*') app.use(cors({ origin, credentials: true }));
   else app.use(cors());
@@ -277,12 +278,12 @@ export function createServer() {
   // Global fetcher initialization removed - user isolation enforced
 
   registerFetcherRoutes(app, {
-    getStatus: (req?: UserRequest) => fetcherManager.getStatus(req),
-    startFetcherLoop: (req?: UserRequest) => fetcherManager.startFetcherLoop(req),
-    stopFetcherLoop: (req?: UserRequest) => fetcherManager.stopFetcherLoop(req),
-    fetchEmails: (req?: UserRequest) => fetcherManager.fetchEmails(req),
-    getSettings: (req?: UserRequest) => getSettingsLive(req),
-    getFetcherLog: (req?: UserRequest) => fetcherManager.getFetcherLog(req),
+    getStatus: (req: UserRequest) => fetcherManager.getStatus(req),
+    startFetcherLoop: (req: UserRequest) => fetcherManager.startFetcherLoop(req),
+    stopFetcherLoop: (req: UserRequest) => fetcherManager.stopFetcherLoop(req),
+    fetchEmails: (req: UserRequest) => fetcherManager.fetchEmails(req),
+    getSettings: (req: UserRequest) => getSettingsLive(req),
+    getFetcherLog: (req: UserRequest) => fetcherManager.getFetcherLog(req),
     setFetcherLog: (req: UserRequest, next) => fetcherManager.setFetcherLog(req, next)
   });
   // Cleanup endpoints (per-user)
@@ -290,7 +291,35 @@ export function createServer() {
   // Cleanup routes removed - user isolation enforced
   // All cleanup operations must use per-user repositories
 
-  // Global fetcher auto-start removed - user isolation enforced
+  // Bootstrapping per-user fetchers on server startup for users who enabled auto-start
+  try {
+    const users = getUsersRepo().getAll();
+    for (const u of users) {
+      const uid = u.id;
+      const bundle = repoBundleRegistry.getBundle(uid);
+      const settings = bundle.settings.getAll()[0] || {};
+      if (settings.fetcherAutoStart) {
+        const mockReq = { userContext: { uid, repos: bundle } } as any as UserRequest;
+        try {
+          fetcherManager.startFetcherLoop(mockReq);
+          console.log(`[BOOT] Started fetcher loop for user ${uid}`);
+          // Log to per-user fetcher log as well
+          const cur: FetcherLogEntry[] = fetcherManager.getFetcherLog(mockReq) as any;
+          const entry: FetcherLogEntry = { timestamp: new Date().toISOString(), level: 'info', event: 'boot_autostart', message: 'Fetcher loop auto-started on server boot' } as any;
+          fetcherManager.setFetcherLog(mockReq, [...cur, entry] as any);
+        } catch (e) {
+          console.error(`[BOOT] Failed to start fetcher loop for user ${uid}:`, e);
+          try {
+            const cur: FetcherLogEntry[] = fetcherManager.getFetcherLog(mockReq) as any;
+            const entry: FetcherLogEntry = { timestamp: new Date().toISOString(), level: 'error', event: 'boot_autostart_failed', message: 'Failed to auto-start fetcher loop on server boot', detail: String((e as any)?.message || e) } as any;
+            fetcherManager.setFetcherLog(mockReq, [...cur, entry] as any);
+          } catch {}
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[BOOT] Fetcher bootstrap failed:', e);
+  }
 
   return app;
 }

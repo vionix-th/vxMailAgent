@@ -27,93 +27,79 @@ export interface UserFetcherDeps {
  */
 export class FetcherManager {
   private fetchers = new Map<string, FetcherService>();
-  private globalFetcher: FetcherService | null = null;
-
+  
   constructor(private createUserFetcher: (uid: string) => UserFetcherDeps) {}
-
-  /**
-   * Initialize global fetcher for fallback
-   */
-  initGlobalFetcher(deps: FetcherDeps): void {
-    this.globalFetcher = initFetcher(deps);
-  }
 
   /**
    * Get or create fetcher for user
    */
-  getFetcher(req?: UserRequest): FetcherService | null {
-    if (req && hasUserContext(req)) {
-      const uid = getUserContext(req).uid;
-      if (!this.fetchers.has(uid)) {
-        const userDeps = this.createUserFetcher(uid);
-        // Convert user deps to standard fetcher deps
-        const fetcherDeps: FetcherDeps = {
-          getSettings: userDeps.getSettings,
-          getFilters: userDeps.getFilters,
-          getDirectors: userDeps.getDirectors,
-          getAgents: userDeps.getAgents,
-          getPrompts: userDeps.getPrompts,
-          getConversations: userDeps.getConversations,
-          setConversations: userDeps.setConversations,
-          getAccounts: userDeps.getAccounts,
-          setAccounts: userDeps.setAccounts,
-          logOrch: userDeps.logOrch,
-          logProviderEvent: userDeps.logProviderEvent,
-          getFetcherLog: userDeps.getFetcherLog,
-          setFetcherLog: userDeps.setFetcherLog,
-          getToolHandler: userDeps.getToolHandler,
-        };
-        this.fetchers.set(uid, initFetcher(fetcherDeps));
-      }
-      return this.fetchers.get(uid)!;
+  getFetcher(req: UserRequest): FetcherService {
+    if (!req || !hasUserContext(req)) {
+      throw new Error('User context required: fetcher is per-user only');
     }
-    return this.globalFetcher;
+    const uid = getUserContext(req).uid;
+    if (!this.fetchers.has(uid)) {
+      const userDeps = this.createUserFetcher(uid);
+      // Convert user deps to standard fetcher deps
+      const fetcherDeps: FetcherDeps = {
+        getSettings: userDeps.getSettings,
+        getFilters: userDeps.getFilters,
+        getDirectors: userDeps.getDirectors,
+        getAgents: userDeps.getAgents,
+        getPrompts: userDeps.getPrompts,
+        getConversations: userDeps.getConversations,
+        setConversations: userDeps.setConversations,
+        getAccounts: userDeps.getAccounts,
+        setAccounts: userDeps.setAccounts,
+        logOrch: userDeps.logOrch,
+        logProviderEvent: userDeps.logProviderEvent,
+        getFetcherLog: userDeps.getFetcherLog,
+        setFetcherLog: userDeps.setFetcherLog,
+        getToolHandler: userDeps.getToolHandler,
+      };
+      this.fetchers.set(uid, initFetcher(fetcherDeps));
+    }
+    return this.fetchers.get(uid)!;
   }
 
   /**
    * Start fetcher loop for user or global
    */
-  startFetcherLoop(req?: UserRequest): void {
+  startFetcherLoop(req: UserRequest): void {
     const fetcher = this.getFetcher(req);
-    if (fetcher) {
-      fetcher.startFetcherLoop();
-    }
+    fetcher.startFetcherLoop();
   }
 
   /**
    * Stop fetcher loop for user or global
    */
-  stopFetcherLoop(req?: UserRequest): void {
+  stopFetcherLoop(req: UserRequest): void {
     const fetcher = this.getFetcher(req);
-    if (fetcher) {
-      fetcher.stopFetcherLoop();
-    }
+    fetcher.stopFetcherLoop();
   }
 
   /**
    * Get fetcher status for user or global
    */
-  getStatus(req?: UserRequest) {
+  getStatus(req: UserRequest) {
     const fetcher = this.getFetcher(req);
-    return fetcher ? fetcher.getStatus() : { active: false, running: false, lastRun: null, nextRun: null, accountStatus: {} };
+    return fetcher.getStatus();
   }
 
   /**
    * Fetch emails for user or global
    */
-  async fetchEmails(req?: UserRequest): Promise<void> {
+  async fetchEmails(req: UserRequest): Promise<void> {
     const fetcher = this.getFetcher(req);
-    if (fetcher) {
-      await fetcher.fetchEmails();
-    }
+    await fetcher.fetchEmails();
   }
 
   /**
    * Get fetcher log for user or global
    */
-  getFetcherLog(req?: UserRequest) {
+  getFetcherLog(req: UserRequest) {
     const fetcher = this.getFetcher(req);
-    return fetcher ? fetcher.getFetcherLog() : [];
+    return fetcher.getFetcherLog();
   }
 
   /**
@@ -121,9 +107,7 @@ export class FetcherManager {
    */
   setFetcherLog(req: UserRequest, next: any[]): void {
     const fetcher = this.getFetcher(req);
-    if (fetcher) {
-      fetcher.setFetcherLog(next);
-    }
+    fetcher.setFetcherLog(next);
   }
 
   /**

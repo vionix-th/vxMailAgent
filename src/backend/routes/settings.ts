@@ -21,7 +21,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
   }
 
   // GET /api/settings (per-user)
-  app.get('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res) => {
+  app.get('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res: express.Response) => {
     const { uid, repos } = getUserContext(req);
     
     securityAudit.logDataAccess(uid, {
@@ -40,10 +40,10 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
       fetcherAutoStart: typeof settings.fetcherAutoStart === 'boolean' ? settings.fetcherAutoStart : true,
       sessionTimeoutMinutes: typeof settings.sessionTimeoutMinutes === 'number' ? settings.sessionTimeoutMinutes : 15,
     });
-  });
+  }));
 
   // PUT /api/settings (per-user)
-  app.put('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res) => {
+  app.put('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res: express.Response) => {
     const { repos, uid } = getUserContext(req);
     
     // Input validation

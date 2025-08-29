@@ -443,12 +443,18 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
     fetcherActive = true;
     fetcherNextRun = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     fetcherInterval = setInterval(() => { void fetchEmails(); }, 5 * 60 * 1000);
+    try {
+      logFetch({ timestamp: new Date().toISOString(), level: 'info', event: 'loop_started', message: 'Fetcher loop started (5m interval)' });
+    } catch {}
   }
 
   function stopFetcherLoop() {
     fetcherActive = false;
     fetcherNextRun = null;
     if (fetcherInterval) { clearInterval(fetcherInterval); fetcherInterval = null; }
+    try {
+      logFetch({ timestamp: new Date().toISOString(), level: 'info', event: 'loop_stopped', message: 'Fetcher loop stopped' });
+    } catch {}
   }
 
   return {

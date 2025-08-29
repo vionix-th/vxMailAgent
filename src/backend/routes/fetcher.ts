@@ -6,12 +6,12 @@ import { saveSettings } from '../services/settings';
 
 /** Dependencies for fetcher routes. */
 export interface FetcherRoutesDeps {
-  getStatus: (req?: UserRequest) => { active: boolean; running?: boolean; lastRun: string | null; nextRun: string | null; accountStatus: Record<string, { lastRun: string | null; lastError: string | null }> };
-  startFetcherLoop: (req?: UserRequest) => void;
-  stopFetcherLoop: (req?: UserRequest) => void;
-  fetchEmails: (req?: UserRequest) => Promise<void>;
-  getSettings: () => any;
-  getFetcherLog: (req?: UserRequest) => FetcherLogEntry[];
+  getStatus: (req: UserRequest) => { active: boolean; running?: boolean; lastRun: string | null; nextRun: string | null; accountStatus: Record<string, { lastRun: string | null; lastError: string | null }> };
+  startFetcherLoop: (req: UserRequest) => void;
+  stopFetcherLoop: (req: UserRequest) => void;
+  fetchEmails: (req: UserRequest) => Promise<void>;
+  getSettings: (req: UserRequest) => any;
+  getFetcherLog: (req: UserRequest) => FetcherLogEntry[];
   setFetcherLog: (req: UserRequest, next: FetcherLogEntry[]) => void;
 }
 
@@ -41,7 +41,7 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
 
   app.post('/api/fetcher/start', (req, res) => {
     deps.startFetcherLoop(req as UserRequest);
-    const settings = deps.getSettings();
+    const settings = deps.getSettings(req as UserRequest);
     settings.fetcherAutoStart = true;
     try { saveSettings(settings, req as UserRequest); } catch {}
     res.json({ success: true, active: deps.getStatus(req as UserRequest).active });
@@ -49,7 +49,7 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
 
   app.post('/api/fetcher/stop', (req, res) => {
     deps.stopFetcherLoop(req as UserRequest);
-    const settings = deps.getSettings();
+    const settings = deps.getSettings(req as UserRequest);
     settings.fetcherAutoStart = false;
     try { saveSettings(settings, req as UserRequest); } catch {}
     res.json({ success: true, active: deps.getStatus(req as UserRequest).active });
