@@ -134,7 +134,8 @@ const FetcherControl: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/fetcher/${action}`, { method: 'POST' });
+      const endpoint = action === 'trigger' ? 'run' : action;
+      const res = await fetch(`/api/fetcher/${endpoint}`, { method: 'POST' });
       if (!res.ok) throw new Error(await res.text());
       await fetchStatus();
     } catch (e: any) {
