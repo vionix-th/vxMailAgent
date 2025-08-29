@@ -2,6 +2,8 @@
 
 # vxMailAgent Design Specification
 
+Note on scope: This document describes architecture and intended behaviors, and may include planned features. For the authoritative list of implemented HTTP APIs and developer procedures, see `docs/DEVELOPER.md`.
+
 ## 1. Overview
 
 ### System Architecture
@@ -286,10 +288,10 @@ data/
   - Note: While `ConversationThread` has an optional `workspaceItems?: WorkspaceItem[]`, the persisted source of truth is the Workspaces repository via `src/backend/routes/workspaces.ts`. Do not embed items in conversations; use the Workspaces API.
 - **API Endpoints (Workspace)**:
   - `GET /api/workspaces/:id/items` — list items (supports filter/paging). Use `?includeDeleted=true` to include soft-deleted items.
-  - `POST /api/workspaces/:id/items` — add item.
   - `GET /api/workspaces/:id/items/:itemId` — get one item.
   - `PUT /api/workspaces/:id/items/:itemId` — update with `expectedRevision`.
   - `DELETE /api/workspaces/:id/items/:itemId` — remove item; `?hard=true` for hard-delete (default soft).
+  - Note: Creation of items is performed by orchestration only. There is no REST create endpoint.
 - **OpenAI Tools (Workspace)**:
   - Common (director + agents): `workspace_add_item`, `workspace_list_items`, `workspace_get_item`, `workspace_update_item`, `workspace_remove_item(hardDelete?)`.
     - Access: All participants (director and agents) may add/list/update/remove any workspace item; `hardDelete` is available to all participants.

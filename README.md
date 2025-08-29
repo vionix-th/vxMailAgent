@@ -96,17 +96,61 @@ Frontend (`src/frontend`)
 - If a Gmail/Outlook refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with an `authorizeUrl` for re-auth. The UI should redirect the user to that URL to restore tokens.
 - To verify provider access in development, call `GET /api/accounts/:id/gmail-test` or `GET /api/accounts/:id/outlook-test`.
 
-## API Overview
+## API Overview (Implemented)
 
-- Health: `GET /api/health`
-- Auth session: `/api/auth/google/initiate`, `/api/auth/google/callback`, `/api/auth/whoami`, `/api/auth/logout`
-- OAuth: `/api/oauth2/google|outlook/{initiate,callback}` (requires authentication)
-- Accounts: `GET/POST/PUT/DELETE /api/accounts[...]` (see `src/backend/routes/accounts.ts`)
-- Fetcher: status/start/stop/fetch/run; logs under `/api/fetcher` (see `src/backend/routes/fetcher.ts`)
-  - Logs endpoints: `GET /api/fetcher/log`, `GET /api/fetcher/logs`, `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (body `{ ids: string[] }`)
-- Orchestration, prompts, agents, directors, conversations, templates, memory, diagnostics, workspaces: modular route files under `src/backend/routes/`
-- Types: shared request/response models in `src/shared/types.ts`
-- More details: `docs/DEVELOPER.md`
+- **Health**
+  - `GET /api/health`
+- **Auth (Login session)**
+  - `GET /api/auth/google/initiate`
+  - `GET /api/auth/google/callback`
+  - `GET /api/auth/whoami`
+  - `POST /api/auth/logout`
+- **Accounts** (`gmail`/`outlook`)
+  - `GET /api/accounts`
+  - `POST /api/accounts`
+  - `PUT /api/accounts/:id`
+  - `DELETE /api/accounts/:id`
+  - `POST /api/accounts/:id/refresh`
+  - `GET /api/accounts/:id/gmail-test`
+  - `GET /api/accounts/:id/outlook-test`
+- **Settings**
+  - `GET /api/settings`
+  - `PUT /api/settings`
+- **Prompts**
+  - `GET /api/prompts`, `POST /api/prompts`, `PUT /api/prompts/:id`, `DELETE /api/prompts/:id`
+  - `POST /api/prompts/assist`
+- **Prompt Templates**
+  - `GET /api/prompt-templates`, `POST /api/prompt-templates`, `PUT /api/prompt-templates/:id`, `DELETE /api/prompt-templates/:id`
+- **Directors / Agents / Filters / Imprints**
+  - `GET/POST/PUT/DELETE /api/directors[...]`
+  - `GET/POST/PUT/DELETE /api/agents[...]`
+  - `GET/POST/PUT/DELETE /api/filters[...]` + `PUT /api/filters/reorder`
+  - `GET/POST/PUT/DELETE /api/imprints[...]`
+- **Conversations**
+  - `GET /api/conversations`, `GET /api/conversations/:id`
+  - `GET /api/conversations/byDirectorEmail?directorId=&emailId=`
+  - `POST /api/conversations/:id/messages`
+  - `POST /api/conversations/:id/assistant`
+  - `DELETE /api/conversations/:id`
+  - `DELETE /api/conversations` (bulk; body `{ ids: string[] }`)
+- **Workspaces** (no create via REST)
+  - `GET /api/workspaces/:id/items`
+  - `GET /api/workspaces/:id/items/:itemId`
+  - `PUT /api/workspaces/:id/items/:itemId`
+  - `DELETE /api/workspaces/:id/items/:itemId[?hard=true]`
+- **Memory**
+  - `GET /api/memory`, `POST /api/memory`, `PUT /api/memory/:id`, `DELETE /api/memory/:id`, `DELETE /api/memory` (bulk)
+- **Fetcher**
+  - `GET /api/fetcher/status`, `POST /api/fetcher/start`, `POST /api/fetcher/stop`, `POST /api/fetcher/fetch`, `POST /api/fetcher/run`
+  - Logs: `GET /api/fetcher/log`, `GET /api/fetcher/logs`, `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (bulk), `DELETE /api/fetcher/logs/purge`
+- **Diagnostics**
+  - Runtime: `GET /api/diagnostics/runtime`
+  - Orchestration diagnostics: `GET /api/orchestration/diagnostics`, `DELETE /api/orchestration/diagnostics/:id`, `DELETE /api/orchestration/diagnostics` (bulk)
+  - Unified tree: `GET /api/diagnostics/unified`, `GET /api/diagnostics/unified/:nodeId`
+- **Cleanup (admin)**
+  - `GET /api/cleanup/stats`, `DELETE /api/cleanup/all`, plus category deletes under `/api/cleanup/*`
+
+See `docs/DEVELOPER.md` for details.
 
 ## UI Overview
 
@@ -117,18 +161,16 @@ Frontend (`src/frontend`)
 - Filters: regex routing rules for incoming emails
 - Admin Console: diagnostics, fetcher control, health
 
-## Code Audit
+## Operational Notes
 
-- CORS policy: `cors()` is wide‑open for dev. For production, restrict origins or serve the frontend from the same origin to avoid permissive CORS.
-- Secrets handling: `.env` is loaded via `dotenv`; tokens are not logged. Ensure environment is set securely when deploying.
-- Data encryption: AES‑256‑GCM implemented in `src/backend/persistence.ts`. Filenames do not include a `.enc` suffix even when encrypted — this is by design; document this for operators.
-- Data directory: `VX_MAILAGENT_DATA_DIR` overrides are supported. Fallbacks resolve to repo `data/` for both ts‑node and compiled runs.
-- OAuth callback pattern: Frontend receives `code` then calls backend callbacks; redirect URIs should point to the frontend (`/oauth/callback`) as in `.env.example`.
-- Token exposure: Backend callback responses include access/refresh tokens in the returned `account` object (so the frontend can persist via `/api/accounts`). For multi‑user or remote deployments, handle token persistence entirely in the backend to avoid exposing tokens to the browser, and scope access controls appropriately.
-- OpenAI provider events: Requests/responses are persisted as diagnostics (`ProviderEvent`). Requests do not include the API key; messages and results may include sensitive email content. Only show in admin views.
-- Logging: Verbose debug logs in `index.ts` (e.g., module imports). Consider a log level flag and suppress in production.
-- Port expectations: Frontend dev server is configured for port `3000` (not Vite’s default `5173`). Docs and env templates reflect 3000; keep consistent.
-- Security hardening (prod): consider CSRF/origin checks, rate limiting, and narrowing CORS. Current setup targets local development.
+- **Isolation & encryption**: Strict per‑user data isolation. AES‑256‑GCM at rest when `VX_MAILAGENT_KEY` is a valid 64‑char hex. See `docs/DEVELOPER.md`.
+- **CORS (dev)**: `cors()` is permissive for local dev. In production, restrict origins or co‑host UI and API.
+- **Env & secrets**: Load via `.env`; do not commit secrets. Tokens are never logged.
+- **Data dir**: `VX_MAILAGENT_DATA_DIR` overrides `data/` location. Ensure write permissions.
+- **OAuth pattern**: Frontend receives `code` → calls backend callbacks. Redirect URIs should point to `/oauth/callback` on the frontend for provider accounts; login callback handled by backend.
+- **Tokens in responses**: Account linking responses include tokens for client‑side persistence in dev. For multi‑user/remote deployments, persist tokens only server‑side and avoid exposing to the browser.
+- **Diagnostics visibility**: Provider/orchestration logs may contain sensitive content; surface only in admin views.
+- **Production hardening**: Enforce HTTPS, HSTS, strict CORS, and consider CSRF/rate limiting per deployment needs.
 
 ## Troubleshooting
 

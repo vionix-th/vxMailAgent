@@ -220,6 +220,8 @@ DELETE /api/workspaces/:id/items/:itemId?hard=true
 - `hard=true`: Permanently deletes the item
 - Returns: `{ success: boolean }`
 
+Note: Workspace items are created by orchestration only. There is no REST endpoint to create items directly.
+
 ## API Reference
 
 ### Health
@@ -267,8 +269,11 @@ POST   /api/fetcher/start
 POST   /api/fetcher/stop
 POST   /api/fetcher/fetch
 POST   /api/fetcher/run
+GET    /api/fetcher/log      # alias of /logs
 GET    /api/fetcher/logs
 DELETE /api/fetcher/logs/:id
+DELETE /api/fetcher/logs     # bulk; body { ids: string[] }
+DELETE /api/fetcher/logs/purge
 ```
 - Control email fetching
 - View and manage fetch logs
@@ -277,23 +282,44 @@ DELETE /api/fetcher/logs/:id
 ### Workspaces
 ```
 GET    /api/workspaces/:id/items
-POST   /api/workspaces/:id/items
 GET    /api/workspaces/:id/items/:itemId
 PUT    /api/workspaces/:id/items/:itemId
 DELETE /api/workspaces/:id/items/:itemId
 ```
-- Manage workspace items
-- Supports rich content types
-- Versioned updates
+- Read/update/delete workspace items
+- Creation occurs via orchestration only (no REST create)
+- Versioned updates with optimistic concurrency
 
 ### Diagnostics (Admin)
 ```
-GET /api/diagnostics/events
-GET /api/diagnostics/traces
+# Runtime
+GET    /api/diagnostics/runtime
+
+# Orchestration diagnostics
+GET    /api/orchestration/diagnostics
+DELETE /api/orchestration/diagnostics/:id
+DELETE /api/orchestration/diagnostics   # bulk; body { ids: string[] }
+
+# Unified diagnostics tree
+GET    /api/diagnostics/unified
+GET    /api/diagnostics/unified/:nodeId
 ```
-- System health and performance metrics
-- Debugging and monitoring
-- Requires admin privileges
+- Runtime info, orchestration diagnostics listing and deletion, and unified diagnostics view
+- Admin/debug only; not rendered in user Results view
+
+### Cleanup (Admin)
+```
+GET    /api/cleanup/stats
+DELETE /api/cleanup/all
+DELETE /api/cleanup/fetcher-logs
+DELETE /api/cleanup/orchestration-logs
+DELETE /api/cleanup/conversations
+DELETE /api/cleanup/workspace-items
+DELETE /api/cleanup/provider-events
+DELETE /api/cleanup/traces
+DELETE /api/cleanup/:type
+```
+- Purge data by category for current user; supports generic `:type`
 
 ### OAuth Token Management
 
