@@ -1,4 +1,5 @@
 import { request as httpsRequest } from 'https';
+import { PROVIDER_REQUEST_TIMEOUT_MS } from '../config';
 
 export interface OAuthTokens {
   accessToken: string;
@@ -53,6 +54,9 @@ export async function postForm<T = any>(urlStr: string, params: Record<string, s
         });
       }
     );
+    req.setTimeout(Math.max(1, PROVIDER_REQUEST_TIMEOUT_MS || 0), () => {
+      req.destroy(new Error(`oauth_request_timeout_${PROVIDER_REQUEST_TIMEOUT_MS}ms`));
+    });
     req.on('error', (err) => reject(err));
     req.write(body);
     req.end();

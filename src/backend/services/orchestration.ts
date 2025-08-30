@@ -1,5 +1,7 @@
 import { Agent, Director, Filter, Prompt, ConversationThread } from '../../shared/types';
 import { beginSpan, endSpan } from './logging';
+import { UserRequest } from '../middleware/user-context';
+import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
 
 export interface EmailContext {
   from: string;
@@ -73,8 +75,9 @@ export function ensureAgentThread(
   nowIso: string,
   newIdFn: () => string,
   traceId?: string,
+  req?: UserRequest,
 ): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'finalized' | 'invalid' } {
-  const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }) : '';
+  const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }, req) : '';
   // Director finalization check removed - orchestration handles this automatically
 
   let agentThread = undefined as ConversationThread | undefined;
@@ -88,14 +91,14 @@ export function ensureAgentThread(
     );
     if (reusable) {
       agentThread = reusable;
-      if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: false, agentThreadId: agentThread.id, reused: true } });
+      if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: false, agentThreadId: agentThread.id, reused: true } }, req);
       return { conversations, agentThread, isNew: false } as const;
     }
   }
   const agentPrompt = prompts.find(p => p.id === agent.promptId);
   const agentApi = apiConfigs.find((c: any) => c.id === agent.apiConfigId);
   if (!agentApi || !agentPrompt) {
-    if (traceId && spanId) endSpan(traceId, spanId, { status: 'error', error: 'missing agent api/prompt' });
+    if (traceId && spanId) endSpan(traceId, spanId, { status: 'error', error: 'missing agent api/prompt' }, req);
     return { conversations, error: 'missing agent api/prompt', reason: 'invalid' } as const;
   }
 
@@ -105,11 +108,11 @@ export function ensureAgentThread(
     const nowIso2 = nowIso;
     agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, messages: [...(agentPrompt.messages || [])], errors: [], workspaceItems: [], finalized: false } as ConversationThread;
     conversations = [...conversations, agentThread];
-    if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, agentThreadId } });
+    if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, agentThreadId } }, req);
     return { conversations, agentThread, isNew };
   }
 
-  if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: false, agentThreadId: agentThread.id } });
+  if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: false, agentThreadId: agentThread.id } }, req);
   return { conversations, agentThread, isNew } as const;
 }
 
@@ -172,7 +175,8 @@ export async function runAgentConversation(
       const { conversationEngine } = require('./engine');
 
       const t0 = Date.now();
-      const result = await conversationEngine.run({
+      let stepTimeoutId: any;
+      const stepPromise = conversationEngine.run({
         messages: currentMessages,
         apiConfig,
         role: 'agent',
@@ -180,6 +184,11 @@ export async function runAgentConversation(
         toolRegistry,
         context: { conversationId: agentThread.id, traceId },
       });
+      const stepTimeoutPromise = new Promise<never>((_, reject) => {
+        stepTimeoutId = setTimeout(() => reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`)), Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
+      });
+      const result = await Promise.race([stepPromise, stepTimeoutPromise]) as any;
+      clearTimeout(stepTimeoutId);
 
       const latencyMs = Date.now() - t0;
       const now = new Date().toISOString();
@@ -265,7 +274,13 @@ export async function runAgentConversation(
               conversationId: agentThread.id
             }
           };
-          const exec = await handleTool(tc.name, argsWithContext);
+          let toolTimeoutId: any;
+          const execPromise = handleTool(tc.name, argsWithContext);
+          const toolTimeoutPromise = new Promise<never>((_, reject) => {
+            toolTimeoutId = setTimeout(() => reject(new Error(`tool_exec_timeout_${TOOL_EXEC_TIMEOUT_MS}ms`)), Math.max(1, TOOL_EXEC_TIMEOUT_MS || 0));
+          });
+          const exec = await Promise.race([execPromise, toolTimeoutPromise]);
+          clearTimeout(toolTimeoutId);
           const toolMsg = {
             role: 'tool',
             name: tc.name,

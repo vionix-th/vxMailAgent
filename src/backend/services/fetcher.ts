@@ -5,7 +5,7 @@ import { conversationEngine } from './engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { FetcherLogEntry, Account, ConversationThread, OrchestrationDiagnosticEntry, ProviderEvent, Filter, Director, Agent, Prompt } from '../../shared/types';
 import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread } from './orchestration';
-import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE } from '../config';
+import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, PROVIDER_REQUEST_TIMEOUT_MS, CONVERSATION_STEP_TIMEOUT_MS } from '../config';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
 import { UserRequest } from '../middleware/user-context';
 
@@ -148,8 +148,21 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
             }
           }
           const sList = beginSpan(accountTraceId, { type: 'provider_fetch', name: 'fetchUnread', provider: account.provider }, deps.getUserReq());
-          const envelopes = await provider.fetchUnread(account, { max: 10, unreadOnly: true });
-          endSpan(accountTraceId, sList, { status: 'ok', response: { count: envelopes.length } }, deps.getUserReq());
+          let envelopes: any[] = [];
+          try {
+            let pTimeoutId: any;
+            const p = provider.fetchUnread(account, { max: 10, unreadOnly: true });
+            const pTimeout = new Promise<never>((_, reject) => {
+              pTimeoutId = setTimeout(() => reject(new Error(`provider_fetch_timeout_${PROVIDER_REQUEST_TIMEOUT_MS}ms`)), Math.max(1, PROVIDER_REQUEST_TIMEOUT_MS || 0));
+            });
+            envelopes = await Promise.race([p, pTimeout]);
+            clearTimeout(pTimeoutId);
+            endSpan(accountTraceId, sList, { status: 'ok', response: { count: envelopes.length } }, deps.getUserReq());
+          } catch (e: any) {
+            endSpan(accountTraceId, sList, { status: 'error', error: String(e?.message || e) }, deps.getUserReq());
+            logFetch({ timestamp: new Date().toISOString(), level: 'error', provider: account.provider, accountId: account.id, event: 'provider_fetch_error', message: 'Failed to list unread messages', detail: String(e?.message || e) });
+            continue;
+          }
           logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'messages_listed', message: 'Listed unread messages', count: envelopes.length });
 
           for (const env of envelopes) {
@@ -245,7 +258,8 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                 let step: any;
                 let latencyMs = 0;
                 try {
-                  const engineOut = await conversationEngine.run({
+                  let stepTimeoutId: any;
+                  const stepPromise = conversationEngine.run({
                     messages: dirMsgs as any,
                     apiConfig: dirApi as any,
                     role: 'director',
@@ -253,6 +267,11 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                     toolRegistry: TOOL_DESCRIPTORS,
                     context: { conversationId: dirThreadId, traceId, agents },
                   });
+                  const stepTimeoutPromise = new Promise<never>((_, reject) => {
+                    stepTimeoutId = setTimeout(() => reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`)), Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
+                  });
+                  const engineOut = await Promise.race([stepPromise, stepTimeoutPromise]) as any;
+                  clearTimeout(stepTimeoutId);
                   step = {
                     assistantMessage: engineOut.assistantMessage,
                     toolCalls: engineOut.toolCalls,
@@ -319,12 +338,13 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                       new Date().toISOString(),
                       () => newId(),
                       traceId,
+                      deps.getUserReq(),
                     );
                     if ('error' in ensured) {
                       appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: ensured.error, reason: ensured.reason }) });
                       conversations = ensured.conversations;
                       deps.setConversations(conversations);
-                      endSpan(traceId, sTool, { status: 'error', error: ensured.error });
+                      endSpan(traceId, sTool, { status: 'error', error: ensured.error }, deps.getUserReq());
                       continue;
                     }
                     conversations = ensured.conversations;

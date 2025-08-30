@@ -5,6 +5,8 @@
  * @param method HTTP method to use.
  * @param body Optional JSON payload string.
  */
+import { GRAPH_REQUEST_TIMEOUT_MS } from '../config';
+
 export async function graphRequest<T = any>(
   pathWithQuery: string,
   accessToken: string,
@@ -37,6 +39,9 @@ export async function graphRequest<T = any>(
           reject(new Error(`Graph invalid JSON ${text}`));
         }
       });
+    });
+    req.setTimeout(Math.max(1, GRAPH_REQUEST_TIMEOUT_MS || 0), () => {
+      req.destroy(new Error(`graph_request_timeout_${GRAPH_REQUEST_TIMEOUT_MS}ms`));
     });
     req.on('error', (err: any) => reject(err));
     if (payload) req.write(payload);

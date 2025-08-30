@@ -42,6 +42,14 @@ export const PROVIDER_TTL_DAYS = parseInt(process.env.PROVIDER_TTL_DAYS || '7', 
 // Fetcher log retention
 export const FETCHER_TTL_DAYS = parseInt(process.env.FETCHER_TTL_DAYS || '7', 10);
 
+// Network and execution timeouts (ms)
+// Keep conservative defaults to avoid indefinite hangs while not being too aggressive
+export const OPENAI_REQUEST_TIMEOUT_MS = parseInt(process.env.OPENAI_REQUEST_TIMEOUT_MS || '30000', 10);
+export const GRAPH_REQUEST_TIMEOUT_MS = parseInt(process.env.GRAPH_REQUEST_TIMEOUT_MS || '15000', 10);
+export const PROVIDER_REQUEST_TIMEOUT_MS = parseInt(process.env.PROVIDER_REQUEST_TIMEOUT_MS || '30000', 10);
+export const CONVERSATION_STEP_TIMEOUT_MS = parseInt(process.env.CONVERSATION_STEP_TIMEOUT_MS || '45000', 10);
+export const TOOL_EXEC_TIMEOUT_MS = parseInt(process.env.TOOL_EXEC_TIMEOUT_MS || '30000', 10);
+
 // Multi-user isolation configuration (always enabled)
 export const USER_REGISTRY_TTL_MINUTES = parseInt(process.env.USER_REGISTRY_TTL_MINUTES || '60', 10);
 export const USER_REGISTRY_MAX_ENTRIES = parseInt(process.env.USER_REGISTRY_MAX_ENTRIES || '1000', 10);
