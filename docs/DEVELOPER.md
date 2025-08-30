@@ -250,6 +250,28 @@ POST   /api/accounts/:id/refresh
 - Supports OAuth flows for account linking
 - Token refresh and validation
 
+#### Provider OAuth (Accounts)
+
+- All provider OAuth endpoints require an authenticated session and user context.
+- State tokens are JWT-signed with `JWT_SECRET` and expire quickly (~10 minutes).
+
+Initiate endpoints (return a signed authorization URL):
+```
+GET /api/accounts/oauth/google/initiate
+GET /api/accounts/oauth/outlook/initiate
+```
+
+Callback endpoints (exchange code, verify state, persist account for current user, and return the account JSON):
+```
+GET /api/accounts/oauth/google/callback?code=<code>&state=<state>
+GET /api/accounts/oauth/outlook/callback?code=<code>&state=<state>
+```
+
+Notes:
+- Redirect URI for provider accounts (local dev) should be `http://localhost:3000/oauth/callback`, handled by `src/frontend/src/OAuthCallback.tsx`.
+- On success, the backend persists or updates the account in the per-user repository and returns it; no additional `POST /api/accounts` is required.
+- On missing/invalid refresh tokens, certain endpoints may return `{ ok: false, authorizeUrl }` to trigger re-authorization.
+
 ### Prompts
 ```
 GET    /api/prompts

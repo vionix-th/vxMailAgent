@@ -180,7 +180,9 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setError(undefined);
     try {
       const state = encodeURIComponent(JSON.stringify({ provider }));
-      const endpoint = provider === 'gmail' ? `/api/oauth2/google/initiate?state=${state}` : `/api/oauth2/outlook/initiate?state=${state}`;
+      const endpoint = provider === 'gmail'
+        ? `/api/accounts/oauth/google/initiate?state=${state}`
+        : `/api/accounts/oauth/outlook/initiate?state=${state}`;
       const res = await fetch(endpoint);
       if (!res.ok) {
         let msg = t('oauth.initiateFailed') as string;

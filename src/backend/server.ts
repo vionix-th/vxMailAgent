@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 
-import authRouter from './auth';
 import { requireAuth } from './middleware/auth';
 import { setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent, getOrchestrationLog, getTraces } from './services/logging';
 
@@ -181,7 +180,6 @@ export function createServer() {
 
   app.use(requireAuth);
   app.use(attachUserContext);
-  app.use('/api', authRouter);
   // System-level repositories: only users registry remains
   const usersRepo = createJsonRepository<User>(USERS_FILE);
   setUsersRepo(usersRepo);

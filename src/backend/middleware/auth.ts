@@ -23,7 +23,7 @@ function parseCookie(header?: string): Record<string, string> {
 
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const path = (req as any).path || req.url || '';
-  // Public endpoints: auth session endpoints, health, and legacy OAuth account flows
+  // Public endpoints: auth session endpoints and health
   if (
     path.startsWith('/api/auth/') ||
     path === '/api/auth/whoami' ||

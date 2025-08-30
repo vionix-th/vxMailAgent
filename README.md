@@ -41,6 +41,8 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 - Outlook OAuth2:
   - `OUTLOOK_CLIENT_ID`, `OUTLOOK_CLIENT_SECRET`
   - `OUTLOOK_REDIRECT_URI` → set to `http://localhost:3000/oauth/callback`
+- OAuth state signing:
+  - `JWT_SECRET` — required; used to sign short‑lived OAuth state tokens for `/api/accounts/oauth/*` flows.
 - Optional:
   - `PORT` → backend port (default `3001`)
   - `VX_MAILAGENT_DATA_DIR` → override `data/` path (absolute or relative to process cwd)
@@ -64,9 +66,8 @@ Use `src/backend/.env.example` as a template.
   - `GET /api/auth/whoami` → returns `{ user }` when authenticated, or HTTP 401.
   - `POST /api/auth/logout` → clears the `vx.session` cookie and ends the session.
 - Route guard: Almost all API routes are protected by `requireAuth`. Public allowlist: `/api/auth/*`, `/api/auth/whoami`, `/api/health`.
-  - Provider OAuth endpoints under `/api/oauth2/*` (Google/Outlook) are protected by `requireAuth`. Linking provider accounts requires an authenticated session.
-- Cookie flags: `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
-- Production hardening: in production, HTTP is redirected to HTTPS and HSTS is set (`Strict-Transport-Security: max-age=31536000; includeSubDomains`).
+  - Per-user provider OAuth endpoints under `/api/accounts/oauth/*` (Google/Outlook) are protected by `requireAuth`. Linking provider accounts requires an authenticated session.
+  - Cookie flags: `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
   
 Note: Login OAuth uses a separate Google OAuth client from provider accounts to prevent refresh token rotation/invalidation when the same Google user is used for both flows.
 
@@ -94,7 +95,7 @@ Frontend (`src/frontend`)
 ## OAuth Flow (Gmail/Outlook)
 
 - From the UI, start an OAuth flow → provider redirects to `http://localhost:3000/oauth/callback` (handled by `src/frontend/src/OAuthCallback.tsx`).
-- The frontend exchanges the `code` with the backend via `/api/oauth2/{google|outlook}/callback` to produce an `account` object, then persists it via `POST /api/accounts`.
+- The frontend calls `/api/accounts/oauth/{google|outlook}/callback` to exchange the `code`. The backend verifies the JWT‑signed state, exchanges tokens, persists the account for the authenticated user, and returns the created/updated `account` JSON. No additional POST is required.
 - If a Gmail/Outlook refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with an `authorizeUrl` for re-auth. The UI should redirect the user to that URL to restore tokens.
 - To verify provider access in development, call `GET /api/accounts/:id/gmail-test` or `GET /api/accounts/:id/outlook-test`.
 

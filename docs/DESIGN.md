@@ -360,7 +360,7 @@ data/
   - `GET /api/auth/whoami` → returns `{ user }` or 401.
   - `POST /api/auth/logout` → clears the `vx.session` cookie and ends the session.
 - Middleware `requireAuth` guards all non-public endpoints. Cookie flags: HttpOnly, SameSite=Lax; `Secure` in production.
-- Provider OAuth endpoints under `/api/oauth2/*` (Google/Outlook) are protected by `requireAuth`. Linking provider accounts is an authenticated action.
+- Provider OAuth endpoints under `/api/accounts/oauth/*` (Google/Outlook) are protected by `requireAuth`. Linking provider accounts is an authenticated action.
 - Production: trust proxy, redirect HTTP→HTTPS, set HSTS.
 
 ###### Re-authorization Flow for Gmail/Outlook Tokens

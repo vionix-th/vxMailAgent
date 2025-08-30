@@ -1,8 +1,11 @@
 import express from 'express';
 import { Account } from '../../shared/types';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
-import { signJwt } from '../utils/jwt';
+import { signJwt, verifyJwt } from '../utils/jwt';
 import { UserRequest, getUserContext, hasUserContext } from '../middleware/user-context';
+import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo } from '../oauth/google';
+import { getOutlookAuthUrl, getOutlookTokens, getOutlookUserInfo } from '../oauth-outlook';
+import { computeExpiryISO } from '../oauth/common';
 
 /**
  * Gets accounts from the per-user repository (user context required).
@@ -28,6 +31,122 @@ function saveAccounts(req: UserRequest, accounts: Account[]): void {
 
 /** Register routes for managing accounts and tokens. */
 export default function registerAccountsRoutes(app: express.Express) {
+  // OAuth (Connect account) - Google
+  app.get('/api/accounts/oauth/google/initiate', (req: express.Request, res: express.Response) => {
+    try {
+      const rawState = String(req.query.state || '');
+      const signedState = signJwt({ p: 'google.account', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
+      const url = buildGoogleAuthUrl(
+        { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
+        signedState
+      );
+      res.json({ url });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to generate Google OAuth2 URL' });
+    }
+  });
+
+  app.get('/api/accounts/oauth/google/callback', async (req: UserRequest, res: express.Response) => {
+    const code = String((req.query as any).code || '');
+    const stateToken = String((req.query as any).state || '');
+    if (!code) return res.status(400).json({ error: 'Missing code' });
+    try {
+      const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
+      if (!payload || payload.p !== 'google.account') return res.status(400).json({ error: 'Invalid or expired state' });
+      const tokens = await exchangeGoogleCode({ clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! }, code);
+      const me = await getGoogleUserInfo(tokens.accessToken);
+      const email = me?.email || '';
+      if (!email) return res.status(500).json({ error: 'Google profile missing email address' });
+      const account: Account = {
+        id: email,
+        provider: 'gmail',
+        email,
+        signature: '',
+        tokens: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken || '',
+          expiry: tokens.expiryISO,
+        },
+      } as any;
+      const accounts = getAccounts(req);
+      const idx = accounts.findIndex(a => a.id === account.id);
+      if (idx >= 0) accounts[idx] = account; else accounts.push(account);
+      saveAccounts(req, accounts);
+      res.json({ account });
+    } catch (e) {
+      let message = 'OAuth2 callback failed';
+      let detail: string | undefined = undefined;
+      if (e && typeof e === 'object') {
+        if ('message' in e) message = (e as any).message;
+        if ('stack' in e) detail = (e as any).stack;
+      }
+      res.status(500).json({ error: message, detail });
+    }
+  });
+
+  // OAuth (Connect account) - Outlook
+  app.get('/api/accounts/oauth/outlook/initiate', async (req: express.Request, res: express.Response) => {
+    try {
+      const rawState = String(req.query.state || '');
+      const signedState = signJwt({ p: 'outlook.account', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
+      const url = await getOutlookAuthUrl(
+        OUTLOOK_CLIENT_ID!,
+        OUTLOOK_CLIENT_SECRET!,
+        OUTLOOK_REDIRECT_URI!,
+        signedState
+      );
+      res.json({ url });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to generate Outlook OAuth2 URL' });
+    }
+  });
+
+  app.get('/api/accounts/oauth/outlook/callback', async (req: UserRequest, res: express.Response) => {
+    const code = String((req.query as any).code || '');
+    const stateToken = String((req.query as any).state || '');
+    if (!code) return res.status(400).json({ error: 'Missing code' });
+    try {
+      const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
+      if (!payload || payload.p !== 'outlook.account') return res.status(400).json({ error: 'Invalid or expired state' });
+      const tokenResponse = await getOutlookTokens(OUTLOOK_CLIENT_ID!, OUTLOOK_CLIENT_SECRET!, OUTLOOK_REDIRECT_URI!, code);
+      let email = '';
+      if (tokenResponse?.id_token) {
+        try {
+          const parts = String(tokenResponse.id_token).split('.');
+          if (parts.length >= 2) {
+            const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+            email = payload.preferred_username || payload.email || '';
+          }
+        } catch {}
+      }
+      if (!email) {
+        const accessToken = tokenResponse?.access_token || '';
+        if (!accessToken) return res.status(500).json({ error: 'Outlook profile missing email address' });
+        const me = await getOutlookUserInfo(accessToken);
+        email = (me && (me.mail || (Array.isArray(me.otherMails) && me.otherMails[0]) || me.userPrincipalName)) || '';
+      }
+      if (!email) return res.status(500).json({ error: 'Outlook profile missing email address' });
+      const expiryIso = computeExpiryISO(typeof tokenResponse?.expires_in === 'number' ? tokenResponse.expires_in : undefined);
+      const account: Account = {
+        id: email,
+        provider: 'outlook',
+        email,
+        signature: '',
+        tokens: {
+          accessToken: tokenResponse?.access_token || '',
+          refreshToken: tokenResponse?.refresh_token || '',
+          expiry: expiryIso,
+        },
+      } as any;
+      const accounts = getAccounts(req);
+      const idx = accounts.findIndex(a => a.id === account.id);
+      if (idx >= 0) accounts[idx] = account; else accounts.push(account);
+      saveAccounts(req, accounts);
+      res.json({ account });
+    } catch (e) {
+      res.status(500).json({ error: 'Outlook OAuth2 callback failed' });
+    }
+  });
   app.get('/api/accounts', (req: UserRequest, res) => {
     try {
       const accounts = getAccounts(req);

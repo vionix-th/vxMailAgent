@@ -85,8 +85,8 @@ export default function OAuthCallback() {
     const endpoint = isLoginGoogle
       ? `/api/auth/google/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`
       : (provider === 'gmail'
-          ? `/api/oauth2/google/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`
-          : `/api/oauth2/outlook/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`);
+          ? `/api/accounts/oauth/google/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`
+          : `/api/accounts/oauth/outlook/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`);
     try {
       const res = await fetch(endpoint, { credentials: 'include' });
       // Surface backend warnings if present
@@ -97,21 +97,8 @@ export default function OAuthCallback() {
         try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
         throw new Error(msg);
       }
-      if (!isLoginGoogle) {
-        const { account } = await res.json();
-        if (!account || !account.id || !account.email) throw new Error(t('oauth.noAccount') as string);
-        // Persist account for legacy provider connect flows
-        const persistRes = await fetch('/api/accounts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(account),
-        });
-        if (!persistRes.ok) {
-          let msg = t('oauth.failedPersist') as string;
-          try { const data = await persistRes.json(); if (data.error) msg = data.error; } catch {}
-          throw new Error(msg);
-        }
-      }
+      // For account connect flows, backend persists accounts; no extra POST needed
+      if (!isLoginGoogle) { await res.json(); }
       setLoading(false);
       navigate('/');
     } catch (e: any) {
@@ -173,8 +160,8 @@ export default function OAuthCallback() {
               const endpoint = isLoginGoogle
                 ? `/api/auth/google/initiate`
                 : (provider === 'gmail'
-                    ? `/api/oauth2/google/initiate?state=${encodeURIComponent(state)}`
-                    : `/api/oauth2/outlook/initiate?state=${encodeURIComponent(state)}`);
+                    ? `/api/accounts/oauth/google/initiate?state=${encodeURIComponent(state)}`
+                    : `/api/accounts/oauth/outlook/initiate?state=${encodeURIComponent(state)}`);
               fetch(endpoint)
                 .then(res => res.json())
                 .then(({ url }) => { if (url) window.location.href = url; else setError(t('oauth.initiateFailed')); })
