@@ -70,11 +70,6 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     res.json({ success: true });
   });
 
-  app.get('/api/fetcher/log', (req, res) => {
-    const log = deps.getFetcherLog(req as UserRequest);
-    res.json(log);
-  });
-
   app.get('/api/fetcher/logs', (req, res) => {
     try {
       const log = deps.getFetcherLog(req as UserRequest);

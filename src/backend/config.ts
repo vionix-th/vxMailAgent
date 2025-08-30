@@ -42,6 +42,9 @@ export const PROVIDER_TTL_DAYS = parseInt(process.env.PROVIDER_TTL_DAYS || '7', 
 // Fetcher log retention
 export const FETCHER_TTL_DAYS = parseInt(process.env.FETCHER_TTL_DAYS || '7', 10);
 
+// Orchestration diagnostics retention
+export const ORCHESTRATION_TTL_DAYS = parseInt(process.env.ORCHESTRATION_TTL_DAYS || '7', 10);
+
 // Network and execution timeouts (ms)
 // Keep conservative defaults to avoid indefinite hangs while not being too aggressive
 export const OPENAI_REQUEST_TIMEOUT_MS = parseInt(process.env.OPENAI_REQUEST_TIMEOUT_MS || '30000', 10);
@@ -89,6 +92,9 @@ export function envSummary() {
     PROVIDER_EVENTS: {
       PROVIDER_MAX_EVENTS,
       PROVIDER_TTL_DAYS,
+    },
+    ORCHESTRATION: {
+      ORCHESTRATION_TTL_DAYS,
     },
     NODE_ENV: process.env.NODE_ENV || 'development',
   };

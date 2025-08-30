@@ -50,6 +50,8 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
     - `USER_MAX_FILE_SIZE_MB` (default 50)
     - `USER_MAX_CONVERSATIONS` (default 10000)
     - `USER_MAX_LOGS_PER_TYPE` (default 10000)
+    - `FETCHER_TTL_DAYS` — TTL for fetcher logs
+    - `ORCHESTRATION_TTL_DAYS` — TTL for orchestration logs (default 7)
 
 Use `src/backend/.env.example` as a template.
 
@@ -142,7 +144,7 @@ Frontend (`src/frontend`)
   - `GET /api/memory`, `POST /api/memory`, `PUT /api/memory/:id`, `DELETE /api/memory/:id`, `DELETE /api/memory` (bulk)
 - **Fetcher**
   - `GET /api/fetcher/status`, `POST /api/fetcher/start`, `POST /api/fetcher/stop`, `POST /api/fetcher/fetch`, `POST /api/fetcher/run`
-  - Logs: `GET /api/fetcher/log`, `GET /api/fetcher/logs`, `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (bulk), `DELETE /api/fetcher/logs/purge`
+  - Logs: `GET /api/fetcher/logs`, `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (bulk), `DELETE /api/fetcher/logs/purge`
 - **Diagnostics**
   - Runtime: `GET /api/diagnostics/runtime`
   - Orchestration diagnostics: `GET /api/orchestration/diagnostics`, `DELETE /api/orchestration/diagnostics/:id`, `DELETE /api/orchestration/diagnostics` (bulk)

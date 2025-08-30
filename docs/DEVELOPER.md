@@ -269,7 +269,6 @@ POST   /api/fetcher/start
 POST   /api/fetcher/stop
 POST   /api/fetcher/fetch
 POST   /api/fetcher/run
-GET    /api/fetcher/log      # alias of /logs
 GET    /api/fetcher/logs
 DELETE /api/fetcher/logs/:id
 DELETE /api/fetcher/logs     # bulk; body { ids: string[] }
@@ -317,9 +316,8 @@ DELETE /api/cleanup/conversations
 DELETE /api/cleanup/workspace-items
 DELETE /api/cleanup/provider-events
 DELETE /api/cleanup/traces
-DELETE /api/cleanup/:type
 ```
-- Purge data by category for current user; supports generic `:type`
+- Purge data by category for current user; canonical endpoints only (no generic `:type`).
 
 ### OAuth Token Management
 
@@ -424,6 +422,16 @@ Response shape:
 - Provider events retention:
   - `PROVIDER_MAX_EVENTS`, `PROVIDER_TTL_DAYS`
 - Diagnostics endpoints surface traces/provider events for admin only; they are not rendered in the user Results view.
+
+### Orchestration & Fetcher Logs Retention
+
+- Repository-level pruning enforces TTL and max item caps per user for both orchestration and fetcher logs.
+- Config in `src/backend/config.ts`:
+  - `ORCHESTRATION_TTL_DAYS` (default 7) — TTL for orchestration logs
+  - `FETCHER_TTL_DAYS` — TTL for fetcher logs
+  - `USER_MAX_LOGS_PER_TYPE` — per-type cap applied by repositories
+- Implementations: `FileOrchestrationLogRepository` and `FileFetcherLogRepository` in `src/backend/repository/fileRepositories.ts`.
+- Policy: Single canonical endpoints only; no route aliases.
 
 ### Logging Utilities
 

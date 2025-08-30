@@ -2,8 +2,8 @@ import fs from 'fs';
 import * as persistence from '../persistence';
 import { Repository } from './core';
 import { dataPath } from '../utils/paths';
-import { ProviderEvent, Trace } from '../../shared/types';
-import { TRACE_MAX_TRACES, TRACE_TTL_DAYS, PROVIDER_MAX_EVENTS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE } from '../config';
+import { ProviderEvent, Trace, FetcherLogEntry, OrchestrationDiagnosticEntry } from '../../shared/types';
+import { TRACE_MAX_TRACES, TRACE_TTL_DAYS, PROVIDER_MAX_EVENTS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_DAYS, ORCHESTRATION_TTL_DAYS } from '../config';
 import { securityAudit } from '../services/security-audit';
 import { SecurityError } from '../services/error-handler';
 
@@ -15,7 +15,7 @@ export class FileJsonRepository<T> implements Repository<T> {
     private maxItems?: number,
     private uid?: string
   ) {}
-
+  
   private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
     securityAudit.logFileOperation(this.uid, {
       filePath: this.filePath,
@@ -81,6 +81,172 @@ export class FileJsonRepository<T> implements Repository<T> {
       console.error(`[ERROR] FileJsonRepository.setAll failed for ${this.filePath}:`, error);
       throw error;
     }
+  }
+}
+
+/** Repository interface for fetcher logs. */
+export interface FetcherLogRepository extends Repository<FetcherLogEntry> {
+  append(e: FetcherLogEntry): void;
+}
+
+/** Fetcher log repository with TTL + cap pruning. */
+export class FileFetcherLogRepository implements FetcherLogRepository {
+  constructor(
+    private filePath: string = dataPath('fetcher.json'),
+    private containerPath?: string,
+    private uid?: string
+  ) {}
+
+  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
+    securityAudit.logFileOperation(this.uid, {
+      filePath: this.filePath,
+      operation,
+      success,
+      error,
+      fileSize
+    });
+  }
+
+  private prune(list: FetcherLogEntry[]): FetcherLogEntry[] {
+    try {
+      const ttlMs = Math.max(0, FETCHER_TTL_DAYS) * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      let next = list;
+      if (ttlMs > 0) {
+        next = next.filter(e => {
+          const ts = Date.parse(e.timestamp || '');
+          return isNaN(ts) ? true : (now - ts) <= ttlMs;
+        });
+      }
+      const maxItems = USER_MAX_LOGS_PER_TYPE;
+      if (maxItems > 0 && next.length > maxItems) {
+        next = next.slice(Math.max(0, next.length - maxItems));
+      }
+      return next;
+    } catch {
+      return list;
+    }
+  }
+
+  getAll(): FetcherLogEntry[] {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const data = this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as FetcherLogEntry[]);
+        const fileStats = fs.statSync(this.filePath);
+        this.logFileOperation('read', true, undefined, fileStats.size);
+        return data;
+      }
+      this.logFileOperation('read', true, 'File does not exist');
+      return [];
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('read', false, error.message);
+      console.error('[ERROR] FileFetcherLogRepository.getAll failed:', error);
+      return [];
+    }
+  }
+
+  setAll(next: FetcherLogEntry[]): void {
+    const pruned = this.prune(next);
+    try {
+      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
+      this.logFileOperation('write', true, undefined, fileStats?.size);
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('write', false, error.message);
+      console.error('[ERROR] FileFetcherLogRepository.setAll failed:', error);
+      throw error;
+    }
+  }
+
+  append(e: FetcherLogEntry): void {
+    const list = this.getAll();
+    list.push(e);
+    this.setAll(list);
+  }
+}
+
+/** Repository interface for orchestration diagnostics log. */
+export interface OrchestrationLogRepository extends Repository<OrchestrationDiagnosticEntry> {
+  append(e: OrchestrationDiagnosticEntry): void;
+}
+
+/** Orchestration diagnostics repository with TTL + cap pruning. */
+export class FileOrchestrationLogRepository implements OrchestrationLogRepository {
+  constructor(
+    private filePath: string = dataPath('orchestration.json'),
+    private containerPath?: string,
+    private uid?: string
+  ) {}
+
+  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
+    securityAudit.logFileOperation(this.uid, {
+      filePath: this.filePath,
+      operation,
+      success,
+      error,
+      fileSize
+    });
+  }
+
+  private prune(list: OrchestrationDiagnosticEntry[]): OrchestrationDiagnosticEntry[] {
+    try {
+      const ttlMs = Math.max(0, ORCHESTRATION_TTL_DAYS) * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      let next = list;
+      if (ttlMs > 0) {
+        next = next.filter(e => {
+          const ts = Date.parse(e.timestamp || '');
+          return isNaN(ts) ? true : (now - ts) <= ttlMs;
+        });
+      }
+      const maxItems = USER_MAX_LOGS_PER_TYPE;
+      if (maxItems > 0 && next.length > maxItems) {
+        next = next.slice(Math.max(0, next.length - maxItems));
+      }
+      return next;
+    } catch {
+      return list;
+    }
+  }
+
+  getAll(): OrchestrationDiagnosticEntry[] {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const data = this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationDiagnosticEntry[]);
+        const fileStats = fs.statSync(this.filePath);
+        this.logFileOperation('read', true, undefined, fileStats.size);
+        return data;
+      }
+      this.logFileOperation('read', true, 'File does not exist');
+      return [];
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('read', false, error.message);
+      console.error('[ERROR] FileOrchestrationLogRepository.getAll failed:', error);
+      return [];
+    }
+  }
+
+  setAll(next: OrchestrationDiagnosticEntry[]): void {
+    const pruned = this.prune(next);
+    try {
+      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
+      this.logFileOperation('write', true, undefined, fileStats?.size);
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('write', false, error.message);
+      console.error('[ERROR] FileOrchestrationLogRepository.setAll failed:', error);
+      throw error;
+    }
+  }
+
+  append(e: OrchestrationDiagnosticEntry): void {
+    const list = this.getAll();
+    list.push(e);
+    this.setAll(list);
   }
 }
 
@@ -298,4 +464,14 @@ export function createUserTracesRepository(filePath: string, containerPath: stri
 /** Create a global traces repository (legacy). */
 export function createGlobalTracesRepository(filePath: string, containerPath?: string): TracesRepository {
   return new FileTracesRepository(filePath, containerPath, false);
+}
+
+/** Create a per-user fetcher log repository. */
+export function createUserFetcherLogRepository(filePath: string, containerPath: string, uid?: string): FetcherLogRepository {
+  return new FileFetcherLogRepository(filePath, containerPath, uid);
+}
+
+/** Create a per-user orchestration log repository. */
+export function createUserOrchestrationLogRepository(filePath: string, containerPath: string, uid?: string): OrchestrationLogRepository {
+  return new FileOrchestrationLogRepository(filePath, containerPath, uid);
 }

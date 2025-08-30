@@ -69,23 +69,4 @@ export default function registerCleanupRoutes(app: express.Express) {
     try { const out = makeCleanup(req as UserRequest).purge('traces'); res.json({ success: true, ...out }); }
     catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
-
-  // Backward-compatible generic purge by type; maps hyphenated names
-  app.delete('/api/cleanup/:type', (req, res) => {
-    try {
-      const raw = String(req.params.type || '');
-      const map: Record<string, any> = {
-        'fetcher-logs': 'fetcher',
-        'orchestration-logs': 'orchestration',
-        'workspace-items': 'workspaceItems',
-        'provider-events': 'providerEvents',
-      };
-      const type = (map[raw] || raw) as any;
-      const cleanup = makeCleanup(req as UserRequest);
-      const out = cleanup.purge(type);
-      res.json({ success: true, ...out });
-    } catch (e: any) {
-      return res.status(400).json({ error: String(e?.message || e) });
-    }
-  });
 }

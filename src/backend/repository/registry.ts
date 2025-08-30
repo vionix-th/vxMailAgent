@@ -1,9 +1,9 @@
 import { Repository } from './core';
-import { ProviderEventsRepository, TracesRepository, createUserJsonRepository, createUserProviderEventsRepository, createUserTracesRepository } from './fileRepositories';
+import { ProviderEventsRepository, TracesRepository, FetcherLogRepository, OrchestrationLogRepository, createUserJsonRepository, createUserProviderEventsRepository, createUserTracesRepository, createUserFetcherLogRepository, createUserOrchestrationLogRepository } from './fileRepositories';
 import { userPaths, UserPaths } from '../utils/paths';
 import fs from 'fs';
 import * as persistence from '../persistence';
-import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS, USER_MAX_LOGS_PER_TYPE } from '../config';
+import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS } from '../config';
 import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem } from '../../shared/types';
 
 /**
@@ -32,10 +32,10 @@ export interface RepoBundle {
   memory: Repository<any>;
   
   // Logging repositories
-  fetcherLog: Repository<any>;
+  fetcherLog: FetcherLogRepository;
   providerEvents: ProviderEventsRepository;
   traces: TracesRepository;
-  orchestrationLog: Repository<any>;
+  orchestrationLog: OrchestrationLogRepository;
 }
 
 /**
@@ -116,10 +116,10 @@ export class RepoBundleRegistry {
       memory: createUserJsonRepository<any>(paths.memory, paths.root, undefined, uid),
       
       // Logging repositories
-      fetcherLog: createUserJsonRepository<any>(paths.logs.fetcher, paths.root, USER_MAX_LOGS_PER_TYPE, uid),
+      fetcherLog: createUserFetcherLogRepository(paths.logs.fetcher, paths.root, uid),
       providerEvents: createUserProviderEventsRepository(paths.logs.providerEvents, paths.root, uid),
       traces: createUserTracesRepository(paths.logs.traces, paths.root, uid),
-      orchestrationLog: createUserJsonRepository<any>(paths.logs.orchestration, paths.root, undefined, uid),
+      orchestrationLog: createUserOrchestrationLogRepository(paths.logs.orchestration, paths.root, uid),
     };
     
     // Check registry size limits
