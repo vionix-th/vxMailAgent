@@ -131,7 +131,7 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 - Containerized execution environments
 
 #### API Security
-- Input validation (path safety and user-context checks; limited schema validation)
+- Input validation (path safety and user-context checks; limited schema validation). A minimal JSON Schema subset validator exists in `src/backend/validation.ts` and is used only by tool-call handlers in `src/backend/toolCalls.ts` to validate tool parameters.
 - Output encoding (general practice)
 - Rate limiting (not implemented)
 - Request validation middleware (planned)
@@ -191,8 +191,8 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - Not currently versioned; single API surface. Future: semantic and path versioning with deprecation policy.
 
 ### Data Validation
-- Limited validation (path safety, user context). JSON body parsing only.
-- Planned: request schema validation, input sanitization, and output filtering.
+ - Limited validation: path safety and user-context checks across routes; plus a minimal JSON Schema subset validator in `src/backend/validation.ts` used exclusively by `src/backend/toolCalls.ts` for tool parameter validation. There is no global schema validation middleware.
+ - Planned: request schema validation middleware, input sanitization, and output filtering.
 
 ## 5. Technical Design
 ### 5.1 Architecture

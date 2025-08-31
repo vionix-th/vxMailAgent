@@ -181,6 +181,12 @@ export function loadSettings(req: UserRequest) {
 - **Content-Security-Policy**: `script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'`
 - **Referrer-Policy**: `no-referrer`
 
+### Request Validation, CSRF, and Rate Limiting (Current State)
+
+- **Request validation**: There is no global schema validation middleware. A minimal JSON Schema subset validator lives in `src/backend/validation.ts` and is used only by tool-call handlers in `src/backend/toolCalls.ts` to validate tool parameters. Other routes rely on path safety checks, basic type checks, and strict user-context enforcement.
+- **CSRF**: No CSRF middleware (e.g., `csurf`) is enabled. Sessions use `HttpOnly` cookies with `SameSite=Lax` and `Secure` (prod) which mitigates cross-site requests. For cross-site deployments or if third-party contexts are required, add CSRF protection at the Express layer or at an API gateway.
+- **Rate limiting**: Not implemented in the backend. Enforce at a reverse proxy/API gateway (recommended) or add Express middleware per deployment.
+
 ### Google OAuth Clients (Split)
 
 - Provider (Gmail) OAuth client — used for linking Gmail accounts and refreshing tokens.

@@ -173,7 +173,8 @@ See `docs/DEVELOPER.md` for details.
 - **OAuth pattern**: Frontend receives `code` → calls backend callbacks. Redirect URIs should point to `/oauth/callback` on the frontend for provider accounts; login callback handled by backend.
 - **Tokens in responses**: Account linking responses include tokens for client‑side persistence in dev. For multi‑user/remote deployments, persist tokens only server‑side and avoid exposing to the browser.
 - **Diagnostics visibility**: Provider/orchestration logs may contain sensitive content; surface only in admin views.
-- **Production hardening**: Enforce HTTPS, HSTS, strict CORS, and consider CSRF/rate limiting per deployment needs.
+- **Production hardening**: Enforce HTTPS, HSTS, strict CORS. Note: CSRF protection and rate limiting are not implemented in the backend; enforce them at a reverse proxy/API gateway or add Express middleware per deployment needs. Session cookies use `HttpOnly`, `SameSite=Lax`, and `Secure` (prod), which mitigates CSRF for same-site deployments.
+- **Request validation**: No global validation middleware. A minimal JSON Schema subset validator exists in `src/backend/validation.ts` and is used only by tool-call handlers in `src/backend/toolCalls.ts` to validate tool parameters. Other routes rely on path safety and user-context checks. See `docs/DEVELOPER.md` and `docs/DESIGN.md` for details.
 
 ## Troubleshooting
 
