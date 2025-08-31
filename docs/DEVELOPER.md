@@ -28,7 +28,7 @@
 - **Path Safety**: All file operations are contained within user directories with strict path validation
 - **Encryption**: Optional AES-256-GCM encryption for data at rest with random IVs
 - **Audit Logging**: All operations are logged with user context
-- **Rate Limiting**: Implemented at the API level
+- **Rate Limiting**: Not implemented in the backend; recommend gateway or Express middleware if needed
 
 ### Security Best Practices
 
@@ -139,10 +139,9 @@ Location: `src/backend/repository/registry.ts`
    - Invalidates token
 
 ### Security Headers (Production)
-- **HSTS**: `Strict-Transport-Security: max-age=31536000; includeSubDomains`
-- **X-Frame-Options**: `DENY`
-- **X-Content-Type-Options**: `nosniff`
-- **Content-Security-Policy**: Default-src 'self'
+- **HTTPS redirect + HSTS (prod only)**: backend redirects HTTP→HTTPS and sets `Strict-Transport-Security: max-age=31536000; includeSubDomains` when `NODE_ENV=production`
+- **Content-Security-Policy**: `script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'`
+- **Referrer-Policy**: `no-referrer`
 
 ### Google OAuth Clients (Split)
 
@@ -384,6 +383,16 @@ All token operations are logged with:
 - Account ID and email
 - Error category (if any)
 - Request metadata
+
+#### Backend Logger (pino)
+- Centralized structured logger at `src/backend/services/logger.ts` (pino).
+- Dev: pretty output via `pino-pretty`, level `debug`. Prod: JSON, level `info` by default.
+- HTTP requests are logged in `src/backend/server.ts`.
+- Use `logger.info|warn|error(msg, meta)` with optional context; avoid `console.*` in backend code.
+
+#### Frontend Logging
+- `src/frontend/src/utils/log.ts` logs only in development.
+- No logging in production builds; avoids direct console usage at runtime.
 
 ## Prompt Assistant: Optional Context Inclusion
 

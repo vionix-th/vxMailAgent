@@ -25,7 +25,7 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 2. **Data Isolation**
    - Strict per-user data separation
    - No cross-user data access
-   - Containerized user environments
+   - Containerized user environments (planned; not implemented in code)
 
 3. **Defense in Depth**
    - Multiple layers of security controls
@@ -117,10 +117,10 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
   - Key rotation support
 
 #### In-Transit Security
-- TLS 1.2+ required
-- HSTS with preload
-- Certificate pinning
-- Secure cipher suites only
+- Deployment: terminate TLS (TLS 1.2+) at proxy/load balancer
+- Backend: redirects HTTP→HTTPS and sets HSTS in production
+- Certificate pinning: deployment-specific (not implemented in code)
+- Cipher suites: deployment-specific (configure at TLS terminator)
 
 ### Access Control
 
@@ -131,18 +131,18 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 - Containerized execution environments
 
 #### API Security
-- Input validation
-- Output encoding
-- Rate limiting
-- Request validation middleware
-- CSRF protection
+- Input validation (path safety and user-context checks; limited schema validation)
+- Output encoding (general practice)
+- Rate limiting (not implemented)
+- Request validation middleware (planned)
+- CSRF protection (not implemented; SameSite=Lax cookies mitigate cross-site requests)
 
 ### Audit & Monitoring
 
 #### Logging
 - Structured JSON logs
 - User context in all entries
-- Sensitive data redaction
+- Sensitive data redaction in traces via `TRACE_REDACT_FIELDS`; avoid logging secrets elsewhere
 - Immutable audit trail
 
 #### Monitoring
@@ -178,10 +178,8 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - OAuth 2.0 for provider access
 - Session management with refresh tokens
 
-### Rate Limiting
-- Global rate limiting
-- Per-user rate limiting
-- Per-endpoint rate limiting
+### Rate Limiting (planned; not implemented)
+- Global, per-user, and per-endpoint strategies may be added or enforced at an API gateway or reverse proxy
 
 ### Error Handling
 - Standardized error responses
@@ -190,15 +188,11 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - Logging and monitoring
 
 ### Versioning
-- API version in URL path
-- Semantic versioning
-- Deprecation policy
+- Not currently versioned; single API surface. Future: semantic and path versioning with deprecation policy.
 
 ### Data Validation
-- Request validation
-- Input sanitization
-- Output filtering
-- Schema validation
+- Limited validation (path safety, user context). JSON body parsing only.
+- Planned: request schema validation, input sanitization, and output filtering.
 
 ## 5. Technical Design
 ### 5.1 Architecture
@@ -398,7 +392,7 @@ data/
 
 #### 3.2.5 Processing Pipeline
 - **Functionality**: Fetcher queues emails, processed in parallel across accounts/directors. Directors pass emails/outputs to agents, collecting results. Tool calls validated (e.g., file access within virtual root) with transparent logging (e.g., `console.log("File access denied")`).
-- **Implementation**: Uses Node.js async (e.g., `Promise.all`) for parallel processing, respects API rate limits (OpenAI, Gmail, Microsoft Graph).
+- **Implementation**: Uses Node.js async (e.g., `Promise.all`) for parallel processing, respects external provider API rate limits (OpenAI, Gmail, Microsoft Graph). Errors trigger UI alerts and are logged via the backend logger (`src/backend/services/logger.ts`).
 
 #### 3.2.6 UI
  - **Layout**: Split-pane for the Results view. The original email panel is visually de-emphasized and collapsed by default (read-only, headers/body/attachments) and can be toggled from the Results header. The right pane shows results. In the current simplified browser UI, the right pane is a single preview-only view for the selected workspace item (no chat thread rendering). The Diagnostics view is a separate panel focused on the audit/process trail; it may display structured debug artifacts (function returns, provider payload summaries) but must not re-render the User Result View.

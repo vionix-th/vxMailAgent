@@ -30,128 +30,77 @@ import registerDiagnosticsRoutes from './routes/diagnostics';
 import registerDiagnosticTracesRoutes from './routes/diagnostic-traces';
 import registerUnifiedDiagnosticsRoutes from './routes/unified-diagnostics';
 import registerCleanupRoutes from './routes/cleanup';
-// Health and cleanup routes removed - user isolation enforced
+import registerHealthRoutes from './routes/health';
+// Cleanup routes kept (admin); health route is unauthenticated
 // initFetcher removed - using FetcherManager
 import { FetcherManager } from './services/fetcher-manager';
 import { createToolHandler } from './toolCalls';
-import { attachUserContext, UserRequest, hasUserContext, getUserContext } from './middleware/user-context';
+import { attachUserContext, UserRequest } from './middleware/user-context';
 import logger from './services/logger';
+import { requireReq, requireUserRepo, repoGetAll, repoSetAll } from './utils/repo-access';
 
 /** Create and configure the backend Express server. */
 export function createServer() {
   const app = express();
 
   function getPromptsLive(req?: UserRequest): Prompt[] { 
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.prompts.getAll();
-    }
-    throw new Error('User context required - no global prompts available');
+    return repoGetAll<Prompt>(requireReq(req), 'prompts');
   }
 
   function getAgentsLive(req?: UserRequest): Agent[] {
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.agents.getAll();
-    }
-    throw new Error('User context required - no global agents available');
+    return repoGetAll<Agent>(requireReq(req), 'agents');
   }
   function getDirectorsLive(req?: UserRequest): Director[] {
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.directors.getAll();
-    }
-    throw new Error('User context required - no global directors available');
+    return repoGetAll<Director>(requireReq(req), 'directors');
   }
   function getFiltersLive(req?: UserRequest): Filter[] {
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.filters.getAll();
-    }
-    throw new Error('User context required - no global filters available');
+    return repoGetAll<Filter>(requireReq(req), 'filters');
   }
   function getImprintsLive(req?: UserRequest): Imprint[] {
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.imprints.getAll();
-    }
-    throw new Error('User context required - no global imprints available');
+    return repoGetAll<Imprint>(requireReq(req), 'imprints');
   }
   function getOrchestrationLogLive(req?: UserRequest): OrchestrationDiagnosticEntry[] { 
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.orchestrationLog.getAll();
-    }
-    throw new Error('User context required - no global orchestration log available');
+    return repoGetAll<OrchestrationDiagnosticEntry>(requireReq(req), 'orchestrationLog');
   }
   function getConversationsLive(req?: UserRequest): ConversationThread[] {
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.conversations.getAll();
-    }
-    throw new Error('User context required - no global conversations available');
+    return repoGetAll<ConversationThread>(requireReq(req), 'conversations');
   }
   function getSettingsLive(req?: UserRequest) { 
-    if (!req || !hasUserContext(req)) {
-      throw new Error('User context required - no global settings available');
-    }
-    return getUserContext(req).repos.settings.getAll()[0] || {};
+    const r = requireReq(req);
+    return repoGetAll<any>(r, 'settings')[0] || {};
   }
 
   // Setter functions for per-user repositories
   function setPromptsLive(req: UserRequest, next: Prompt[]): void {
-    if (hasUserContext(req)) {
-      getUserContext(req).repos.prompts.setAll(next);
-    } else {
-      throw new Error('User context required - no global prompts available');
-    }
+    repoSetAll<Prompt>(requireReq(req), 'prompts', next);
   }
 
   function setAgentsLive(req: UserRequest, next: Agent[]): void {
-    if (hasUserContext(req)) {
-      getUserContext(req).repos.agents.setAll(next);
-    } else {
-      throw new Error('User context required - no global agents available');
-    }
+    repoSetAll<Agent>(requireReq(req), 'agents', next);
   }
 
   function setDirectorsLive(req: UserRequest, next: Director[]): void {
-    if (hasUserContext(req)) {
-      getUserContext(req).repos.directors.setAll(next);
-    } else {
-      throw new Error('User context required - no global directors available');
-    }
+    repoSetAll<Director>(requireReq(req), 'directors', next);
   }
 
   function setFiltersLive(req: UserRequest, next: Filter[]): void {
-    if (hasUserContext(req)) {
-      getUserContext(req).repos.filters.setAll(next);
-    } else {
-      throw new Error('User context required - no global filters available');
-    }
+    repoSetAll<Filter>(requireReq(req), 'filters', next);
   }
 
   function setImprintsLive(req: UserRequest, next: Imprint[]): void {
-    if (hasUserContext(req)) {
-      getUserContext(req).repos.imprints.setAll(next);
-    } else {
-      throw new Error('User context required - no global imprints available');
-    }
+    repoSetAll<Imprint>(requireReq(req), 'imprints', next);
   }
 
   function setConversationsLive(req: UserRequest, next: ConversationThread[]) {
-    if (hasUserContext(req)) {
-      getUserContext(req).repos.conversations.setAll(next);
-    } else {
-      throw new Error('User context required - no global conversations available');
-    }
+    repoSetAll<ConversationThread>(requireReq(req), 'conversations', next);
   }
 
   function getProviderRepo(req?: UserRequest) {
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.providerEvents;
-    }
-    throw new Error('User context required - no global provider events available');
+    return requireUserRepo(requireReq(req), 'providerEvents');
   }
 
   function getTracesRepo(req?: UserRequest) {
-    if (req && hasUserContext(req)) {
-      return getUserContext(req).repos.traces;
-    }
-    throw new Error('User context required - no global traces available');
+    return requireUserRepo(requireReq(req), 'traces');
   }
 
   // Director finalization removed - requires user context
@@ -178,6 +127,9 @@ export function createServer() {
     });
     app.use((req, res, next) => { void req; res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains'); next(); });
   }
+
+  // Public health check (unauthenticated)
+  registerHealthRoutes(app);
 
   app.use(requireAuth);
   app.use(attachUserContext);
