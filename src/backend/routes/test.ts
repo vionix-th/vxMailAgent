@@ -2,7 +2,8 @@ import express from 'express';
 import { Prompt } from '../../shared/types';
 import { testOpenAI, testOpenAIConfig } from '../openaiTest';
 import { buildOptionalToolSpecs, buildCoreToolSpecs } from '../utils/tools';
-import { requireUserContext, UserRequest, getUserContext } from '../middleware/user-context';
+import { requireUserContext, UserRequest } from '../middleware/user-context';
+import { requireReq, repoGetAll } from '../utils/repo-access';
 
 export interface TestRoutesDeps {
   getPrompts: (req?: UserRequest) => Prompt[];
@@ -17,8 +18,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     const id = req.params.id;
     const director = deps.getDirectors(req).find((d: any) => d.id === id);
     if (!director) return res.status(404).json({ error: 'Director not found' });
-    const { repos } = getUserContext(req);
-    const all = repos.settings.getAll();
+    const all = repoGetAll<any>(requireReq(req), 'settings');
     const settings = (Array.isArray(all) && all[0]) ? all[0] : { apiConfigs: [] };
     const apiConfig = (settings.apiConfigs || []).find((c: any) => c.id === director.apiConfigId);
     if (!apiConfig) return res.status(400).json({ error: 'API config not found for director' });
@@ -34,8 +34,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     const id = req.params.id;
     const agent = deps.getAgents(req).find((a: any) => a.id === id);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
-    const { repos } = getUserContext(req);
-    const all = repos.settings.getAll();
+    const all = repoGetAll<any>(requireReq(req), 'settings');
     const settings = (Array.isArray(all) && all[0]) ? all[0] : { apiConfigs: [] };
     const apiConfig = (settings.apiConfigs || []).find((c: any) => c.id === agent.apiConfigId);
     if (!apiConfig) return res.status(400).json({ error: 'API config not found for agent' });
@@ -49,8 +48,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
   // /api/test/apiconfig/:id
   app.get('/api/test/apiconfig/:id', requireUserContext as any, async (req: UserRequest, res) => {
     const id = req.params.id;
-    const { repos } = getUserContext(req);
-    const all = repos.settings.getAll();
+    const all = repoGetAll<any>(requireReq(req), 'settings');
     const settings = (Array.isArray(all) && all[0]) ? all[0] : { apiConfigs: [] };
     const apiConfig = (settings.apiConfigs || []).find((c: any) => c.id === id);
     if (!apiConfig) return res.status(404).json({ error: 'API config not found' });
@@ -69,8 +67,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
       const toolChoice = req.body?.toolChoice as ('auto'|'none'|{ name: string }|undefined);
       if (!apiConfigId) return res.status(400).json({ error: 'apiConfigId is required' });
       if (!Array.isArray(messages) || messages.length === 0) return res.status(400).json({ error: 'messages array is required' });
-      const { repos } = getUserContext(req);
-      const all = repos.settings.getAll();
+      const all = repoGetAll<any>(requireReq(req), 'settings');
       const settings = (Array.isArray(all) && all[0]) ? all[0] : { apiConfigs: [] };
       const apiConfig = (settings.apiConfigs || []).find((c: any) => c.id === apiConfigId);
       if (!apiConfig) return res.status(404).json({ error: 'API config not found' });
@@ -92,3 +89,4 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     }
   });
 }
+

@@ -2,32 +2,27 @@ import express from 'express';
 import { Account } from '../../shared/types';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt, verifyJwt } from '../utils/jwt';
-import { UserRequest, getUserContext, hasUserContext } from '../middleware/user-context';
+import { UserRequest, getUserContext } from '../middleware/user-context';
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo } from '../oauth/google';
 import { getOutlookAuthUrl, getOutlookTokens, getOutlookUserInfo } from '../oauth-outlook';
 import { computeExpiryISO } from '../oauth/common';
 import logger from '../services/logger';
+import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
 
 /**
  * Gets accounts from the per-user repository (user context required).
  */
 function getAccounts(req: UserRequest): Account[] {
-  if (!hasUserContext(req)) {
-    throw new Error('User context required - per-user accounts only');
-  }
-  const { repos } = getUserContext(req);
-  return repos.accounts.getAll();
+  const ureq = requireReq(req);
+  return repoGetAll<Account>(ureq, 'accounts');
 }
 
 /**
  * Saves accounts to the per-user repository (user context required).
  */
 function saveAccounts(req: UserRequest, accounts: Account[]): void {
-  if (!hasUserContext(req)) {
-    throw new Error('User context required - per-user accounts only');
-  }
-  const { repos } = getUserContext(req);
-  repos.accounts.setAll(accounts);
+  const ureq = requireReq(req);
+  repoSetAll<Account>(ureq, 'accounts', accounts);
 }
 
 /** Register routes for managing accounts and tokens. */
@@ -150,8 +145,9 @@ export default function registerAccountsRoutes(app: express.Express) {
   });
   app.get('/api/accounts', (req: UserRequest, res) => {
     try {
-      const accounts = getAccounts(req);
-      logger.info('Loaded accounts', { count: accounts.length, uid: getUserContext(req).uid });
+      const ureq = requireReq(req);
+      const accounts = getAccounts(ureq);
+      logger.info('Loaded accounts', { count: accounts.length, uid: getUserContext(ureq).uid });
       res.json(accounts);
     } catch (e) {
       logger.error('Error loading accounts', { err: e });
@@ -250,7 +246,8 @@ export default function registerAccountsRoutes(app: express.Express) {
   app.post('/api/accounts', (req: UserRequest, res) => {
     try {
       const newAccount: Account = req.body;
-      const accounts = getAccounts(req);
+      const ureq = requireReq(req);
+      const accounts = getAccounts(ureq);
       const idx = accounts.findIndex(a => a.id === newAccount.id);
       
       if (idx >= 0) {
@@ -261,8 +258,8 @@ export default function registerAccountsRoutes(app: express.Express) {
         accounts.push(newAccount);
       }
       
-      saveAccounts(req, accounts);
-      const source = hasUserContext(req) ? `user ${getUserContext(req).uid}` : 'global';
+      saveAccounts(ureq, accounts);
+      const source = `user ${getUserContext(ureq).uid}`;
       logger.info('Saved accounts to store', { count: accounts.length, source });
       res.json({ success: true });
     } catch (e) {

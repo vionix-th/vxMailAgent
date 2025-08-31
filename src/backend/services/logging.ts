@@ -1,32 +1,26 @@
 import { OrchestrationDiagnosticEntry, ProviderEvent, Trace, Span } from '../../shared/types';
 import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS, TRACE_VERBOSE } from '../config';
 import { newId } from '../utils/id';
-import { Repository } from '../repository/core';
-import { ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
-import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
+import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
+import { UserRequest } from '../middleware/user-context';
+import { requireReq, requireUserRepo } from '../utils/repo-access';
 
 // Global fallback repositories removed - user isolation enforced
 
 // Resolve per-user repositories - user context required
-function getOrchRepo(req?: UserRequest): Repository<OrchestrationDiagnosticEntry> {
-  if (req && hasUserContext(req)) {
-    return getUserContext(req).repos.orchestrationLog;
-  }
-  throw new Error('User context required - no global orchestration log available');
+function getOrchRepo(req?: UserRequest): OrchestrationLogRepository {
+  const ureq = requireReq(req);
+  return requireUserRepo(ureq, 'orchestrationLog');
 }
 
 function getProviderRepo(req?: UserRequest): ProviderEventsRepository {
-  if (req && hasUserContext(req)) {
-    return getUserContext(req).repos.providerEvents;
-  }
-  throw new Error('User context required - no global provider events available');
+  const ureq = requireReq(req);
+  return requireUserRepo(ureq, 'providerEvents');
 }
 
 function getTracesRepo(req?: UserRequest): TracesRepository {
-  if (req && hasUserContext(req)) {
-    return getUserContext(req).repos.traces;
-  }
-  throw new Error('User context required - no global traces available');
+  const ureq = requireReq(req);
+  return requireUserRepo(ureq, 'traces');
 }
 
 /** Append an orchestration diagnostic entry to the log. */

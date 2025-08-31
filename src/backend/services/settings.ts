@@ -1,8 +1,6 @@
-import fs from 'fs';
-import { loadAndDecrypt } from '../persistence';
-import { userPaths } from '../utils/paths';
-import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
+import { UserRequest, getUserContext } from '../middleware/user-context';
 import logger from './logger';
+import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
 
 import type { ApiConfig } from '../../shared/types';
 
@@ -16,48 +14,31 @@ export interface Settings {
   [key: string]: any;
 }
 
-/** Load settings from the encrypted JSON file for a specific user. */
+/** Load settings from the per-user repository (single settings object). */
 export function loadSettings(req?: UserRequest): Settings {
-  let settings: Settings;
   try {
-    if (!req || !hasUserContext(req)) {
-      throw new Error('User context required - no global settings available');
-    }
-    
-    const userContext = getUserContext(req);
-    const settingsFile = userPaths(userContext.uid).settings;
-    
-    if (fs.existsSync(settingsFile)) {
-      settings = loadAndDecrypt(settingsFile) as Settings;
-    } else {
-      settings = defaultSettings();
-    }
+    const ureq = requireReq(req);
+    const all = repoGetAll<Settings>(ureq, 'settings');
+    const settings = (Array.isArray(all) && all[0]) ? all[0] : defaultSettings();
+    // Normalize defaults
     if (!Array.isArray(settings.apiConfigs)) settings.apiConfigs = [] as ApiConfig[];
     if (!settings.signatures || typeof settings.signatures !== 'object') settings.signatures = {};
     if (typeof settings.fetcherAutoStart !== 'boolean') settings.fetcherAutoStart = true;
     if (typeof settings.sessionTimeoutMinutes !== 'number') settings.sessionTimeoutMinutes = 15;
-
-    logger.debug('Loaded settings', { uid: userContext.uid });
+    logger.debug('Loaded settings', { uid: getUserContext(ureq).uid });
+    return settings;
   } catch (e) {
     logger.error('Failed to load settings', { err: e });
-    settings = defaultSettings();
+    return defaultSettings();
   }
-  return settings;
 }
 
-/** Save settings to the encrypted JSON file for a specific user. */
+/** Save settings to the per-user repository. */
 export function saveSettings(settings: Settings, req: UserRequest): void {
-  if (!hasUserContext(req)) {
-    throw new Error('User context required - no global settings available');
-  }
-  
-  const userContext = getUserContext(req);
-  const settingsFile = userPaths(userContext.uid).settings;
-  
+  const ureq = requireReq(req);
   try {
-    const { encryptAndPersist } = require('../persistence');
-    encryptAndPersist(settings, settingsFile);
-    logger.debug('Saved settings', { uid: userContext.uid });
+    repoSetAll<Settings>(ureq, 'settings', [settings]);
+    logger.debug('Saved settings', { uid: getUserContext(ureq).uid });
   } catch (e) {
     logger.error('Failed to save settings', { err: e });
     throw e;
@@ -74,3 +55,4 @@ function defaultSettings(): Settings {
     sessionTimeoutMinutes: 15,
   } as Settings;
 }
+

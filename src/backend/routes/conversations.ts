@@ -6,6 +6,7 @@ import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { UserRequest, getUserContext } from '../middleware/user-context';
 import { createToolHandler } from '../toolCalls';
 import logger from '../services/logger';
+import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
 
 export interface ConversationsRoutesDeps {
   getConversations: (req?: UserRequest) => ConversationThread[];
@@ -19,25 +20,26 @@ export interface ConversationsRoutesDeps {
 
 export default function registerConversationsRoutes(app: express.Express, deps: ConversationsRoutesDeps) {
   function makeCleanup(req: UserRequest) {
+    const ureq = requireReq(req);
     const hub: RepositoryHub = {
       // Conversations
-      getConversations: () => deps.getConversations(req) as any[],
-      setConversations: (next: any[]) => deps.setConversations(req, next as ConversationThread[]),
+      getConversations: () => deps.getConversations(ureq) as any[],
+      setConversations: (next: any[]) => deps.setConversations(ureq, next as ConversationThread[]),
       // Orchestration log (per-user repo)
-      getOrchestrationLog: () => getUserContext(req).repos.orchestrationLog.getAll() as any[],
-      setOrchestrationLog: (next: any[]) => getUserContext(req).repos.orchestrationLog.setAll(next as any[]),
+      getOrchestrationLog: () => repoGetAll<any>(ureq, 'orchestrationLog') as any[],
+      setOrchestrationLog: (next: any[]) => repoSetAll<any>(ureq, 'orchestrationLog', next as any[]),
       // Provider events (per-user repo)
-      getProviderEvents: () => getUserContext(req).repos.providerEvents.getAll() as any[],
-      setProviderEvents: (next: any[]) => getUserContext(req).repos.providerEvents.setAll(next as any[]),
+      getProviderEvents: () => repoGetAll<any>(ureq, 'providerEvents') as any[],
+      setProviderEvents: (next: any[]) => repoSetAll<any>(ureq, 'providerEvents', next as any[]),
       // Traces (per-user repo)
-      getTraces: () => getUserContext(req).repos.traces.getAll() as any[],
-      setTraces: (next: any[]) => getUserContext(req).repos.traces.setAll(next as any[]),
+      getTraces: () => repoGetAll<any>(ureq, 'traces') as any[],
+      setTraces: (next: any[]) => repoSetAll<any>(ureq, 'traces', next as any[]),
       // Fetcher log (per-user repo)
-      getFetcherLog: () => getUserContext(req).repos.fetcherLog.getAll() as any[],
-      setFetcherLog: (next: any[]) => getUserContext(req).repos.fetcherLog.setAll(next as any[]),
+      getFetcherLog: () => repoGetAll<any>(ureq, 'fetcherLog') as any[],
+      setFetcherLog: (next: any[]) => repoSetAll<any>(ureq, 'fetcherLog', next as any[]),
       // Workspace items (per-user repo)
-      getWorkspaceItems: () => getUserContext(req).repos.workspaceItems.getAll(),
-      setWorkspaceItems: (next: any[]) => getUserContext(req).repos.workspaceItems.setAll(next),
+      getWorkspaceItems: () => repoGetAll<any>(ureq, 'workspaceItems'),
+      setWorkspaceItems: (next: any[]) => repoSetAll<any>(ureq, 'workspaceItems', next),
     };
     return createCleanupService(hub);
   }
@@ -120,7 +122,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
         return res.status(400).json({ error: 'Conversation is finalized' });
       }
 
-      const api = deps.getSettings().apiConfigs.find((c: any) => c.id === t.apiConfigId);
+      const api = deps.getSettings(requireReq(req as UserRequest)).apiConfigs.find((c: any) => c.id === t.apiConfigId);
       if (!api) return res.status(404).json({ error: 'API config not found' });
 
       // Use existing transcript as-is (OpenAI-aligned)
@@ -213,7 +215,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             api,
             TOOL_DESCRIPTORS,
             (next: ConversationThread[]) => deps.setConversations(req as UserRequest, next),
-            createToolHandler(getUserContext(req as UserRequest).repos),
+            createToolHandler(getUserContext(requireReq(req as UserRequest)).repos),
             undefined, // No traceId in routes path
             (ev: ProviderEvent) => deps.logProviderEvent(ev, req as UserRequest) // Req-aware provider logging
           );

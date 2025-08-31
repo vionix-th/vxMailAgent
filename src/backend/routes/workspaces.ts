@@ -1,7 +1,8 @@
 import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
-import { UserRequest, getUserContext } from '../middleware/user-context';
+import { UserRequest } from '../middleware/user-context';
 import logger from '../services/logger';
+import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
 
 export interface WorkspacesRoutesDeps {
   getConversations: (req?: UserRequest) => ConversationThread[];
@@ -12,8 +13,8 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
   // List all workspace items
   app.get('/api/workspaces/:id/items', (req, res) => {
     const includeDeleted = String(req.query.includeDeleted || 'false').toLowerCase() === 'true';
-    const { repos } = getUserContext(req as UserRequest);
-    const items = repos.workspaceItems.getAll();
+    const ureq = requireReq(req as UserRequest);
+    const items = repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
     res.json(includeDeleted ? items : items.filter(i => !i.deleted));
   });
 
@@ -22,8 +23,8 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
 
   app.get('/api/workspaces/:id/items/:itemId', (req, res) => {
     const { itemId } = req.params as { id: string; itemId: string };
-    const { repos } = getUserContext(req as UserRequest);
-    const items = repos.workspaceItems.getAll();
+    const ureq = requireReq(req as UserRequest);
+    const items = repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
     const item = items.find(i => i.id === itemId);
     if (!item) return res.status(404).json({ error: 'Item not found' });
     res.json(item);
@@ -33,8 +34,8 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const { itemId } = req.params as { id: string; itemId: string };
     const expectedRevision = typeof req.body?.expectedRevision === 'number' ? (req.body.expectedRevision as number) : undefined;
     const { label, description, tags, mimeType, encoding, data } = req.body as { label?: string; description?: string; tags?: string[]; mimeType?: string; encoding?: 'utf8'|'base64'|'binary'; data?: string };
-    const { repos } = getUserContext(req as UserRequest);
-    const items = repos.workspaceItems.getAll();
+    const ureq = requireReq(req as UserRequest);
+    const items = repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
     const itemIdx = items.findIndex(i => i.id === itemId);
     if (itemIdx === -1) return res.status(404).json({ error: 'Item not found' });
     const current = items[itemIdx];
@@ -59,7 +60,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     };
     const nextItems = items.slice();
     nextItems[itemIdx] = nextItem;
-    repos.workspaceItems.setAll(nextItems);
+    repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', nextItems);
     logger.info('PUT /api/workspaces/:id/items/:itemId updated', { itemId, revision: nextItem.revision });
     res.json({ success: true, item: nextItem });
   });
@@ -74,14 +75,14 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const next = conversations.slice();
     next[idx] = updated;
     deps.setConversations(req as UserRequest, next);
-    const { repos } = getUserContext(req as UserRequest);
-    const items = repos.workspaceItems.getAll();
+    const ureq = requireReq(req as UserRequest);
+    const items = repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
     const itemIdx = items.findIndex(i => i.id === itemId);
     if (itemIdx === -1) return res.status(404).json({ error: 'Item not found' });
     const now = new Date().toISOString();
     if (hard) {
       const nextItems = items.filter(i => i.id !== itemId);
-      repos.workspaceItems.setAll(nextItems);
+      repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', nextItems);
       logger.info('DELETE /api/workspaces/:id/items/:itemId removed', { itemId, hard: true });
       return res.json({ success: true });
     }
@@ -95,7 +96,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     };
     const nextItems = items.slice();
     nextItems[itemIdx] = nextItem;
-    repos.workspaceItems.setAll(nextItems);
+    repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', nextItems);
     logger.info('DELETE /api/workspaces/:id/items/:itemId soft-deleted', { itemId, hard: false, revision: nextItem.revision });
     res.json({ success: true, item: nextItem });
   });

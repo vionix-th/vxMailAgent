@@ -3,6 +3,7 @@ import { requireUserContext, UserRequest, getUserContext } from '../middleware/u
 import { errorHandler } from '../services/error-handler';
 import { securityAudit } from '../services/security-audit';
 import logger from '../services/logger';
+import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
 
 export interface SettingsRoutesDeps {
   // Kept for compatibility; not used after per-user refactor
@@ -23,7 +24,8 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
 
   // GET /api/settings (per-user)
   app.get('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res: express.Response) => {
-    const { uid, repos } = getUserContext(req);
+    const ureq = requireReq(req);
+    const { uid } = getUserContext(ureq);
     
     securityAudit.logDataAccess(uid, {
       resource: 'settings',
@@ -31,7 +33,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
       success: true
     }, req);
     
-    const all = repos.settings.getAll();
+    const all = repoGetAll<any>(ureq, 'settings');
     const settings = (Array.isArray(all) && all[0]) ? all[0] : defaultSettings();
     logger.info('GET /api/settings', { uid });
     res.json({
@@ -45,7 +47,8 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
 
   // PUT /api/settings (per-user)
   app.put('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res: express.Response) => {
-    const { repos, uid } = getUserContext(req);
+    const ureq = requireReq(req);
+    const { uid } = getUserContext(ureq);
     
     // Input validation
     errorHandler.validateInput(typeof req.body === 'object', 'Request body must be an object');
@@ -58,7 +61,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
       sessionTimeoutMinutes: typeof req.body?.sessionTimeoutMinutes === 'number' ? req.body.sessionTimeoutMinutes : 15,
     } as any;
     
-    repos.settings.setAll([next]);
+    repoSetAll<any>(ureq, 'settings', [next]);
     
     securityAudit.logDataAccess(uid, {
       resource: 'settings',
@@ -70,3 +73,4 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
     res.json({ success: true });
   }));
 }
+
