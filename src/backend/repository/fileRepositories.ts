@@ -8,23 +8,46 @@ import { TRACE_MAX_TRACES, TRACE_TTL_DAYS, PROVIDER_MAX_EVENTS, PROVIDER_TTL_DAY
 import { securityAudit } from '../services/security-audit';
 import { SecurityError } from '../services/error-handler';
 
-/** Repository backed by an encrypted JSON file with security. */
-export class FileJsonRepository<T> implements Repository<T> {
+/** Shared base for file-backed repositories to centralize logging helpers. */
+export abstract class FileRepoBase {
   constructor(
-    private filePath: string, 
-    private containerPath?: string,
-    private maxItems?: number,
-    private uid?: string
+    protected filePath: string,
+    protected containerPath?: string,
+    protected uid?: string
   ) {}
-  
-  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
+
+  protected logFileOperation(
+    operation: 'read' | 'write' | 'delete' | 'create',
+    success: boolean,
+    error?: string,
+    fileSize?: number
+  ): void {
     securityAudit.logFileOperation(this.uid, {
       filePath: this.filePath,
       operation,
       success,
       error,
-      fileSize
+      fileSize,
     });
+  }
+
+  protected currentFileSize(): number | undefined {
+    try {
+      if (fs.existsSync(this.filePath)) return fs.statSync(this.filePath).size;
+    } catch {}
+    return undefined;
+  }
+}
+
+/** Repository backed by an encrypted JSON file with security. */
+export class FileJsonRepository<T> extends FileRepoBase implements Repository<T> {
+  constructor(
+    filePath: string,
+    containerPath?: string,
+    private maxItems?: number,
+    uid?: string
+  ) {
+    super(filePath, containerPath, uid);
   }
   
   getAll(): T[] {
@@ -91,21 +114,13 @@ export interface FetcherLogRepository extends Repository<FetcherLogEntry> {
 }
 
 /** Fetcher log repository with TTL + cap pruning. */
-export class FileFetcherLogRepository implements FetcherLogRepository {
+export class FileFetcherLogRepository extends FileRepoBase implements FetcherLogRepository {
   constructor(
-    private filePath: string = dataPath('fetcher.json'),
-    private containerPath?: string,
-    private uid?: string
-  ) {}
-
-  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
-    securityAudit.logFileOperation(this.uid, {
-      filePath: this.filePath,
-      operation,
-      success,
-      error,
-      fileSize
-    });
+    filePath: string = dataPath('fetcher.json'),
+    containerPath?: string,
+    uid?: string
+  ) {
+    super(filePath, containerPath, uid);
   }
 
   private prune(list: FetcherLogEntry[]): FetcherLogEntry[] {
@@ -174,21 +189,13 @@ export interface OrchestrationLogRepository extends Repository<OrchestrationDiag
 }
 
 /** Orchestration diagnostics repository with TTL + cap pruning. */
-export class FileOrchestrationLogRepository implements OrchestrationLogRepository {
+export class FileOrchestrationLogRepository extends FileRepoBase implements OrchestrationLogRepository {
   constructor(
-    private filePath: string = dataPath('orchestration.json'),
-    private containerPath?: string,
-    private uid?: string
-  ) {}
-
-  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
-    securityAudit.logFileOperation(this.uid, {
-      filePath: this.filePath,
-      operation,
-      success,
-      error,
-      fileSize
-    });
+    filePath: string = dataPath('orchestration.json'),
+    containerPath?: string,
+    uid?: string
+  ) {
+    super(filePath, containerPath, uid);
   }
 
   private prune(list: OrchestrationDiagnosticEntry[]): OrchestrationDiagnosticEntry[] {
@@ -257,22 +264,14 @@ export interface ProviderEventsRepository extends Repository<ProviderEvent> {
 }
 
 /** Provider events repository persisted to disk with per-user support. */
-export class FileProviderEventsRepository implements ProviderEventsRepository {
+export class FileProviderEventsRepository extends FileRepoBase implements ProviderEventsRepository {
   constructor(
-    private filePath: string = dataPath('provider-events.json'), 
-    private containerPath?: string,
+    filePath: string = dataPath('provider-events.json'), 
+    containerPath?: string,
     private isPerUser: boolean = true,
-    private uid?: string
-  ) {}
-
-  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
-    securityAudit.logFileOperation(this.uid, {
-      filePath: this.filePath,
-      operation,
-      success,
-      error,
-      fileSize
-    });
+    uid?: string
+  ) {
+    super(filePath, containerPath, uid);
   }
   
   private prune(list: ProviderEvent[]): ProviderEvent[] {
@@ -345,22 +344,14 @@ export interface TracesRepository extends Repository<Trace> {
 }
 
 /** Trace repository persisted to disk with per-user support. */
-export class FileTracesRepository implements TracesRepository {
+export class FileTracesRepository extends FileRepoBase implements TracesRepository {
   constructor(
-    private filePath: string = dataPath('traces.json'), 
-    private containerPath?: string,
+    filePath: string = dataPath('traces.json'), 
+    containerPath?: string,
     private isPerUser: boolean = true,
-    private uid?: string
-  ) {}
-
-  private logFileOperation(operation: 'read' | 'write' | 'delete' | 'create', success: boolean, error?: string, fileSize?: number): void {
-    securityAudit.logFileOperation(this.uid, {
-      filePath: this.filePath,
-      operation,
-      success,
-      error,
-      fileSize
-    });
+    uid?: string
+  ) {
+    super(filePath, containerPath, uid);
   }
   
   private prune(list: Trace[]): Trace[] {
