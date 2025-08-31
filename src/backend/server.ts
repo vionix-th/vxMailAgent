@@ -32,7 +32,6 @@ import registerUnifiedDiagnosticsRoutes from './routes/unified-diagnostics';
 import registerCleanupRoutes from './routes/cleanup';
 import registerHealthRoutes from './routes/health';
 // Cleanup routes kept (admin); health route is unauthenticated
-// initFetcher removed - using FetcherManager
 import { FetcherManager } from './services/fetcher-manager';
 import { createToolHandler } from './toolCalls';
 import { attachUserContext, UserRequest } from './middleware/user-context';
@@ -103,8 +102,6 @@ export function createServer() {
     return requireUserRepo(requireReq(req), 'traces');
   }
 
-  // Director finalization removed - requires user context
-
   app.use((req, res, next) => {
     void req; // satisfy noUnusedParameters
     res.setHeader('Content-Security-Policy', "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'");
@@ -136,7 +133,6 @@ export function createServer() {
   // System-level repositories: only users registry remains
   const usersRepo = createJsonRepository<User>(USERS_FILE);
   setUsersRepo(usersRepo);
-  // Logging initialization removed - per-user logging only
   registerAuthSessionRoutes(app);
   registerTestRoutes(app, { 
     getPrompts: (req?: UserRequest) => getPromptsLive(req), 
@@ -145,7 +141,7 @@ export function createServer() {
   });
   registerMemoryRoutes(app, {});
   registerOrchestrationRoutes(app, { getOrchestrationLog: (req?: UserRequest) => getOrchestrationLogLive(req), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[], req?: UserRequest) => { svcSetOrchestrationLog(next, req); }, getSettings: (req?: UserRequest) => getSettingsLive(req) });
-  registerSettingsRoutes(app, { getSettings: (req?: UserRequest) => getSettingsLive(req) });
+  registerSettingsRoutes(app, {});
   registerAgentsRoutes(app, { 
     getAgents: (req?: UserRequest) => getAgentsLive(req), 
     setAgents: (req: UserRequest, next: Agent[]) => setAgentsLive(req, next) 
@@ -193,8 +189,6 @@ export function createServer() {
     getTraces: (req?: UserRequest) => getTraces(req)
   });
 
-  // Conversations routes registration moved to proper location (single registration only)
-
   // Initialize FetcherManager with per-user fetcher factory
   const fetcherManager = new FetcherManager((uid: string) => {
     // Get user repository bundle directly for background operations
@@ -227,8 +221,6 @@ export function createServer() {
     };
   });
 
-  // Global fetcher initialization removed - user isolation enforced
-
   registerFetcherRoutes(app, {
     getStatus: (req: UserRequest) => fetcherManager.getStatus(req),
     startFetcherLoop: (req: UserRequest) => fetcherManager.startFetcherLoop(req),
@@ -240,9 +232,7 @@ export function createServer() {
   });
   // Cleanup endpoints (per-user)
   registerCleanupRoutes(app);
-  // Cleanup routes removed - user isolation enforced
-  // All cleanup operations must use per-user repositories
-
+  
   // Bootstrapping per-user fetchers on server startup for users who enabled auto-start
   try {
     const users = getUsersRepo().getAll();

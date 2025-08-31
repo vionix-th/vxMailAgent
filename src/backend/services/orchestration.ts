@@ -78,7 +78,6 @@ export function ensureAgentThread(
   req?: UserRequest,
 ): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'finalized' | 'invalid' } {
   const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }, req) : '';
-  // Director finalization check removed - orchestration handles this automatically
 
   let agentThread = undefined as ConversationThread | undefined;
   if (!agentThread) {

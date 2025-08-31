@@ -18,9 +18,6 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     res.json(includeDeleted ? items : items.filter(i => !i.deleted));
   });
 
-  // REMOVED: Direct workspace item creation via REST API
-  // Only orchestration should create workspace items with proper context
-
   app.get('/api/workspaces/:id/items/:itemId', (req, res) => {
     const { itemId } = req.params as { id: string; itemId: string };
     const ureq = requireReq(req as UserRequest);

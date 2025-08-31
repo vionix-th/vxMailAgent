@@ -5,8 +5,6 @@ import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository 
 import { UserRequest } from '../middleware/user-context';
 import { requireReq, requireUserRepo } from '../utils/repo-access';
 
-// Global fallback repositories removed - user isolation enforced
-
 // Resolve per-user repositories - user context required
 function getOrchRepo(req?: UserRequest): OrchestrationLogRepository {
   const ureq = requireReq(req);

@@ -5,10 +5,7 @@ import { securityAudit } from '../services/security-audit';
 import logger from '../services/logger';
 import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
 
-export interface SettingsRoutesDeps {
-  // Kept for compatibility; not used after per-user refactor
-  getSettings?: () => any;
-}
+export interface SettingsRoutesDeps {}
 
 export default function registerSettingsRoutes(app: express.Express, _deps: SettingsRoutesDeps) {
   // Local default settings generator
