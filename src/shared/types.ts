@@ -273,6 +273,16 @@ export interface Prompt {
   // model and temperature have been removed; these are defined only in ApiConfig
 }
 
+/**
+ * Prompt template item persisted per-user.
+ */
+export interface TemplateItem {
+  id: string;
+  name: string;
+  description?: string;
+  messages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; name?: string }>;
+}
+
 export interface Imprint {
   id: string;
   name: string;

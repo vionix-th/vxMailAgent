@@ -1,15 +1,8 @@
 import express from 'express';
-import fs from 'fs';
-import * as persistence from '../persistence';
-import { UserRequest, hasUserContext } from '../middleware/user-context';
+import { requireUserContext, UserRequest } from '../middleware/user-context';
 import logger from '../services/logger';
-
-export interface TemplateItem {
-  id: string;
-  name: string;
-  description?: string;
-  messages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string; name?: string }>;
-}
+import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
+import type { TemplateItem } from '../../shared/types';
 
  
 
@@ -36,65 +29,34 @@ function seedTemplates(): TemplateItem[] {
 
 function loadTemplates(req?: UserRequest): TemplateItem[] {
   try {
-    let data: any;
-    
-    if (req && hasUserContext(req)) {
-      // Use per-user templates repository
-      // Template repository not available - using fallback
-      data = [];
-      
-      if (!Array.isArray(data) || data.length === 0) {
-        const seeded = seedTemplates();
-        // Template repository not available - skipping save
-        return seeded;
-      }
-    } else {
-      // Fallback to global templates file
-      const templatesFile = 'templates.json';
-      if (!fs.existsSync(templatesFile)) {
-        const seeded = seedTemplates();
-        persistence.encryptAndPersist(seeded, templatesFile);
-      }
-      data = persistence.loadAndDecrypt(templatesFile);
+    const ureq = requireReq(req);
+    let arr = repoGetAll<TemplateItem>(ureq, 'templates');
+    if (!Array.isArray(arr)) arr = [];
+
+    // Seed if empty
+    if (arr.length === 0) {
+      const seeded = seedTemplates();
+      repoSetAll<TemplateItem>(ureq, 'templates', seeded);
+      logger.info('Seeded prompt templates', { uid: requireUid(ureq) });
+      return seeded;
     }
-    
-    // Only accept canonical array shape; if invalid, reset to seed
-    let arr: TemplateItem[] = Array.isArray(data) ? (data as TemplateItem[]) : [];
-    if (!Array.isArray(data)) {
-      arr = seedTemplates();
-      if (req && hasUserContext(req)) {
-        // Template repository not available - using fallback persistence
-      } else {
-        const templatesFile = 'templates.json';
-        persistence.encryptAndPersist(arr, templatesFile);
-      }
-    }
-    
+
     // Ensure required optimizer exists
     const hasOptimizer = arr.some(t => t.id === 'prompt_optimizer');
     if (!hasOptimizer) {
       const seeded = seedTemplates();
       const next = [seeded[0], ...arr];
-      if (req && hasUserContext(req)) {
-        // Template repository not available - using fallback persistence
-      } else {
-        const templatesFile = 'templates.json';
-        persistence.encryptAndPersist(next, templatesFile);
-      }
+      repoSetAll<TemplateItem>(ureq, 'templates', next);
       return next;
     }
-    return arr;
+    return arr as TemplateItem[];
   } catch (e) {
     logger.warn('Failed to load prompt templates', { err: e });
     // Attempt to recreate with seed to maintain invariant
     try {
+      const ureq = requireReq(req);
       const seeded = seedTemplates();
-      if (req && hasUserContext(req)) {
-        // Template repository not available - using fallback persistence
-      } else {
-        const templatesFile = 'templates.json';
-        persistence.encryptAndPersist(seeded, templatesFile);
-      }
+      repoSetAll<TemplateItem>(ureq, 'templates', seeded);
       return seeded;
     } catch {}
     return [];
@@ -102,23 +64,20 @@ function loadTemplates(req?: UserRequest): TemplateItem[] {
 }
 
 function saveTemplates(req: UserRequest, items: TemplateItem[]) {
-  if (hasUserContext(req)) {
-    // Template repository not available - using fallback persistence
-  } else {
-    const templatesFile = 'templates.json';
-    persistence.encryptAndPersist(items, templatesFile);
-  }
+  const ureq = requireReq(req);
+  repoSetAll<TemplateItem>(ureq, 'templates', items);
 }
 
 export default function registerTemplatesRoutes(app: express.Express) {
   // List templates
-  app.get('/api/prompt-templates', (req, res) => {
-    logger.info('GET /api/prompt-templates');
-    res.json(loadTemplates(req as UserRequest));
+  app.get('/api/prompt-templates', requireUserContext as any, (req, res) => {
+    const ureq = requireReq(req as UserRequest);
+    logger.info('GET /api/prompt-templates', { uid: requireUid(ureq) });
+    res.json(loadTemplates(ureq));
   });
 
   // Create
-  app.post('/api/prompt-templates', (req, res) => {
+  app.post('/api/prompt-templates', requireUserContext as any, (req, res) => {
     const item: TemplateItem = req.body;
     if (!item || !item.id || !item.name || !Array.isArray(item.messages)) {
       return res.status(400).json({ error: 'Invalid template' });
@@ -131,7 +90,7 @@ export default function registerTemplatesRoutes(app: express.Express) {
   });
 
   // Update
-  app.put('/api/prompt-templates/:id', (req, res) => {
+  app.put('/api/prompt-templates/:id', requireUserContext as any, (req, res) => {
     const id = req.params.id;
     const current = loadTemplates(req as UserRequest);
     const idx = current.findIndex(t => t.id === id);
@@ -142,7 +101,7 @@ export default function registerTemplatesRoutes(app: express.Express) {
   });
 
   // Delete
-  app.delete('/api/prompt-templates/:id', (req, res) => {
+  app.delete('/api/prompt-templates/:id', requireUserContext as any, (req, res) => {
     const id = req.params.id;
     if (id === 'prompt_optimizer') {
       return res.status(400).json({ error: 'prompt_optimizer is required and cannot be deleted' });

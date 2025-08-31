@@ -4,7 +4,7 @@ import { userPaths, UserPaths } from '../utils/paths';
 import fs from 'fs';
 import * as persistence from '../persistence';
 import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS } from '../config';
-import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem } from '../../shared/types';
+import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem, TemplateItem } from '../../shared/types';
 import { logger } from '../services/logger';
 
 /**
@@ -24,7 +24,7 @@ export interface RepoBundle {
   agents: Repository<Agent>;
   directors: Repository<Director>;
   filters: Repository<Filter>;
-  // templates: Repository<Template>; // Template type not available
+  templates: Repository<TemplateItem>;
   imprints: Repository<Imprint>;
   workspaceItems: Repository<WorkspaceItem>;
   
@@ -108,7 +108,7 @@ export class RepoBundleRegistry {
       agents: createUserJsonRepository<Agent>(paths.agents, paths.root, undefined, uid),
       directors: createUserJsonRepository<Director>(paths.directors, paths.root, undefined, uid),
       filters: createUserJsonRepository<Filter>(paths.filters, paths.root, undefined, uid),
-      // templates: createUserJsonRepository<any>(paths.templates, paths.root), // Template type not available
+      templates: createUserJsonRepository<TemplateItem>(paths.templates, paths.root, undefined, uid),
       imprints: createUserJsonRepository<Imprint>(paths.imprints, paths.root, undefined, uid),
       workspaceItems: createUserJsonRepository<WorkspaceItem>(paths.workspaceItems, paths.root, undefined, uid),
       

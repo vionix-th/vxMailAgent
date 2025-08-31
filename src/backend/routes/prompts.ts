@@ -2,11 +2,12 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { Prompt } from '../../shared/types';
-import * as persistence from '../persistence';
 import { chatCompletion } from '../providers/openai';
 
-import { UserRequest } from '../middleware/user-context';
+import { requireUserContext, UserRequest } from '../middleware/user-context';
 import logger from '../services/logger';
+import { requireReq, requireUid, repoGetAll, repoSetAll } from '../utils/repo-access';
+import type { TemplateItem } from '../../shared/types';
 
 export interface PromptsRoutesDeps {
   getPrompts: (req?: UserRequest) => Prompt[];
@@ -19,7 +20,6 @@ export interface PromptsRoutesDeps {
  
 
 type TemplateMsg = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; name?: string };
-type TemplateItem = { id: string; name: string; description?: string; messages: TemplateMsg[] };
 
 type ContextPackName = 'affordances' | 'docs-lite' | 'types-lite' | 'routes-lite' | 'examples' | 'policies';
 
@@ -206,44 +206,35 @@ const DEFAULT_OPTIMIZER: TemplateItem = {
   ]
 };
 
-function loadTemplatesArray(): TemplateItem[] {
+function loadUserTemplates(req?: UserRequest): TemplateItem[] {
   try {
-    const templatesFile = 'templates.json'; // Global fallback storage for templates
-    if (!fs.existsSync(templatesFile)) {
-      const seeded = DEFAULT_OPTIMIZER ? [DEFAULT_OPTIMIZER] : [];
-      persistence.encryptAndPersist(seeded, templatesFile);
+    const ureq = requireReq(req);
+    let arr = repoGetAll<TemplateItem>(ureq, 'templates');
+    if (!Array.isArray(arr)) arr = [];
+    // Seed optimizer if missing/empty
+    if (arr.length === 0) {
+      const seeded = [DEFAULT_OPTIMIZER];
+      repoSetAll<TemplateItem>(ureq, 'templates', seeded);
+      logger.info('Seeded templates with optimizer', { uid: requireUid(ureq) });
+      return seeded;
     }
-    const raw = persistence.loadAndDecrypt(templatesFile);
-    if (raw && !Array.isArray(raw) && typeof raw === 'object') {
-      const arr: TemplateItem[] = Object.values(raw as any);
-      // Ensure optimizer presence and canonical content
-      let next = arr;
-      if (!arr.some(t => t.id === 'prompt_optimizer')) {
-        next = [DEFAULT_OPTIMIZER, ...arr];
-      } else {
-        next = arr.map(t => t.id === 'prompt_optimizer' ? { ...t, name: DEFAULT_OPTIMIZER.name, messages: DEFAULT_OPTIMIZER.messages } : t);
-      }
-      const templatesFile = 'templates.json';
-      persistence.encryptAndPersist(next, templatesFile);
+    if (!arr.some(t => t.id === 'prompt_optimizer')) {
+      const next = [DEFAULT_OPTIMIZER, ...arr];
+      repoSetAll<TemplateItem>(ureq, 'templates', next);
       return next;
     }
-    const arr = Array.isArray(raw) ? (raw as TemplateItem[]) : [];
-    let next = arr;
-    if (!arr.some(t => t.id === 'prompt_optimizer')) {
-      next = [DEFAULT_OPTIMIZER, ...arr];
-    } else {
-      next = arr.map(t => t.id === 'prompt_optimizer' ? { ...t, name: DEFAULT_OPTIMIZER.name, messages: DEFAULT_OPTIMIZER.messages } : t);
+    // Ensure canonical optimizer content
+    const next = arr.map(t => t.id === 'prompt_optimizer' ? { ...t, name: DEFAULT_OPTIMIZER.name, messages: DEFAULT_OPTIMIZER.messages } : t);
+    if (JSON.stringify(next) !== JSON.stringify(arr)) {
+      repoSetAll<TemplateItem>(ureq, 'templates', next);
     }
-    const templatesFile3 = 'templates.json';
-    persistence.encryptAndPersist(next, templatesFile3);
-    return next;
+    return next as TemplateItem[];
   } catch (e) {
-    logger.warn('loadTemplatesArray failed', { err: e });
-    // Recreate with optimizer to maintain invariant
+    logger.warn('loadUserTemplates failed', { err: e });
     try {
+      const ureq = requireReq(req);
       const seeded = [DEFAULT_OPTIMIZER];
-      const templatesFile4 = 'templates.json';
-      persistence.encryptAndPersist(seeded, templatesFile4);
+      repoSetAll<TemplateItem>(ureq, 'templates', seeded);
       return seeded;
     } catch {}
     return [DEFAULT_OPTIMIZER];
@@ -252,13 +243,13 @@ function loadTemplatesArray(): TemplateItem[] {
 
 export default function registerPromptsRoutes(app: express.Express, deps: PromptsRoutesDeps) {
   // GET /api/prompts
-  app.get('/api/prompts', (req, res) => {
+  app.get('/api/prompts', requireUserContext as any, (req, res) => {
     logger.info('GET /api/prompts');
     res.json(deps.getPrompts(req as UserRequest));
   });
 
   // POST /api/prompts
-  app.post('/api/prompts', (req, res) => {
+  app.post('/api/prompts', requireUserContext as any, (req, res) => {
     const prompt: Prompt = req.body;
     const next = [...deps.getPrompts(req as UserRequest), prompt];
     deps.setPrompts(req as UserRequest, next);
@@ -267,7 +258,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   });
 
   // PUT /api/prompts/:id
-  app.put('/api/prompts/:id', (req, res) => {
+  app.put('/api/prompts/:id', requireUserContext as any, (req, res) => {
     const id = req.params.id;
     const current = deps.getPrompts(req as UserRequest);
     const idx = current.findIndex(p => p.id === id);
@@ -283,7 +274,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   });
 
   // DELETE /api/prompts/:id
-  app.delete('/api/prompts/:id', (req, res) => {
+  app.delete('/api/prompts/:id', requireUserContext as any, (req, res) => {
     const id = req.params.id;
     const current = deps.getPrompts(req as UserRequest);
     const before = current.length;
@@ -295,7 +286,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   });
 
   // POST /api/prompts/assist - optimize a prompt with application context
-  app.post('/api/prompts/assist', async (req, res) => {
+  app.post('/api/prompts/assist', requireUserContext as any, async (req, res) => {
     try {
       const payload = req.body || {};
       const prompt: Prompt | undefined = payload.prompt;
@@ -307,7 +298,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
       if (!api) return res.status(400).json({ error: 'No API configuration available' });
 
       // Always resolve optimizer/system messages from the canonical 'prompt_optimizer' template
-      const list = loadTemplatesArray();
+      const list = loadUserTemplates(req as UserRequest);
       const opt = list.find(t => t.id === 'prompt_optimizer');
       if (!opt) {
         return res.status(500).json({ error: 'optimizer_template_missing' });
