@@ -8,6 +8,7 @@ import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensure
 import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, PROVIDER_REQUEST_TIMEOUT_MS, CONVERSATION_STEP_TIMEOUT_MS } from '../config';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
 import { UserRequest } from '../middleware/user-context';
+import logger from './logger';
 
 /** Dependencies required by the fetcher service. */
 export interface FetcherDeps {
@@ -73,7 +74,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
   try {
     fetcherLog = pruneFetcher(deps.getFetcherLog().map(e => ({ ...e, id: e.id || newId() })));
   } catch (e) {
-    console.error('[ERROR] Failed to initialize fetcherLog:', e);
+    logger.error('Failed to initialize fetcherLog', { err: e });
   }
 
   function logFetch(entry: FetcherLogEntry) {
@@ -83,7 +84,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
       fetcherLog = pruneFetcher(fetcherLog);
       deps.setFetcherLog(fetcherLog);
     } catch (e) {
-      console.error('[ERROR] Failed to persist fetcherLog entry:', e);
+      logger.error('Failed to persist fetcherLog entry', { err: e });
     }
   }
 
@@ -491,10 +492,10 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
       fetcherLog = pruneFetcher((next || []).map(e => ({ ...e, id: e.id || newId() })));
       try {
         if (process.env.NODE_ENV !== 'production') {
-          console.log(`[${new Date().toISOString()}] [FETCHER] setFetcherLog: ${before} -> ${fetcherLog.length}`);
+          logger.debug('FETCHER setFetcherLog', { before, after: fetcherLog.length });
         }
       } catch (e) {
-        console.error('[ERROR] Failed after setFetcherLog:', e);
+        logger.error('Failed after setFetcherLog', { err: e });
       }
     },
   };

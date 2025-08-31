@@ -2,6 +2,7 @@ import express from 'express';
 import { Imprint } from '../../shared/types';
 import { UserRequest } from '../middleware/user-context';
 // persistence is handled by injected deps.setImprints
+import logger from '../services/logger';
 
 export interface ImprintsRoutesDeps {
   getImprints: (req?: UserRequest) => Imprint[];
@@ -10,7 +11,7 @@ export interface ImprintsRoutesDeps {
 
 export default function registerImprintsRoutes(app: express.Express, deps: ImprintsRoutesDeps) {
   app.get('/api/imprints', (req, res) => {
-    console.log(`[${new Date().toISOString()}] GET /api/imprints`);
+    logger.info('GET /api/imprints');
     res.json(deps.getImprints(req as UserRequest));
   });
 
@@ -18,7 +19,7 @@ export default function registerImprintsRoutes(app: express.Express, deps: Impri
     const imprint: Imprint = req.body;
     const next = [...deps.getImprints(req as UserRequest), imprint];
     deps.setImprints(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] POST /api/imprints: added imprint ${imprint.id}`);
+    logger.info('POST /api/imprints: added imprint', { id: imprint.id });
     res.json({ success: true });
   });
 
@@ -27,13 +28,13 @@ export default function registerImprintsRoutes(app: express.Express, deps: Impri
     const current = deps.getImprints(req as UserRequest);
     const idx = current.findIndex(i => i.id === id);
     if (idx === -1) {
-      console.warn(`[${new Date().toISOString()}] PUT /api/imprints/${id}: not found`);
+      logger.warn('PUT /api/imprints/:id not found', { id });
       return res.status(404).json({ error: 'Imprint not found' });
     }
     const next = current.slice();
     next[idx] = req.body;
     deps.setImprints(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] PUT /api/imprints/${id}: updated`);
+    logger.info('PUT /api/imprints/:id updated', { id });
     res.json({ success: true });
   });
 
@@ -44,7 +45,7 @@ export default function registerImprintsRoutes(app: express.Express, deps: Impri
     const next = current.filter(i => i.id !== id);
     deps.setImprints(req as UserRequest, next);
     const after = next.length;
-    console.log(`[${new Date().toISOString()}] DELETE /api/imprints/${id}: ${before - after} deleted`);
+    logger.info('DELETE /api/imprints/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 }

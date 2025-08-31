@@ -3,6 +3,7 @@ import { FetcherLogEntry } from '../../shared/types';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { UserRequest } from '../middleware/user-context';
 import { saveSettings } from '../services/settings';
+import logger from '../services/logger';
 
 /** Dependencies for fetcher routes. */
 export interface FetcherRoutesDeps {
@@ -65,7 +66,7 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
   });
 
   app.post('/api/fetcher/run', async (req, res) => {
-    console.log(`[${new Date().toISOString()}] [FETCHER] Manual fetch triggered`);
+    logger.info('[FETCHER] Manual fetch triggered');
     await deps.fetchEmails(req as UserRequest);
     res.json({ success: true });
   });
@@ -75,7 +76,7 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
       const log = deps.getFetcherLog(req as UserRequest);
       res.json(log);
     } catch (e) {
-      console.error('[ERROR] Failed to read fetcherLog:', e);
+      logger.error('Failed to read fetcherLog', { err: e });
       res.status(500).json({ error: 'Failed to read fetcher logs' });
     }
   });

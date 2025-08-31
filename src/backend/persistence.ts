@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { VX_MAILAGENT_KEY, USER_MAX_FILE_SIZE_MB } from './config';
 import { validatePathSafety } from './utils/paths';
+import { logger } from './services/logger';
 
 /**
  * Resolve the data directory for persistent storage. Uses `VX_MAILAGENT_DATA_DIR`
@@ -40,7 +41,7 @@ const getKey = (): Buffer | undefined => {
   const key = VX_MAILAGENT_KEY;
   if (!key || key.length !== 64) {
     if (!warnPlaintext) {
-      console.warn('[WARN] VX_MAILAGENT_KEY unset or invalid; persistence will use PLAINTEXT mode.');
+      logger.warn('VX_MAILAGENT_KEY unset or invalid; persistence will use PLAINTEXT mode.', { envVar: 'VX_MAILAGENT_KEY' });
       warnPlaintext = true;
     }
     return undefined;

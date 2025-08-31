@@ -4,6 +4,7 @@ import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
 // persistence is handled by injected deps.setAgents
 
 import { UserRequest } from '../middleware/user-context';
+import logger from '../services/logger';
 
 export interface AgentsRoutesDeps {
   getAgents: (req?: UserRequest) => Agent[];
@@ -22,7 +23,7 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
   };
   // GET /api/agents
   app.get('/api/agents', (req, res) => {
-    console.log(`[${new Date().toISOString()}] GET /api/agents`);
+    logger.info('GET /api/agents');
     res.json(deps.getAgents(req as UserRequest));
   });
 
@@ -35,7 +36,7 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     const clean: Agent = { ...agent, enabledToolCalls: sanitizeEnabled((agent as any).enabledToolCalls) };
     const next = [...deps.getAgents(req as UserRequest), clean];
     deps.setAgents(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] POST /api/agents: added agent ${agent.id}`);
+    logger.info('POST /api/agents: added agent', { id: agent.id });
     res.json({ success: true });
   });
 
@@ -45,7 +46,7 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     const current = deps.getAgents(req as UserRequest);
     const idx = current.findIndex(a => a.id === id);
     if (idx === -1) {
-      console.warn(`[${new Date().toISOString()}] PUT /api/agents/${id}: not found`);
+      logger.warn('PUT /api/agents/:id not found', { id });
       return res.status(404).json({ error: 'Agent not found' });
     }
     if (!req.body.apiConfigId) {
@@ -55,7 +56,7 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     const next = current.slice();
     next[idx] = clean;
     deps.setAgents(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] PUT /api/agents/${id}: updated`);
+    logger.info('PUT /api/agents/:id updated', { id });
     res.json({ success: true });
   });
 
@@ -67,7 +68,7 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     const next = current.filter(a => a.id !== id);
     deps.setAgents(req as UserRequest, next);
     const after = next.length;
-    console.log(`[${new Date().toISOString()}] DELETE /api/agents/${id}: ${before - after} deleted`);
+    logger.info('DELETE /api/agents/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 }

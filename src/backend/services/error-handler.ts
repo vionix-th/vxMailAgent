@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { securityAudit } from './security-audit';
+import logger from './logger';
 
 export interface ErrorContext {
   uid?: string;
@@ -132,7 +133,7 @@ class ErrorHandlerService {
     }
 
     // Default sanitized error for unknown types
-    console.error(`[ERROR-HANDLER] Unhandled error type in ${context.operation}:`, error);
+    logger.error('[ERROR-HANDLER] Unhandled error type', { operation: context.operation, err: error });
     
     return {
       message: 'Internal server error',
@@ -148,12 +149,7 @@ class ErrorHandlerService {
     const sanitized = this.sanitizeError(error, context);
     
     // Log the error with full details for debugging
-    console.error(`[ERROR] ${context.operation} failed:`, {
-      uid: context.uid,
-      resource: context.resource,
-      error: error.message,
-      stack: error.stack
-    });
+    logger.error('[ERROR] operation failed', { operation: context.operation, uid: context.uid, resource: context.resource, error: error.message, stack: error.stack });
 
     // Send sanitized response to client
     res.status(sanitized.statusCode).json({

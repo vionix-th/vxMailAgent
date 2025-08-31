@@ -1,6 +1,7 @@
 import express from 'express';
 import { OrchestrationDiagnosticEntry } from '../../shared/types';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
+import logger from '../services/logger';
 
 export interface OrchestrationRoutesDeps {
   getOrchestrationLog: () => OrchestrationDiagnosticEntry[];
@@ -30,7 +31,7 @@ export default function registerOrchestrationRoutes(app: express.Express, deps: 
   // /api/orchestration/diagnostics?director=&agent=&emailId=&phase=&since=&until=&limit=&offset=
   app.get('/api/orchestration/diagnostics', (req, res) => {
     let log: OrchestrationDiagnosticEntry[] = [];
-    try { log = deps.getOrchestrationLog() || []; } catch (e) { console.error('[ERROR] getOrchestrationLog failed:', e); }
+    try { log = deps.getOrchestrationLog() || []; } catch (e) { logger.error('getOrchestrationLog failed', { err: e }); }
 
     try {
       const q = req.query as Record<string, string>;

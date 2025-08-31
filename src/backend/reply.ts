@@ -1,4 +1,5 @@
 import { Reply } from '../shared/types';
+import { logger } from './services/logger';
 
 /**
  * Sends an email reply through the chosen provider.
@@ -9,6 +10,6 @@ export async function sendReply(
   provider: 'gmail' | 'outlook',
   account: any,
 ): Promise<{ success: boolean; error?: string }> {
-  console.log('[REPLY] sendReply called', { reply, provider, account });
+  logger.info('[REPLY] sendReply called', { reply, provider, account });
   return { success: true };
 }

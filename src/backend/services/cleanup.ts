@@ -1,4 +1,5 @@
 import { CleanupStats } from '../../shared/types';
+import logger from './logger';
 
 /** Accessors for repositories used by the cleanup service. */
 export interface RepositoryHub<TConv = any, TOrch = any, TProv = any, TTrace = any, TFetch = any> {
@@ -33,7 +34,6 @@ export interface CleanupService {
  * Builds an ids-only cleanup service that operates via the provided repository accessors.
  */
 export function createCleanupService(hub: RepositoryHub): CleanupService {
-  const isoNow = () => new Date().toISOString();
 
   const removeByIds = (list: any[], ids: string[], cascade?: (e: any) => boolean) => {
     const before = list.length;
@@ -52,42 +52,42 @@ export function createCleanupService(hub: RepositoryHub): CleanupService {
       const cur = hub.getConversations();
       const { next, deleted } = removeByIds(cur, ids, (c) => c.parentId && ids.includes(c.parentId));
       if (next !== cur) hub.setConversations(next);
-      console.log(`[${isoNow()}] CLEANUP removeConversationsByIds: deleted=${deleted}`);
+      logger.info('CLEANUP removeConversationsByIds', { deleted });
       return { deleted };
     },
     removeOrchestrationByIds(ids: string[]) {
       const cur = hub.getOrchestrationLog();
       const { next, deleted } = removeByIds(cur, ids);
       if (next !== cur) hub.setOrchestrationLog(next);
-      console.log(`[${isoNow()}] CLEANUP removeOrchestrationByIds: deleted=${deleted}`);
+      logger.info('CLEANUP removeOrchestrationByIds', { deleted });
       return { deleted };
     },
     removeProviderEventsByIds(ids: string[]) {
       const cur = hub.getProviderEvents();
       const { next, deleted } = removeByIds(cur, ids);
       if (next !== cur) hub.setProviderEvents(next);
-      console.log(`[${isoNow()}] CLEANUP removeProviderEventsByIds: deleted=${deleted}`);
+      logger.info('CLEANUP removeProviderEventsByIds', { deleted });
       return { deleted };
     },
     removeTracesByIds(ids: string[]) {
       const cur = hub.getTraces();
       const { next, deleted } = removeByIds(cur, ids);
       if (next !== cur) hub.setTraces(next);
-      console.log(`[${isoNow()}] CLEANUP removeTracesByIds: deleted=${deleted}`);
+      logger.info('CLEANUP removeTracesByIds', { deleted });
       return { deleted };
     },
     removeFetcherLogsByIds(ids: string[]) {
       const cur = hub.getFetcherLog();
       const { next, deleted } = removeByIds(cur, ids);
       if (next !== cur) hub.setFetcherLog(next);
-      console.log(`[${isoNow()}] CLEANUP removeFetcherLogsByIds: deleted=${deleted}`);
+      logger.info('CLEANUP removeFetcherLogsByIds', { deleted });
       return { deleted };
     },
     removeWorkspaceItemsByIds(ids: string[]) {
       const cur = hub.getWorkspaceItems();
       const { next, deleted } = removeByIds(cur, ids);
       if (next !== cur) hub.setWorkspaceItems(next);
-      console.log(`[${isoNow()}] CLEANUP removeWorkspaceItemsByIds: deleted=${deleted}`);
+      logger.info('CLEANUP removeWorkspaceItemsByIds', { deleted });
       return { deleted };
     },
     getStats() {
@@ -115,8 +115,7 @@ export function createCleanupService(hub: RepositoryHub): CleanupService {
       hub.setWorkspaceItems([]);
       hub.setProviderEvents([]);
       hub.setTraces([]);
-      const msg = `[${isoNow()}] CLEANUP purgeAll: deleted totals -> fetcher=${before.fetcherLogs}, orch=${before.orchestrationLogs}, conv=${before.conversations}, workspaceItems=${before.workspaceItems}, providerEvents=${before.providerEvents}, traces=${before.traces}`;
-      console.log(msg);
+      logger.info('CLEANUP purgeAll', { totals: before });
       return { deleted: before, message: 'All logs and data purged successfully' };
     },
     purge(type) {
@@ -124,37 +123,37 @@ export function createCleanupService(hub: RepositoryHub): CleanupService {
         case 'fetcher': {
           const count = hub.getFetcherLog().length;
           hub.setFetcherLog([]);
-          console.log(`[${isoNow()}] CLEANUP purge(fetcher): deleted=${count}`);
+          logger.info('CLEANUP purge(fetcher)', { deleted: count });
           return { deleted: count, message: `Deleted ${count} fetcher logs` };
         }
         case 'orchestration': {
           const count = hub.getOrchestrationLog().length;
           hub.setOrchestrationLog([]);
-          console.log(`[${isoNow()}] CLEANUP purge(orchestration): deleted=${count}`);
+          logger.info('CLEANUP purge(orchestration)', { deleted: count });
           return { deleted: count, message: `Deleted ${count} orchestration logs` };
         }
         case 'conversations': {
           const count = hub.getConversations().length;
           hub.setConversations([]);
-          console.log(`[${isoNow()}] CLEANUP purge(conversations): deleted=${count}`);
+          logger.info('CLEANUP purge(conversations)', { deleted: count });
           return { deleted: count, message: `Deleted ${count} conversations` };
         }
         case 'workspaceItems': {
           const count = hub.getWorkspaceItems().length;
           hub.setWorkspaceItems([]);
-          console.log(`[${isoNow()}] CLEANUP purge(workspaceItems): deleted=${count}`);
+          logger.info('CLEANUP purge(workspaceItems)', { deleted: count });
           return { deleted: count, message: `Deleted ${count} workspace items` };
         }
         case 'providerEvents': {
           const count = hub.getProviderEvents().length;
           hub.setProviderEvents([]);
-          console.log(`[${isoNow()}] CLEANUP purge(providerEvents): deleted=${count}`);
+          logger.info('CLEANUP purge(providerEvents)', { deleted: count });
           return { deleted: count, message: `Deleted ${count} provider events` };
         }
         case 'traces': {
           const count = hub.getTraces().length;
           hub.setTraces([]);
-          console.log(`[${isoNow()}] CLEANUP purge(traces): deleted=${count}`);
+          logger.info('CLEANUP purge(traces)', { deleted: count });
           return { deleted: count, message: `Deleted ${count} traces` };
         }
         default: {

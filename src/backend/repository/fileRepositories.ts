@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { logger } from '../services/logger';
 import * as persistence from '../persistence';
 import { Repository } from './core';
 import { dataPath } from '../utils/paths';
@@ -44,8 +45,8 @@ export class FileJsonRepository<T> implements Repository<T> {
       if (error.message.includes('Security violation') || error.message.includes('Unsafe path')) {
         throw new SecurityError(`Path security violation: ${this.filePath}`);
       }
-      
-      console.error(`[ERROR] FileJsonRepository.getAll failed for ${this.filePath}:`, error);
+
+      logger.error('FileJsonRepository.getAll failed', { filePath: this.filePath, error });
       return [] as T[];
     }
   }
@@ -77,8 +78,8 @@ export class FileJsonRepository<T> implements Repository<T> {
       if (error.message.includes('size exceeds limit')) {
         throw new SecurityError(`File size limit exceeded: ${this.filePath}`);
       }
-      
-      console.error(`[ERROR] FileJsonRepository.setAll failed for ${this.filePath}:`, error);
+
+      logger.error('FileJsonRepository.setAll failed', { filePath: this.filePath, error });
       throw error;
     }
   }
@@ -141,7 +142,7 @@ export class FileFetcherLogRepository implements FetcherLogRepository {
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
-      console.error('[ERROR] FileFetcherLogRepository.getAll failed:', error);
+      logger.error('FileFetcherLogRepository.getAll failed', { error });
       return [];
     }
   }
@@ -155,7 +156,7 @@ export class FileFetcherLogRepository implements FetcherLogRepository {
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('write', false, error.message);
-      console.error('[ERROR] FileFetcherLogRepository.setAll failed:', error);
+      logger.error('FileFetcherLogRepository.setAll failed', { error });
       throw error;
     }
   }
@@ -224,7 +225,7 @@ export class FileOrchestrationLogRepository implements OrchestrationLogRepositor
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
-      console.error('[ERROR] FileOrchestrationLogRepository.getAll failed:', error);
+      logger.error('FileOrchestrationLogRepository.getAll failed', { error });
       return [];
     }
   }
@@ -238,7 +239,7 @@ export class FileOrchestrationLogRepository implements OrchestrationLogRepositor
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('write', false, error.message);
-      console.error('[ERROR] FileOrchestrationLogRepository.setAll failed:', error);
+      logger.error('FileOrchestrationLogRepository.setAll failed', { error });
       throw error;
     }
   }
@@ -311,7 +312,7 @@ export class FileProviderEventsRepository implements ProviderEventsRepository {
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
-      console.error('[ERROR] FileProviderEventsRepository.getAll failed:', error);
+      logger.error('FileProviderEventsRepository.getAll failed', { error });
       return [];
     }
   }
@@ -325,7 +326,7 @@ export class FileProviderEventsRepository implements ProviderEventsRepository {
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('write', false, error.message);
-      console.error('[ERROR] FileProviderEventsRepository.setAll failed:', error);
+      logger.error('FileProviderEventsRepository.setAll failed', { error });
       throw error;
     }
   }
@@ -399,7 +400,7 @@ export class FileTracesRepository implements TracesRepository {
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
-      console.error('[ERROR] FileTracesRepository.getAll failed:', error);
+      logger.error('FileTracesRepository.getAll failed', { error });
       return [];
     }
   }
@@ -413,7 +414,7 @@ export class FileTracesRepository implements TracesRepository {
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('write', false, error.message);
-      console.error('[ERROR] FileTracesRepository.setAll failed:', error);
+      logger.error('FileTracesRepository.setAll failed', { error });
       throw error;
     }
   }

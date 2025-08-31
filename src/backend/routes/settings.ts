@@ -2,6 +2,7 @@ import express from 'express';
 import { requireUserContext, UserRequest, getUserContext } from '../middleware/user-context';
 import { errorHandler } from '../services/error-handler';
 import { securityAudit } from '../services/security-audit';
+import logger from '../services/logger';
 
 export interface SettingsRoutesDeps {
   // Kept for compatibility; not used after per-user refactor
@@ -32,7 +33,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
     
     const all = repos.settings.getAll();
     const settings = (Array.isArray(all) && all[0]) ? all[0] : defaultSettings();
-    console.log(`[${new Date().toISOString()}] GET /api/settings (uid=${uid})`);
+    logger.info('GET /api/settings', { uid });
     res.json({
       virtualRoot: settings.virtualRoot || '',
       apiConfigs: Array.isArray(settings.apiConfigs) ? settings.apiConfigs : [],
@@ -65,7 +66,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
       success: true
     }, req);
     
-    console.log(`[${new Date().toISOString()}] PUT /api/settings (uid=${uid}): updated`);
+    logger.info('PUT /api/settings updated', { uid });
     res.json({ success: true });
   }));
 }

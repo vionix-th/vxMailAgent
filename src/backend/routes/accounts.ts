@@ -6,6 +6,7 @@ import { UserRequest, getUserContext, hasUserContext } from '../middleware/user-
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo } from '../oauth/google';
 import { getOutlookAuthUrl, getOutlookTokens, getOutlookUserInfo } from '../oauth-outlook';
 import { computeExpiryISO } from '../oauth/common';
+import logger from '../services/logger';
 
 /**
  * Gets accounts from the per-user repository (user context required).
@@ -150,16 +151,16 @@ export default function registerAccountsRoutes(app: express.Express) {
   app.get('/api/accounts', (req: UserRequest, res) => {
     try {
       const accounts = getAccounts(req);
-      console.log(`[${new Date().toISOString()}] Loaded ${accounts.length} accounts for user ${getUserContext(req).uid}`);
+      logger.info('Loaded accounts', { count: accounts.length, uid: getUserContext(req).uid });
       res.json(accounts);
     } catch (e) {
-      console.error(`[${new Date().toISOString()}] Error loading accounts:`, e);
+      logger.error('Error loading accounts', { err: e });
       res.status(500).json({ error: 'Failed to load accounts' });
     }
   });
   app.get('/api/accounts/:id/outlook-test', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    console.log(`[${new Date().toISOString()}] GET /api/accounts/${id}/outlook-test invoked`);
+    logger.info('GET /api/accounts/:id/outlook-test invoked', { id });
     try {
       if (!OUTLOOK_CLIENT_ID || !OUTLOOK_CLIENT_SECRET) {
         return res.status(400).json({ error: 'Missing Outlook OAuth env vars (OUTLOOK_CLIENT_ID/OUTLOOK_CLIENT_SECRET)' });
@@ -194,11 +195,11 @@ export default function registerAccountsRoutes(app: express.Express) {
             );
             return res.json({ ok: false, error: 'missing_refresh_token', authorizeUrl: url });
           } catch (e) {
-            console.error(`[${new Date().toISOString()}] [OAUTH2] Failed to generate Outlook re-auth URL for ${id}:`, e);
+            logger.error('Failed to generate Outlook re-auth URL', { id, err: e });
             return res.status(500).json({ ok: false, error: result.error });
           }
         }
-        console.error(`[${new Date().toISOString()}] [OAUTH2] Outlook test refresh failed for ${id}: ${result.error}`);
+        logger.error('Outlook test refresh failed', { id, error: result.error });
         return res.status(500).json({ ok: false, error: result.error });
       }
       if (result.updated) {
@@ -207,7 +208,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         account.tokens.refreshToken = result.refreshToken;
         accounts[idx] = account;
         saveAccounts(req as UserRequest, accounts);
-        console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted during outlook-test for ${id}`);
+        logger.info('Refreshed + persisted during outlook-test', { id });
       }
 
       const doGet = (path: string) => new Promise<any>((resolve, reject) => {
@@ -242,7 +243,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         tokenExpiry: account.tokens.expiry,
       });
     } catch (e) {
-      console.error(`[${new Date().toISOString()}] Exception in GET /api/accounts/${id}/outlook-test:`, e);
+      logger.error('Exception in GET /api/accounts/:id/outlook-test', { id, err: e });
       res.status(500).json({ error: (e as any)?.message || String(e) });
     }
   });
@@ -253,19 +254,19 @@ export default function registerAccountsRoutes(app: express.Express) {
       const idx = accounts.findIndex(a => a.id === newAccount.id);
       
       if (idx >= 0) {
-        console.log(`[${new Date().toISOString()}] Updating existing account: ${newAccount.email}`);
+        logger.info('Updating existing account', { email: newAccount.email });
         accounts[idx] = newAccount;
       } else {
-        console.log(`[${new Date().toISOString()}] Adding new account: ${newAccount.email}`);
+        logger.info('Adding new account', { email: newAccount.email });
         accounts.push(newAccount);
       }
       
       saveAccounts(req, accounts);
       const source = hasUserContext(req) ? `user ${getUserContext(req).uid}` : 'global';
-      console.log(`[${new Date().toISOString()}] Saved ${accounts.length} accounts to ${source} store`);
+      logger.info('Saved accounts to store', { count: accounts.length, source });
       res.json({ success: true });
     } catch (e) {
-      console.error(`[${new Date().toISOString()}] Error saving account:`, e);
+      logger.error('Error saving account', { err: e });
       res.status(500).json({ error: 'Failed to save account' });
     }
   });
@@ -281,15 +282,15 @@ export default function registerAccountsRoutes(app: express.Express) {
       
       accounts[idx] = req.body;
       saveAccounts(req, accounts);
-      console.log(`[${new Date().toISOString()}] PUT /api/accounts/${id}: updated`);
+      logger.info('Updated account', { id });
       res.json({ success: true });
     } catch (e) {
-      console.error(`[${new Date().toISOString()}] Error updating account:`, e);
+      logger.error('Error updating account', { err: e });
       res.status(500).json({ error: 'Failed to update account' });
     }
   });
   app.delete('/api/accounts/:id', async (req: express.Request, res: express.Response) => {
-    console.log(`[DEBUG] DELETE /api/accounts/${req.params.id} invoked`);
+    logger.debug('DELETE /api/accounts/:id invoked', { id: req.params.id });
     try {
       const id = req.params.id;
       const accounts = getAccounts(req as UserRequest);
@@ -301,54 +302,54 @@ export default function registerAccountsRoutes(app: express.Express) {
       let revokeStatus: boolean | undefined = undefined;
       let revokeError: string | undefined = undefined;
       if (account.provider === 'gmail' && account.tokens && account.tokens.refreshToken) {
-        console.log(`[DEBUG] Attempting to revoke Google refresh token for account ${account.email}`);
+        logger.debug('Attempting to revoke Google refresh token', { email: account.email });
         try {
           const { revokeGoogleToken } = require('../oauth/google');
           revokeStatus = await revokeGoogleToken(account.tokens.refreshToken);
           if (!revokeStatus) {
             revokeError = 'Failed to revoke Google refresh token.';
-            console.warn(`[OAUTH2] Failed to revoke Google token for account ${account.email}`);
+            logger.warn('Failed to revoke Google token', { email: account.email });
           } else {
-            console.log(`[OAUTH2] Successfully revoked Google token for account ${account.email}`);
+            logger.info('Successfully revoked Google token', { email: account.email });
           }
         } catch (e) {
           revokeStatus = false;
           revokeError = e instanceof Error ? e.message : String(e);
-          console.error(`[OAUTH2] Error revoking Google token for account ${account.email}:`, e);
+          logger.error('Error revoking Google token', { email: account.email, err: e });
         }
       }
       if (account.provider === 'outlook' && account.tokens && account.tokens.refreshToken) {
-        console.log(`[DEBUG] Attempting to revoke Outlook refresh token for account ${account.email}`);
+        logger.debug('Attempting to revoke Outlook refresh token', { email: account.email });
         try {
           const { revokeOutlookToken } = require('../oauth-outlook');
           const ok = await revokeOutlookToken(account.tokens.refreshToken);
           if (!ok) {
-            console.warn(`[OAUTH2] Failed to revoke Outlook token for account ${account.email}`);
+            logger.warn('Failed to revoke Outlook token', { email: account.email });
           } else {
-            console.log(`[OAUTH2] Successfully revoked Outlook token for account ${account.email}`);
+            logger.info('Successfully revoked Outlook token', { email: account.email });
           }
         } catch (e) {
-          console.error(`[OAUTH2] Error revoking Outlook token for account ${account.email}:`, e);
+          logger.error('Error revoking Outlook token', { email: account.email, err: e });
         }
       }
       const before = accounts.length;
       const filteredAccounts = accounts.filter(a => a.id !== id);
       saveAccounts(req as UserRequest, filteredAccounts);
       const after = filteredAccounts.length;
-      console.log(`[DEBUG] Deleted account ${id}. Accounts before: ${before}, after: ${after}`);
+      logger.debug('Deleted account', { id, before, after });
       res.json({ success: true, revokeStatus, revokeError });
     } catch (e) {
       let revokeStatus: boolean | null = null;
       let revokeError: string | null = null;
       if (typeof (global as any).revokeStatus !== 'undefined') revokeStatus = (global as any).revokeStatus;
       if (typeof (global as any).revokeError !== 'undefined') revokeError = (global as any).revokeError;
-      console.error(`[ERROR] Exception in DELETE /api/accounts/${req.params.id}:`, e);
+      logger.error('Exception in DELETE /api/accounts/:id', { id: req.params.id, err: e, revokeStatus, revokeError });
       res.status(500).json({ error: e instanceof Error ? e.message : String(e), details: e, revokeStatus, revokeError });
     }
   });
   app.post('/api/accounts/:id/refresh', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    console.log(`[${new Date().toISOString()}] POST /api/accounts/${id}/refresh invoked`);
+    logger.info('POST /api/accounts/:id/refresh invoked', { id });
     try {
       const accounts = getAccounts(req as UserRequest);
       if (accounts.length === 0) {
@@ -371,19 +372,7 @@ export default function registerAccountsRoutes(app: express.Express) {
           const invalidGrant = /invalid_grant/i.test(errTxt) || /expired or revoked/i.test(errTxt);
           const network = /(ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network)/i.test(errTxt);
           const category = missing ? 'missing_refresh_token' : invalidGrant ? 'invalid_grant' : network ? 'network' : 'other';
-          console.error(
-            JSON.stringify({
-              ts: new Date().toISOString(),
-              level: 'error',
-              area: 'oauth',
-              provider: 'google',
-              op: 'refresh',
-              accountId: id,
-              email: account.email,
-              category,
-              error: errTxt,
-            })
-          );
+          logger.error('Google refresh failed', { area: 'oauth', provider: 'google', op: 'refresh', accountId: id, email: account.email, category, error: errTxt });
           if (missing || invalidGrant) {
             try {
               const { buildGoogleAuthUrl } = require('../oauth/google');
@@ -395,7 +384,7 @@ export default function registerAccountsRoutes(app: express.Express) {
               );
               return res.status(400).json({ ok: false, error: category, authorizeUrl: url });
             } catch (e) {
-              console.error(`[${new Date().toISOString()}] [OAUTH2] Failed to generate Google re-auth URL for ${id}:`, e);
+              logger.error('Failed to generate Google re-auth URL', { id, err: e });
               return res.status(500).json({ ok: false, error: errTxt });
             }
           }
@@ -407,7 +396,7 @@ export default function registerAccountsRoutes(app: express.Express) {
           account.tokens.refreshToken = result.refreshToken;
           accounts[idx] = account;
           saveAccounts(req as UserRequest, accounts);
-          console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted Gmail access token for ${id}`);
+          logger.info('Refreshed + persisted Gmail access token', { id });
         }
         return res.json({ ok: true, updated: result.updated, tokens: account.tokens });
       } else if (account.provider === 'outlook') {
@@ -433,11 +422,11 @@ export default function registerAccountsRoutes(app: express.Express) {
               );
               return res.json({ ok: false, error: 'missing_refresh_token', authorizeUrl: url });
             } catch (e) {
-              console.error(`[${new Date().toISOString()}] [OAUTH2] Failed to generate Outlook re-auth URL for ${id}:`, e);
+              logger.error('Failed to generate Outlook re-auth URL', { id, err: e });
               return res.status(500).json({ ok: false, error: result.error });
             }
           }
-          console.error(`[${new Date().toISOString()}] [OAUTH2] Outlook refresh failed for ${id}: ${result.error}`);
+          logger.error('Outlook refresh failed', { id, error: result.error });
           return res.status(500).json({ ok: false, error: result.error });
         }
         if (result.updated) {
@@ -446,20 +435,20 @@ export default function registerAccountsRoutes(app: express.Express) {
           account.tokens.refreshToken = result.refreshToken;
           accounts[idx] = account;
           saveAccounts(req as UserRequest, accounts);
-          console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted Outlook access token for ${id}`);
+          logger.info('Refreshed + persisted Outlook access token', { id });
         }
         return res.json({ ok: true, updated: result.updated, tokens: account.tokens });
       } else {
         return res.status(400).json({ error: 'Unknown provider' });
       }
     } catch (e) {
-      console.error(`[${new Date().toISOString()}] Exception in POST /api/accounts/${id}/refresh:`, e);
+      logger.error('Exception in POST /api/accounts/:id/refresh', { id, err: e });
       res.status(500).json({ error: 'Refresh failed' });
     }
   });
   app.get('/api/accounts/:id/gmail-test', async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    console.log(`[${new Date().toISOString()}] GET /api/accounts/${id}/gmail-test invoked`);
+    logger.info('GET /api/accounts/:id/gmail-test invoked', { id });
     try {
       if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
         return res.status(400).json({ error: 'Missing Google OAuth env vars (GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI)' });
@@ -484,19 +473,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         const invalidGrant = /invalid_grant/i.test(errTxt) || /expired or revoked/i.test(errTxt);
         const network = /(ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network)/i.test(errTxt);
         const category = missing ? 'missing_refresh_token' : invalidGrant ? 'invalid_grant' : network ? 'network' : 'other';
-        console.error(
-          JSON.stringify({
-            ts: new Date().toISOString(),
-            level: 'error',
-            area: 'oauth',
-            provider: 'google',
-            op: 'gmail-test',
-            accountId: id,
-            email: account.email,
-            category,
-            error: errTxt,
-          })
-        );
+        logger.error('Gmail test failed', { area: 'oauth', provider: 'google', op: 'gmail-test', accountId: id, email: account.email, category, error: errTxt });
         if (missing || invalidGrant) {
           try {
             const { buildGoogleAuthUrl } = require('../oauth/google');
@@ -506,23 +483,10 @@ export default function registerAccountsRoutes(app: express.Express) {
               { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
               signedState
             );
-            console.log(
-              JSON.stringify({
-                ts: new Date().toISOString(),
-                level: 'info',
-                area: 'oauth',
-                provider: 'google',
-                op: 'gmail-test',
-                accountId: id,
-                email: account.email,
-                action: 'reauth_url_issued',
-                category,
-                state: rawState,
-              })
-            );
+            logger.info('gmail-test reauth_url_issued', { area: 'oauth', provider: 'google', op: 'gmail-test', accountId: id, email: account.email, action: 'reauth_url_issued', category, state: rawState });
             return res.json({ ok: false, error: category, authorizeUrl: url });
           } catch (e) {
-            console.error(`[${new Date().toISOString()}] [OAUTH2] Failed to generate Google re-auth URL for ${id}:`, e);
+            logger.error('Failed to generate Google re-auth URL', { id, err: e });
             return res.status(500).json({ ok: false, error: errTxt });
           }
         }
@@ -534,7 +498,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         account.tokens.refreshToken = result.refreshToken;
         accounts[idx] = account;
         saveAccounts(req as UserRequest, accounts);
-        console.log(`[${new Date().toISOString()}] [OAUTH2] Refreshed + persisted during gmail-test for ${id}`);
+        logger.info('Refreshed + persisted during gmail-test', { id });
       }
       const { google } = require('googleapis');
       const oauth2Client = new (require('googleapis').google.auth.OAuth2)(
@@ -554,7 +518,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         tokenExpiry: account.tokens.expiry,
       });
     } catch (e) {
-      console.error(`[${new Date().toISOString()}] Exception in GET /api/accounts/${id}/gmail-test:`, e);
+      logger.error('Exception in GET /api/accounts/:id/gmail-test', { id, err: e });
       res.status(500).json({ error: (e as any)?.message || String(e) });
     }
   });

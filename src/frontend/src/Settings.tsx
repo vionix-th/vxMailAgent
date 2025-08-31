@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { ApiConfig } from '../../shared/types';
 import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats } from './utils/api';
+import log from './utils/log';
 
 interface SettingsData {
   virtualRoot?: string;
@@ -177,7 +178,7 @@ export default function Settings() {
       const stats = await getCleanupStats();
       setCleanupStats(stats);
     } catch (e) {
-      console.error('Failed to refresh cleanup stats:', e);
+      log.error('Failed to refresh cleanup stats', { err: e as any });
     }
   };
 

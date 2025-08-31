@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import * as persistence from '../persistence';
 import { UserRequest, hasUserContext } from '../middleware/user-context';
+import logger from '../services/logger';
 
 export interface TemplateItem {
   id: string;
@@ -84,7 +85,7 @@ function loadTemplates(req?: UserRequest): TemplateItem[] {
     }
     return arr;
   } catch (e) {
-    console.error('[WARN] Failed to load prompt templates:', e);
+    logger.warn('Failed to load prompt templates', { err: e });
     // Attempt to recreate with seed to maintain invariant
     try {
       const seeded = seedTemplates();
@@ -112,7 +113,7 @@ function saveTemplates(req: UserRequest, items: TemplateItem[]) {
 export default function registerTemplatesRoutes(app: express.Express) {
   // List templates
   app.get('/api/prompt-templates', (req, res) => {
-    console.log(`[${new Date().toISOString()}] GET /api/prompt-templates`);
+    logger.info('GET /api/prompt-templates');
     res.json(loadTemplates(req as UserRequest));
   });
 

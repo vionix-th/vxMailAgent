@@ -3,6 +3,7 @@ import { Director } from '../../shared/types';
 import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
 import { UserRequest } from '../middleware/user-context';
 // persistence is handled by injected deps.setDirectors
+import logger from '../services/logger';
 
 export interface DirectorsRoutesDeps {
   getDirectors: (req?: UserRequest) => Director[];
@@ -21,7 +22,7 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
   };
   // GET /api/directors
   app.get('/api/directors', (req, res) => {
-    console.log(`[${new Date().toISOString()}] GET /api/directors`);
+    logger.info('GET /api/directors');
     const list = deps.getDirectors(req as UserRequest).map(d => ({ ...d, promptId: (d as any).promptId || '' }));
     res.json(list);
   });
@@ -35,7 +36,7 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     const clean: Director = { ...director, promptId: (director as any).promptId || '', enabledToolCalls: sanitizeEnabled((director as any).enabledToolCalls) } as Director;
     const next = [...deps.getDirectors(req as UserRequest), clean];
     deps.setDirectors(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] POST /api/directors: added director ${director.id}`);
+    logger.info('POST /api/directors: added director', { id: director.id });
     res.json({ success: true });
   });
 
@@ -45,14 +46,14 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     const current = deps.getDirectors(req as UserRequest);
     const idx = current.findIndex(d => d.id === id);
     if (idx === -1) {
-      console.warn(`[${new Date().toISOString()}] PUT /api/directors/${id}: not found`);
+      logger.warn('PUT /api/directors/:id not found', { id });
       return res.status(404).json({ error: 'Director not found' });
     }
     const clean: Director = { ...req.body, promptId: req.body.promptId || '', enabledToolCalls: sanitizeEnabled((req.body as any).enabledToolCalls) } as Director;
     const next = current.slice();
     next[idx] = clean;
     deps.setDirectors(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] PUT /api/directors/${id}: updated`);
+    logger.info('PUT /api/directors/:id updated', { id });
     res.json({ success: true });
   });
 
@@ -64,7 +65,7 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     const next = current.filter(d => d.id !== id);
     deps.setDirectors(req as UserRequest, next);
     const after = next.length;
-    console.log(`[${new Date().toISOString()}] DELETE /api/directors/${id}: ${before - after} deleted`);
+    logger.info('DELETE /api/directors/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 }

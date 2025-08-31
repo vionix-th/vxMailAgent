@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { logger } from './services/logger';
 
 dotenv.config();
 
@@ -102,6 +103,9 @@ export function envSummary() {
 
 export function warnIfInsecure() {
   if (!VX_MAILAGENT_KEY || VX_MAILAGENT_KEY.length !== 64) {
-    console.warn('[WARN] Encryption key missing or invalid (expect 64 hex in VX_MAILAGENT_KEY); persistence will use PLAINTEXT mode. Backend will run WITHOUT encryption.');
+    logger.warn('Encryption key missing or invalid; persistence will use PLAINTEXT mode. Backend will run WITHOUT encryption.', {
+      hint: 'Expect 64 hex in VX_MAILAGENT_KEY',
+      envVar: 'VX_MAILAGENT_KEY',
+    });
   }
 }

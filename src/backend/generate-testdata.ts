@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const envPath = path.resolve(__dirname, '.env');
 require('dotenv').config({ path: envPath });
+const { logger } = require('./services/logger');
 
 // Use centralized DATA_DIR from backend utils/paths
 const { DATA_DIR } = require('./utils/paths');
@@ -392,21 +393,21 @@ function main() {
     ],
   };
 
-  console.log(`[TESTDATA] Wiping data directory: ${DATA_DIR}`);
+  logger.info('[TESTDATA] Wiping data directory', { dataDir: DATA_DIR });
   for (const file of files) {
     const filePath = FILE_PATHS[file];
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      console.log(`[TESTDATA] Deleted ${file}`);
+      logger.info('[TESTDATA] Deleted file', { file });
     }
   }
-  console.log('[TESTDATA] Generating canonical test/example data...');
+  logger.info('[TESTDATA] Generating canonical test/example data...');
   for (const file of files) {
     const filePath = FILE_PATHS[file];
     fs.writeFileSync(filePath, JSON.stringify(canonicalData[file], null, 2), 'utf8');
-    console.log(`[TESTDATA] Created ${file}`);
+    logger.info('[TESTDATA] Created file', { file });
   }
-  console.log('[TESTDATA] Done.');
+  logger.info('[TESTDATA] Done.');
 }
 
 main();

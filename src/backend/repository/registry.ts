@@ -5,6 +5,7 @@ import fs from 'fs';
 import * as persistence from '../persistence';
 import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS } from '../config';
 import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem } from '../../shared/types';
+import { logger } from '../services/logger';
 
 /**
  * Bundle of all repositories for a single user.
@@ -89,7 +90,7 @@ export class RepoBundleRegistry {
           persistence.encryptAndPersist([], f, paths.root);
         }
       } catch (e) {
-        console.warn(`[REGISTRY] Failed to pre-create user file ${f}:`, e);
+        logger.warn('[REGISTRY] Failed to pre-create user file', { file: f, error: e });
       }
     }
     
@@ -186,7 +187,7 @@ export class RepoBundleRegistry {
     for (const [uid, bundle] of this.bundles.entries()) {
       if (now - bundle.lastAccessed > ttlMs) {
         this.bundles.delete(uid);
-        console.log(`[REGISTRY] Evicted expired bundle for user ${uid}`);
+        logger.info('[REGISTRY] Evicted expired bundle', { uid });
       }
     }
   }
@@ -207,7 +208,7 @@ export class RepoBundleRegistry {
     
     if (oldestUid) {
       this.bundles.delete(oldestUid);
-      console.log(`[REGISTRY] Evicted oldest bundle for user ${oldestUid} to make space`);
+      logger.info('[REGISTRY] Evicted oldest bundle to make space', { uid: oldestUid });
     }
   }
   

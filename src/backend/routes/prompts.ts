@@ -6,6 +6,7 @@ import * as persistence from '../persistence';
 import { chatCompletion } from '../providers/openai';
 
 import { UserRequest } from '../middleware/user-context';
+import logger from '../services/logger';
 
 export interface PromptsRoutesDeps {
   getPrompts: (req?: UserRequest) => Prompt[];
@@ -237,7 +238,7 @@ function loadTemplatesArray(): TemplateItem[] {
     persistence.encryptAndPersist(next, templatesFile3);
     return next;
   } catch (e) {
-    console.warn('[WARN] loadTemplatesArray failed:', e);
+    logger.warn('loadTemplatesArray failed', { err: e });
     // Recreate with optimizer to maintain invariant
     try {
       const seeded = [DEFAULT_OPTIMIZER];
@@ -252,7 +253,7 @@ function loadTemplatesArray(): TemplateItem[] {
 export default function registerPromptsRoutes(app: express.Express, deps: PromptsRoutesDeps) {
   // GET /api/prompts
   app.get('/api/prompts', (req, res) => {
-    console.log(`[${new Date().toISOString()}] GET /api/prompts`);
+    logger.info('GET /api/prompts');
     res.json(deps.getPrompts(req as UserRequest));
   });
 
@@ -261,7 +262,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     const prompt: Prompt = req.body;
     const next = [...deps.getPrompts(req as UserRequest), prompt];
     deps.setPrompts(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] POST /api/prompts: added prompt ${prompt.id}`);
+    logger.info('POST /api/prompts: added prompt', { id: prompt.id });
     res.json({ success: true });
   });
 
@@ -271,13 +272,13 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     const current = deps.getPrompts(req as UserRequest);
     const idx = current.findIndex(p => p.id === id);
     if (idx === -1) {
-      console.warn(`[${new Date().toISOString()}] PUT /api/prompts/${id}: not found`);
+      logger.warn('PUT /api/prompts/:id not found', { id });
       return res.status(404).json({ error: 'Prompt not found' });
     }
     const next = current.slice();
     next[idx] = req.body;
     deps.setPrompts(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] PUT /api/prompts/${id}: updated`);
+    logger.info('PUT /api/prompts/:id updated', { id });
     res.json({ success: true });
   });
 
@@ -289,7 +290,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     const next = current.filter(p => p.id !== id);
     deps.setPrompts(req as UserRequest, next);
     const after = next.length;
-    console.log(`[${new Date().toISOString()}] DELETE /api/prompts/${id}: ${before - after} deleted`);
+    logger.info('DELETE /api/prompts/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 
@@ -385,7 +386,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
       const next: Prompt = { ...prompt, messages: improved.messages as any };
       return res.json({ improved: next, notes: improved.notes || '' });
     } catch (e: any) {
-      console.error('[ERROR] /api/prompts/assist failed:', e);
+      logger.error('POST /api/prompts/assist failed', { err: e });
       return res.status(500).json({ error: 'assist_failed', detail: String(e?.message || e) });
     }
   });

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { validateUid } from '../utils/paths';
 import { getUserRepoBundle, RepoBundle } from '../repository/registry';
+import logger from '../services/logger';
 
 /**
  * Extended request interface with user context.
@@ -74,7 +75,7 @@ export function attachUserContext(req: UserRequest, res: Response, next: NextFun
     next();
   } catch (error) {
     if (error instanceof UserContextError) {
-      console.error(`[USER_CONTEXT] ${error.message}`, { uid: (req as UserRequest).auth?.uid, code: error.code });
+      logger.error('[USER_CONTEXT] violation', { message: error.message, uid: (req as UserRequest).auth?.uid, code: error.code });
       res.status(403).json({
         error: 'User context setup failed',
         message: error.message,
@@ -83,7 +84,7 @@ export function attachUserContext(req: UserRequest, res: Response, next: NextFun
       return;
     }
     
-    console.error('[USER_CONTEXT] Unexpected error:', error);
+    logger.error('[USER_CONTEXT] unexpected error', { err: error });
     res.status(500).json({
       error: 'Internal server error during user context setup',
       message: 'Failed to initialize user repositories'
@@ -98,7 +99,7 @@ export function attachUserContext(req: UserRequest, res: Response, next: NextFun
 export function requireUserContext(req: UserRequest, res: Response, next: NextFunction): void {
   
   if (!req.userContext || !req.userContext.uid || !req.userContext.repos) {
-    console.error('[USER_CONTEXT] Missing user context in request');
+    logger.error('[USER_CONTEXT] missing context');
     res.status(500).json({
       error: 'Internal server error',
       message: 'User context setup failed'

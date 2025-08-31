@@ -2,6 +2,7 @@ import fs from 'fs';
 import { loadAndDecrypt } from '../persistence';
 import { userPaths } from '../utils/paths';
 import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
+import logger from './logger';
 
 import type { ApiConfig } from '../../shared/types';
 
@@ -36,9 +37,9 @@ export function loadSettings(req?: UserRequest): Settings {
     if (typeof settings.fetcherAutoStart !== 'boolean') settings.fetcherAutoStart = true;
     if (typeof settings.sessionTimeoutMinutes !== 'number') settings.sessionTimeoutMinutes = 15;
 
-    console.log(`[DEBUG] Loaded settings for user ${userContext.uid}`);
+    logger.debug('Loaded settings', { uid: userContext.uid });
   } catch (e) {
-    console.error('[ERROR] Failed to load settings:', e);
+    logger.error('Failed to load settings', { err: e });
     settings = defaultSettings();
   }
   return settings;
@@ -56,9 +57,9 @@ export function saveSettings(settings: Settings, req: UserRequest): void {
   try {
     const { encryptAndPersist } = require('../persistence');
     encryptAndPersist(settings, settingsFile);
-    console.log(`[DEBUG] Saved settings for user ${userContext.uid}`);
+    logger.debug('Saved settings', { uid: userContext.uid });
   } catch (e) {
-    console.error('[ERROR] Failed to save settings:', e);
+    logger.error('Failed to save settings', { err: e });
     throw e;
   }
 }

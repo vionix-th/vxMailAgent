@@ -1,6 +1,7 @@
 import express from 'express';
 import { Filter } from '../../shared/types';
 import { UserRequest } from '../middleware/user-context';
+import logger from '../services/logger';
 // persistence is handled by injected deps.setFilters
 
 export interface FiltersRoutesDeps {
@@ -13,7 +14,7 @@ const allowedFields = ['from', 'to', 'cc', 'bcc', 'subject', 'body', 'date'] as 
 export default function registerFiltersRoutes(app: express.Express, deps: FiltersRoutesDeps) {
   // GET /api/filters
   app.get('/api/filters', (req, res) => {
-    console.log(`[${new Date().toISOString()}] GET /api/filters`);
+    logger.info('GET /api/filters');
     res.json(deps.getFilters(req as UserRequest));
   });
 
@@ -21,19 +22,19 @@ export default function registerFiltersRoutes(app: express.Express, deps: Filter
   app.post('/api/filters', (req, res) => {
     const filter: Filter = req.body;
     if (!allowedFields.includes(filter.field as any)) {
-      console.warn(`[${new Date().toISOString()}] POST /api/filters: invalid field ${String(filter.field)}`);
+      logger.warn('POST /api/filters: invalid field', { field: String(filter.field), allowedFields });
       return res.status(400).json({ error: 'Invalid filter field', field: filter.field, allowedFields });
     }
     try {
       // eslint-disable-next-line no-new
       new RegExp(filter.regex, 'i');
     } catch (err) {
-      console.warn(`[${new Date().toISOString()}] POST /api/filters: invalid regex ${String(filter.regex)} -> ${String(err)}`);
+      logger.warn('POST /api/filters: invalid regex', { regex: String(filter.regex), err: String(err) });
       return res.status(400).json({ error: 'Invalid regex', details: String(err) });
     }
     const next = [...deps.getFilters(req as UserRequest), filter];
     deps.setFilters(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] POST /api/filters: added filter ${filter.id}`);
+    logger.info('POST /api/filters: added filter', { id: filter.id });
     res.json({ success: true });
   });
 
@@ -55,7 +56,7 @@ export default function registerFiltersRoutes(app: express.Express, deps: Filter
       if (!orderedIds.includes(f.id)) reordered.push(f);
     }
     deps.setFilters(req as UserRequest, reordered);
-    console.log(`[${new Date().toISOString()}] PUT /api/filters/reorder: reordered ${reordered.length} filters`);
+    logger.info('PUT /api/filters/reorder: reordered filters', { count: reordered.length });
     res.json({ success: true });
   });
 
@@ -65,25 +66,25 @@ export default function registerFiltersRoutes(app: express.Express, deps: Filter
     const current = deps.getFilters(req as UserRequest);
     const idx = current.findIndex(f => f.id === id);
     if (idx === -1) {
-      console.warn(`[${new Date().toISOString()}] PUT /api/filters/${id}: not found`);
+      logger.warn('PUT /api/filters/:id not found', { id });
       return res.status(404).json({ error: 'Filter not found' });
     }
     const updated: Filter = req.body;
     if (!allowedFields.includes(updated.field as any)) {
-      console.warn(`[${new Date().toISOString()}] PUT /api/filters/${id}: invalid field ${String(updated.field)}`);
+      logger.warn('PUT /api/filters/:id invalid field', { id, field: String(updated.field), allowedFields });
       return res.status(400).json({ error: 'Invalid filter field', field: updated.field, allowedFields });
     }
     try {
       // eslint-disable-next-line no-new
       new RegExp(updated.regex, 'i');
     } catch (err) {
-      console.warn(`[${new Date().toISOString()}] PUT /api/filters/${id}: invalid regex ${String(updated.regex)} -> ${String(err)}`);
+      logger.warn('PUT /api/filters/:id invalid regex', { id, regex: String(updated.regex), err: String(err) });
       return res.status(400).json({ error: 'Invalid regex', details: String(err) });
     }
     const next = current.slice();
     next[idx] = updated;
     deps.setFilters(req as UserRequest, next);
-    console.log(`[${new Date().toISOString()}] PUT /api/filters/${id}: updated`);
+    logger.info('PUT /api/filters/:id updated', { id });
     res.json({ success: true });
   });
 
@@ -95,7 +96,7 @@ export default function registerFiltersRoutes(app: express.Express, deps: Filter
     const next = current.filter(f => f.id !== id);
     deps.setFilters(req as UserRequest, next);
     const after = next.length;
-    console.log(`[${new Date().toISOString()}] DELETE /api/filters/${id}: ${before - after} deleted`);
+    logger.info('DELETE /api/filters/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 }

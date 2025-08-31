@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { dataPath } from '../utils/paths';
+import logger from './logger';
 
 export interface SecurityAuditEvent {
   timestamp: string;
@@ -76,7 +77,7 @@ class SecurityAuditService {
       // Move current log to .1
       fs.renameSync(this.logPath, `${this.logPath}.1`);
     } catch (error) {
-      console.error('[SECURITY-AUDIT] Log rotation failed:', error);
+      logger.error('SECURITY-AUDIT log rotation failed', { err: error });
     }
   }
 
@@ -87,7 +88,7 @@ class SecurityAuditService {
       const logLine = JSON.stringify(event) + '\n';
       fs.appendFileSync(this.logPath, logLine, { encoding: 'utf8', mode: 0o600 });
     } catch (error) {
-      console.error('[SECURITY-AUDIT] Failed to write log entry:', error);
+      logger.error('SECURITY-AUDIT failed to write log entry', { err: error });
     }
   }
 
@@ -150,8 +151,8 @@ class SecurityAuditService {
     
     this.writeLogEntry(event);
     
-    // Also log to console for immediate attention
-    console.error(`[SECURITY-VIOLATION] ${violation}:`, details);
+    // Also log via canonical logger for immediate attention
+    logger.error('[SECURITY-VIOLATION]', { violation, details });
   }
 
   logPathTraversal(uid: string | undefined, attemptedPath: string, req?: any): void {

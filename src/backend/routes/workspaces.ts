@@ -1,6 +1,7 @@
 import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
 import { UserRequest, getUserContext } from '../middleware/user-context';
+import logger from '../services/logger';
 
 export interface WorkspacesRoutesDeps {
   getConversations: (req?: UserRequest) => ConversationThread[];
@@ -59,7 +60,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const nextItems = items.slice();
     nextItems[itemIdx] = nextItem;
     repos.workspaceItems.setAll(nextItems);
-    console.log(`[${now}] PUT /api/workspaces/items/${itemId} -> updated (rev ${nextItem.revision})`);
+    logger.info('PUT /api/workspaces/:id/items/:itemId updated', { itemId, revision: nextItem.revision });
     res.json({ success: true, item: nextItem });
   });
 
@@ -81,7 +82,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     if (hard) {
       const nextItems = items.filter(i => i.id !== itemId);
       repos.workspaceItems.setAll(nextItems);
-      console.log(`[${now}] DELETE /api/workspaces/items/${itemId}?hard=true -> removed`);
+      logger.info('DELETE /api/workspaces/:id/items/:itemId removed', { itemId, hard: true });
       return res.json({ success: true });
     }
     // Soft delete -> mark deleted and bump revision
@@ -95,7 +96,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const nextItems = items.slice();
     nextItems[itemIdx] = nextItem;
     repos.workspaceItems.setAll(nextItems);
-    console.log(`[${now}] DELETE /api/workspaces/items/${itemId} -> soft-deleted`);
+    logger.info('DELETE /api/workspaces/:id/items/:itemId soft-deleted', { itemId, hard: false, revision: nextItem.revision });
     res.json({ success: true, item: nextItem });
   });
 }

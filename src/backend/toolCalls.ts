@@ -3,6 +3,7 @@
 import { ToolCallResult } from '../shared/types';
 import { validateAgainstSchema } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
+import { logger } from './services/logger';
 
 export function createToolHandler(repos: {
   memory: Repository<MemoryEntry>;
@@ -83,7 +84,7 @@ export function createToolHandler(repos: {
 
 async function handleCalendarToolCall(payload: any): Promise<ToolCallResult> {
   // Stub: log and return static result
-  console.log('[TOOLCALL] calendar', payload);
+  logger.info('[TOOLCALL] calendar', { payload });
   if (payload.action === 'read') {
     return { kind: 'calendar', success: true, result: [{ title: 'Stub Event', start: payload.dateRange?.start, end: payload.dateRange?.end }], error: undefined };
   } else if (payload.action === 'add') {
@@ -93,7 +94,7 @@ async function handleCalendarToolCall(payload: any): Promise<ToolCallResult> {
 }
 
 async function handleTodoToolCall(payload: any): Promise<ToolCallResult> {
-  console.log('[TOOLCALL] todo', payload);
+  logger.info('[TOOLCALL] todo', { payload });
   if (payload.action === 'add') {
     return { kind: 'todo', success: true, result: { added: true, task: payload.task }, error: undefined };
   }
@@ -101,7 +102,7 @@ async function handleTodoToolCall(payload: any): Promise<ToolCallResult> {
 }
 
 async function handleFilesystemToolCall(payload: any): Promise<ToolCallResult> {
-  console.log('[TOOLCALL] filesystem', payload);
+  logger.info('[TOOLCALL] filesystem', { payload });
   if (payload.action === 'search') {
     return { kind: 'filesystem', success: true, result: [{ file: 'stub.txt', path: '/virtual/stub.txt' }], error: undefined };
   } else if (payload.action === 'retrieve') {
@@ -116,7 +117,7 @@ import { newId } from './utils/id';
 import { Repository } from './repository/core';
 
 export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<MemoryEntry>): Promise<ToolCallResult> {
-  console.log('[TOOLCALL] memory', payload);
+  logger.info('[TOOLCALL] memory', { payload });
   try {
     if (payload.action === 'search') {
       // Cascading fallback: local -> shared -> global
@@ -207,7 +208,7 @@ function validScope(s: any): s is MemoryScope {
 }
 
 async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<WorkspaceItem>): Promise<ToolCallResult> {
-  console.log('[TOOLCALL] workspace', payload);
+  logger.info('[TOOLCALL] workspace', { payload });
   try {
     if (payload.action === 'add') {
       const now = new Date().toISOString();

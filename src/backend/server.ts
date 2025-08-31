@@ -35,6 +35,7 @@ import registerCleanupRoutes from './routes/cleanup';
 import { FetcherManager } from './services/fetcher-manager';
 import { createToolHandler } from './toolCalls';
 import { attachUserContext, UserRequest, hasUserContext, getUserContext } from './middleware/user-context';
+import logger from './services/logger';
 
 /** Create and configure the backend Express server. */
 export function createServer() {
@@ -166,7 +167,7 @@ export function createServer() {
   if (origin && origin !== '*') app.use(cors({ origin, credentials: true }));
   else app.use(cors());
   app.use(express.json());
-  app.use((req, res, next) => { void res; console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`); next(); });
+  app.use((req, res, next) => { void res; logger.info('HTTP request', { method: req.method, url: req.url }); next(); });
   if ((process.env.NODE_ENV || 'development') === 'production') {
     app.enable('trust proxy');
     app.use((req, res, next) => {
@@ -301,13 +302,13 @@ export function createServer() {
         const mockReq = { userContext: { uid, repos: bundle } } as any as UserRequest;
         try {
           fetcherManager.startFetcherLoop(mockReq);
-          console.log(`[BOOT] Started fetcher loop for user ${uid}`);
+          logger.info('Boot: started fetcher loop', { uid });
           // Log to per-user fetcher log as well
           const cur: FetcherLogEntry[] = fetcherManager.getFetcherLog(mockReq) as any;
           const entry: FetcherLogEntry = { timestamp: new Date().toISOString(), level: 'info', event: 'boot_autostart', message: 'Fetcher loop auto-started on server boot' } as any;
           fetcherManager.setFetcherLog(mockReq, [...cur, entry] as any);
         } catch (e) {
-          console.error(`[BOOT] Failed to start fetcher loop for user ${uid}:`, e);
+          logger.error('Boot: failed to start fetcher loop', { uid, err: e });
           try {
             const cur: FetcherLogEntry[] = fetcherManager.getFetcherLog(mockReq) as any;
             const entry: FetcherLogEntry = { timestamp: new Date().toISOString(), level: 'error', event: 'boot_autostart_failed', message: 'Failed to auto-start fetcher loop on server boot', detail: String((e as any)?.message || e) } as any;
@@ -317,7 +318,7 @@ export function createServer() {
       }
     }
   } catch (e) {
-    console.error('[BOOT] Fetcher bootstrap failed:', e);
+    logger.error('Boot: fetcher bootstrap failed', { err: e });
   }
 
   return app;

@@ -5,6 +5,7 @@ import { conversationEngine } from '../services/engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { UserRequest, getUserContext } from '../middleware/user-context';
 import { createToolHandler } from '../toolCalls';
+import logger from '../services/logger';
 
 export interface ConversationsRoutesDeps {
   getConversations: (req?: UserRequest) => ConversationThread[];
@@ -103,7 +104,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     const next = conversations.slice();
     next[idx] = updated;
     deps.setConversations(req as UserRequest, next);
-    console.log(`[${now}] POST /api/conversations/${id}/messages -> appended user message (${content.length} chars)`);
+    logger.info('POST /api/conversations/:id/messages appended user message', { id, length: content.length });
     return res.json({ success: true });
   });
 
@@ -228,7 +229,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
         }
       }
 
-      console.log(`[${new Date().toISOString()}] POST /api/conversations/${id}/assistant -> assistant replied (${String(lastStep?.content || '').length} chars)`);
+      logger.info('POST /api/conversations/:id/assistant replied', { id, length: String(lastStep?.content || '').length });
       return res.json({ success: true, message: lastAssistant, content: lastStep?.content, toolCalls: lastStep?.toolCalls });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });

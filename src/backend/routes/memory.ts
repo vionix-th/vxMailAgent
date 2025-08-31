@@ -2,6 +2,7 @@ import express from 'express';
 import { MemoryEntry } from '../../shared/types';
 import { newId } from '../utils/id';
 import { UserRequest, getUserContext } from '../middleware/user-context';
+import logger from '../services/logger';
 
 export interface MemoryRoutesDeps {}
 
@@ -28,7 +29,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const { repos } = getUserContext(req as UserRequest);
     const next = [...repos.memory.getAll(), entry];
     repos.memory.setAll(next);
-    console.log(`[${new Date().toISOString()}] POST /api/memory: added ${entry.id}`);
+    logger.info('POST /api/memory: added', { id: entry.id });
     res.json({ success: true, entry });
   });
 
@@ -43,7 +44,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const next = current.slice();
     next[idx] = updated;
     repos.memory.setAll(next);
-    console.log(`[${new Date().toISOString()}] PUT /api/memory/${id}: updated`);
+    logger.info('PUT /api/memory/:id updated', { id });
     res.json({ success: true, entry: updated });
   });
 
@@ -56,7 +57,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const next = current.filter(e => e.id !== id);
     repos.memory.setAll(next);
     const after = next.length;
-    console.log(`[${new Date().toISOString()}] DELETE /api/memory/${id}: ${before - after} deleted`);
+    logger.info('DELETE /api/memory/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 
@@ -73,7 +74,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const next = current.filter(e => !setIds.has(e.id));
     repos.memory.setAll(next);
     const after = next.length;
-    console.log(`[${new Date().toISOString()}] DELETE /api/memory: ${before - after} deleted`);
+    logger.info('DELETE /api/memory batch deleted', { deleted: before - after });
     res.json({ success: true, deleted: before - after });
   });
 }
