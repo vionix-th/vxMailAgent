@@ -4,6 +4,7 @@ import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { UserRequest } from '../middleware/user-context';
 import { saveSettings } from '../services/settings';
 import logger from '../services/logger';
+import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
 
 /** Dependencies for fetcher routes. */
 export interface FetcherRoutesDeps {
@@ -19,19 +20,21 @@ export interface FetcherRoutesDeps {
 /** Register routes controlling the email fetcher. */
 export default function registerFetcherRoutes(app: express.Express, deps: FetcherRoutesDeps) {
   function makeCleanup(req: UserRequest) {
+    const ureq = requireReq(req);
     const hub: RepositoryHub = {
-      getFetcherLog: () => deps.getFetcherLog(req),
-      setFetcherLog: (next: FetcherLogEntry[]) => deps.setFetcherLog(req, next),
-      getOrchestrationLog: () => [],
-      setOrchestrationLog: () => {},
-      getConversations: () => [],
-      setConversations: () => {},
-      getProviderEvents: () => [],
-      setProviderEvents: () => {},
-      getTraces: () => [],
-      setTraces: () => {},
-      getWorkspaceItems: () => [],
-      setWorkspaceItems: () => {},
+      // Use per-user repositories consistently (mirrors routes/cleanup.ts)
+      getConversations: () => repoGetAll<any>(ureq, 'conversations'),
+      setConversations: (next: any[]) => repoSetAll<any>(ureq, 'conversations', next),
+      getOrchestrationLog: () => repoGetAll<any>(ureq, 'orchestrationLog'),
+      setOrchestrationLog: (next: any[]) => repoSetAll<any>(ureq, 'orchestrationLog', next),
+      getProviderEvents: () => repoGetAll<any>(ureq, 'providerEvents'),
+      setProviderEvents: (next: any[]) => repoSetAll<any>(ureq, 'providerEvents', next),
+      getTraces: () => repoGetAll<any>(ureq, 'traces'),
+      setTraces: (next: any[]) => repoSetAll<any>(ureq, 'traces', next),
+      getFetcherLog: () => repoGetAll<any>(ureq, 'fetcherLog'),
+      setFetcherLog: (next: any[]) => repoSetAll<any>(ureq, 'fetcherLog', next),
+      getWorkspaceItems: () => repoGetAll<any>(ureq, 'workspaceItems'),
+      setWorkspaceItems: (next: any[]) => repoSetAll<any>(ureq, 'workspaceItems', next),
     };
     return createCleanupService(hub);
   }
