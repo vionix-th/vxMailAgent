@@ -2,12 +2,12 @@ import express from 'express';
 import { Account } from '../../shared/types';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt, verifyJwt } from '../utils/jwt';
-import { UserRequest, getUserContext } from '../middleware/user-context';
+import { UserRequest } from '../middleware/user-context';
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo } from '../oauth/google';
 import { getOutlookAuthUrl, getOutlookTokens, getOutlookUserInfo } from '../oauth-outlook';
 import { computeExpiryISO } from '../oauth/common';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
 
 /**
  * Gets accounts from the per-user repository (user context required).
@@ -147,7 +147,7 @@ export default function registerAccountsRoutes(app: express.Express) {
     try {
       const ureq = requireReq(req);
       const accounts = getAccounts(ureq);
-      logger.info('Loaded accounts', { count: accounts.length, uid: getUserContext(ureq).uid });
+      logger.info('Loaded accounts', { count: accounts.length, uid: requireUid(ureq) });
       res.json(accounts);
     } catch (e) {
       logger.error('Error loading accounts', { err: e });
@@ -259,7 +259,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       }
       
       saveAccounts(ureq, accounts);
-      const source = `user ${getUserContext(ureq).uid}`;
+      const source = `user ${requireUid(ureq)}`;
       logger.info('Saved accounts to store', { count: accounts.length, source });
       res.json({ success: true });
     } catch (e) {

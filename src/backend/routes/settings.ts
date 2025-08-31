@@ -1,9 +1,9 @@
 import express from 'express';
-import { requireUserContext, UserRequest, getUserContext } from '../middleware/user-context';
+import { requireUserContext, UserRequest } from '../middleware/user-context';
 import { errorHandler } from '../services/error-handler';
 import { securityAudit } from '../services/security-audit';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
 
 export interface SettingsRoutesDeps {
   // Kept for compatibility; not used after per-user refactor
@@ -25,7 +25,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
   // GET /api/settings (per-user)
   app.get('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res: express.Response) => {
     const ureq = requireReq(req);
-    const { uid } = getUserContext(ureq);
+    const uid = requireUid(ureq);
     
     securityAudit.logDataAccess(uid, {
       resource: 'settings',
@@ -48,7 +48,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
   // PUT /api/settings (per-user)
   app.put('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res: express.Response) => {
     const ureq = requireReq(req);
-    const { uid } = getUserContext(ureq);
+    const uid = requireUid(ureq);
     
     // Input validation
     errorHandler.validateInput(typeof req.body === 'object', 'Request body must be an object');

@@ -12,6 +12,16 @@ export function requireUserRepo<K extends keyof RepoBundle>(req: UserRequest, ke
   return getUserContext(req).repos[key];
 }
 
+/** Get the current user's UID, requiring user context. */
+export function requireUid(req: UserRequest): string {
+  return getUserContext(req).uid;
+}
+
+/** Get the per-user RepoBundle, requiring user context. */
+export function requireRepos(req: UserRequest): RepoBundle {
+  return getUserContext(req).repos;
+}
+
 /** Get all items from a repository by key. */
 export function repoGetAll<T = any>(req: UserRequest, key: keyof RepoBundle): T[] {
   const repo = requireUserRepo(req, key) as unknown as { getAll: () => T[] };
@@ -25,3 +35,4 @@ export function repoSetAll<T = any>(req: UserRequest, key: keyof RepoBundle, nex
   if (!repo || typeof repo.setAll !== 'function') throw new Error('Repository does not support setAll');
   repo.setAll!(next);
 }
+

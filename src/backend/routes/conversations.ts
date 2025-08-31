@@ -3,10 +3,10 @@ import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent } from '../../shared/types';
 import { conversationEngine } from '../services/engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
-import { UserRequest, getUserContext } from '../middleware/user-context';
+import { UserRequest } from '../middleware/user-context';
 import { createToolHandler } from '../toolCalls';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireRepos } from '../utils/repo-access';
 
 export interface ConversationsRoutesDeps {
   getConversations: (req?: UserRequest) => ConversationThread[];
@@ -215,7 +215,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             api,
             TOOL_DESCRIPTORS,
             (next: ConversationThread[]) => deps.setConversations(req as UserRequest, next),
-            createToolHandler(getUserContext(requireReq(req as UserRequest)).repos),
+            createToolHandler(requireRepos(requireReq(req as UserRequest))),
             undefined, // No traceId in routes path
             (ev: ProviderEvent) => deps.logProviderEvent(ev, req as UserRequest) // Req-aware provider logging
           );

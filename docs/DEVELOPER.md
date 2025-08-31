@@ -81,10 +81,48 @@ Location: `src/backend/repository/registry.ts`
   - `userPaths(uid)` derives absolute, validated paths under `DATA_DIR/users/{uid}` and creates directories with 0700 permissions.
   - Disallows symlinks and path traversal; validates containment under the per-user root.
   - **SECURITY**: Only `USERS_FILE` constant exists - all other global file constants have been removed to prevent data leakage.
-- Config (multi-user limits): `src/backend/config.ts`
-  - `USER_REGISTRY_TTL_MINUTES`, `USER_REGISTRY_MAX_ENTRIES`
-  - `USER_MAX_CONVERSATIONS`, `USER_MAX_LOGS_PER_TYPE`, `USER_MAX_FILE_SIZE_MB`
-  - Behavior is always per-user; no legacy global stores.
+  - Config (multi-user limits): `src/backend/config.ts`
+    - `USER_REGISTRY_TTL_MINUTES`, `USER_REGISTRY_MAX_ENTRIES`
+    - `USER_MAX_CONVERSATIONS`, `USER_MAX_LOGS_PER_TYPE`, `USER_MAX_FILE_SIZE_MB`
+    - Behavior is always per-user; no legacy global stores.
+
+#### 3. Repository Access Helpers (standard pattern)
+Location: `src/backend/utils/repo-access.ts`
+
+- Exposed helpers to enforce user context and centralize repo access:
+  - `requireReq(req)` → returns `UserRequest` with guaranteed user context or throws.
+  - `requireUid(req)` → returns current user's UID (string).
+  - `requireRepos(req)` → returns the per-user `RepoBundle`.
+  - `requireUserRepo(req, key)` → returns a specific repo from `RepoBundle`.
+  - `repoGetAll(req, key)` / `repoSetAll(req, key, next)` → typed helpers for common CRUD patterns.
+
+- Usage rules:
+  - Do not import `getUserContext` or `hasUserContext` in routes/services. These are internal to middleware and helpers.
+  - Always call `requireReq(req)` at the beginning of a handler before any repository or UID access.
+  - For logging/audit, prefer `requireUid(ureq)` to include the UID.
+  - For passing repositories to tool handlers, use `requireRepos(ureq)`.
+
+- Example (route):
+```ts
+app.get('/api/settings', requireUserContext as any, async (req: UserRequest, res) => {
+  const ureq = requireReq(req);
+  const uid = requireUid(ureq);
+  const all = repoGetAll<any>(ureq, 'settings');
+  const settings = Array.isArray(all) && all[0] || { /* defaults */ };
+  logger.info('GET /api/settings', { uid });
+  res.json(settings);
+});
+```
+
+- Example (service):
+```ts
+export function loadSettings(req: UserRequest) {
+  const ureq = requireReq(req);
+  const settings = repoGetAll<any>(ureq, 'settings')[0] || defaultSettings();
+  logger.debug('Loaded settings', { uid: requireUid(ureq) });
+  return settings;
+}
+```
 
 ### User Isolation Enforcement
 

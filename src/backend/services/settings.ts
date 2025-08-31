@@ -1,6 +1,6 @@
-import { UserRequest, getUserContext } from '../middleware/user-context';
+import { UserRequest } from '../middleware/user-context';
 import logger from './logger';
-import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
 
 import type { ApiConfig } from '../../shared/types';
 
@@ -25,7 +25,7 @@ export function loadSettings(req?: UserRequest): Settings {
     if (!settings.signatures || typeof settings.signatures !== 'object') settings.signatures = {};
     if (typeof settings.fetcherAutoStart !== 'boolean') settings.fetcherAutoStart = true;
     if (typeof settings.sessionTimeoutMinutes !== 'number') settings.sessionTimeoutMinutes = 15;
-    logger.debug('Loaded settings', { uid: getUserContext(ureq).uid });
+    logger.debug('Loaded settings', { uid: requireUid(ureq) });
     return settings;
   } catch (e) {
     logger.error('Failed to load settings', { err: e });
@@ -38,7 +38,7 @@ export function saveSettings(settings: Settings, req: UserRequest): void {
   const ureq = requireReq(req);
   try {
     repoSetAll<Settings>(ureq, 'settings', [settings]);
-    logger.debug('Saved settings', { uid: getUserContext(ureq).uid });
+    logger.debug('Saved settings', { uid: requireUid(ureq) });
   } catch (e) {
     logger.error('Failed to save settings', { err: e });
     throw e;

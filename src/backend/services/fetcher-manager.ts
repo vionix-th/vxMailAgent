@@ -1,5 +1,6 @@
 import { FetcherService, FetcherDeps, initFetcher } from './fetcher';
-import { UserRequest, hasUserContext, getUserContext } from '../middleware/user-context';
+import { UserRequest } from '../middleware/user-context';
+import { requireReq, requireUid } from '../utils/repo-access';
 
 /**
  * Per-user fetcher dependencies that include user context
@@ -36,10 +37,8 @@ export class FetcherManager {
    * Get or create fetcher for user
    */
   getFetcher(req: UserRequest): FetcherService {
-    if (!req || !hasUserContext(req)) {
-      throw new Error('User context required: fetcher is per-user only');
-    }
-    const uid = getUserContext(req).uid;
+    const ureq = requireReq(req);
+    const uid = requireUid(ureq);
     if (!this.fetchers.has(uid)) {
       const userDeps = this.createUserFetcher(uid);
       // Convert user deps to standard fetcher deps
