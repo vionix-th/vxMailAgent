@@ -2,105 +2,26 @@ import express from 'express';
 import cors from 'cors';
 
 import { requireAuth } from './middleware/auth';
-import { setOrchestrationLog as svcSetOrchestrationLog, logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent, getOrchestrationLog, getTraces } from './services/logging';
+import { logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent } from './services/logging';
 
-import { Filter, Director, Agent, Prompt, Imprint, OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, User, FetcherLogEntry } from '../shared/types';
+import { User, FetcherLogEntry } from '../shared/types';
 import { USERS_FILE } from './utils/paths';
-import { newId } from './utils/id';
 import { createJsonRepository } from './repository/fileRepositories';
 import { setUsersRepo, getUsersRepo } from './services/users';
 import { repoBundleRegistry } from './repository/registry';
-import registerAuthSessionRoutes from './routes/auth-session';
-
-import registerTestRoutes from './routes/test';
-import registerMemoryRoutes from './routes/memory';
-import registerOrchestrationRoutes from './routes/orchestration';
-import registerSettingsRoutes from './routes/settings';
-import registerAgentsRoutes from './routes/agents';
-import registerFiltersRoutes from './routes/filters';
-import registerDirectorsRoutes from './routes/directors';
-import registerPromptsRoutes from './routes/prompts';
-import registerTemplatesRoutes from './routes/templates';
-import registerConversationsRoutes from './routes/conversations';
-import registerWorkspacesRoutes from './routes/workspaces';
-import registerImprintsRoutes from './routes/imprints';
-import registerAccountsRoutes from './routes/accounts';
-import registerFetcherRoutes from './routes/fetcher';
-import registerDiagnosticsRoutes from './routes/diagnostics';
-import registerDiagnosticTracesRoutes from './routes/diagnostic-traces';
-import registerUnifiedDiagnosticsRoutes from './routes/unified-diagnostics';
-import registerCleanupRoutes from './routes/cleanup';
 import registerHealthRoutes from './routes/health';
 // Cleanup routes kept (admin); health route is unauthenticated
 import { FetcherManager } from './services/fetcher-manager';
 import { createToolHandler } from './toolCalls';
 import { attachUserContext, UserRequest } from './middleware/user-context';
 import logger from './services/logger';
-import { requireReq, requireUserRepo, repoGetAll, repoSetAll } from './utils/repo-access';
+import { createLiveRepos } from './liveRepos';
+import registerRoutes from './routes';
 
 /** Create and configure the backend Express server. */
 export function createServer() {
   const app = express();
-
-  function getPromptsLive(req?: UserRequest): Prompt[] { 
-    return repoGetAll<Prompt>(requireReq(req), 'prompts');
-  }
-
-  function getAgentsLive(req?: UserRequest): Agent[] {
-    return repoGetAll<Agent>(requireReq(req), 'agents');
-  }
-  function getDirectorsLive(req?: UserRequest): Director[] {
-    return repoGetAll<Director>(requireReq(req), 'directors');
-  }
-  function getFiltersLive(req?: UserRequest): Filter[] {
-    return repoGetAll<Filter>(requireReq(req), 'filters');
-  }
-  function getImprintsLive(req?: UserRequest): Imprint[] {
-    return repoGetAll<Imprint>(requireReq(req), 'imprints');
-  }
-  function getOrchestrationLogLive(req?: UserRequest): OrchestrationDiagnosticEntry[] { 
-    return repoGetAll<OrchestrationDiagnosticEntry>(requireReq(req), 'orchestrationLog');
-  }
-  function getConversationsLive(req?: UserRequest): ConversationThread[] {
-    return repoGetAll<ConversationThread>(requireReq(req), 'conversations');
-  }
-  function getSettingsLive(req?: UserRequest) { 
-    const r = requireReq(req);
-    return repoGetAll<any>(r, 'settings')[0] || {};
-  }
-
-  // Setter functions for per-user repositories
-  function setPromptsLive(req: UserRequest, next: Prompt[]): void {
-    repoSetAll<Prompt>(requireReq(req), 'prompts', next);
-  }
-
-  function setAgentsLive(req: UserRequest, next: Agent[]): void {
-    repoSetAll<Agent>(requireReq(req), 'agents', next);
-  }
-
-  function setDirectorsLive(req: UserRequest, next: Director[]): void {
-    repoSetAll<Director>(requireReq(req), 'directors', next);
-  }
-
-  function setFiltersLive(req: UserRequest, next: Filter[]): void {
-    repoSetAll<Filter>(requireReq(req), 'filters', next);
-  }
-
-  function setImprintsLive(req: UserRequest, next: Imprint[]): void {
-    repoSetAll<Imprint>(requireReq(req), 'imprints', next);
-  }
-
-  function setConversationsLive(req: UserRequest, next: ConversationThread[]) {
-    repoSetAll<ConversationThread>(requireReq(req), 'conversations', next);
-  }
-
-  function getProviderRepo(req?: UserRequest) {
-    return requireUserRepo(requireReq(req), 'providerEvents');
-  }
-
-  function getTracesRepo(req?: UserRequest) {
-    return requireUserRepo(requireReq(req), 'traces');
-  }
+  const repos = createLiveRepos();
 
   app.use((req, res, next) => {
     void req; // satisfy noUnusedParameters
@@ -133,67 +54,9 @@ export function createServer() {
   // System-level repositories: only users registry remains
   const usersRepo = createJsonRepository<User>(USERS_FILE);
   setUsersRepo(usersRepo);
-  registerAuthSessionRoutes(app);
-  registerTestRoutes(app, { 
-    getPrompts: (req?: UserRequest) => getPromptsLive(req), 
-    getDirectors: (req?: UserRequest) => getDirectorsLive(req), 
-    getAgents: (req?: UserRequest) => getAgentsLive(req) 
-  });
-  registerMemoryRoutes(app, {});
-  registerOrchestrationRoutes(app, { getOrchestrationLog: (req?: UserRequest) => getOrchestrationLogLive(req), setOrchestrationLog: (next: OrchestrationDiagnosticEntry[], req?: UserRequest) => { svcSetOrchestrationLog(next, req); }, getSettings: (req?: UserRequest) => getSettingsLive(req) });
-  registerSettingsRoutes(app, {});
-  registerAgentsRoutes(app, { 
-    getAgents: (req?: UserRequest) => getAgentsLive(req), 
-    setAgents: (req: UserRequest, next: Agent[]) => setAgentsLive(req, next) 
-  });
-  registerFiltersRoutes(app, { 
-    getFilters: (req?: UserRequest) => getFiltersLive(req), 
-    setFilters: (req: UserRequest, next: Filter[]) => setFiltersLive(req, next) 
-  });
-  registerDirectorsRoutes(app, { 
-    getDirectors: (req?: UserRequest) => getDirectorsLive(req), 
-    setDirectors: (req: UserRequest, next: Director[]) => setDirectorsLive(req, next) 
-  });
-  registerPromptsRoutes(app, { 
-    getPrompts: (req?: UserRequest) => getPromptsLive(req), 
-    setPrompts: (req: UserRequest, next: Prompt[]) => setPromptsLive(req, next), 
-    getSettings: (req?: UserRequest) => getSettingsLive(req), 
-    getAgents: (req?: UserRequest) => getAgentsLive(req), 
-    getDirectors: (req?: UserRequest) => getDirectorsLive(req) 
-  });
-  registerTemplatesRoutes(app);
-  registerConversationsRoutes(app, { 
-    getConversations: (req?: UserRequest) => getConversationsLive(req), 
-    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next), 
-    getSettings: (req?: UserRequest) => getSettingsLive(req), 
-    logProviderEvent: (e: ProviderEvent, req?: UserRequest) => { svcLogProviderEvent(e, req); }, 
-    newId, 
-    getDirectors: (req?: UserRequest) => getDirectorsLive(req), 
-    getAgents: (req?: UserRequest) => getAgentsLive(req) 
-  });
-  registerWorkspacesRoutes(app, { 
-    getConversations: (req?: UserRequest) => getConversationsLive(req), 
-    setConversations: (req: UserRequest, next: ConversationThread[]) => setConversationsLive(req, next)
-  });
-  registerImprintsRoutes(app, { 
-    getImprints: (req?: UserRequest) => getImprintsLive(req), 
-    setImprints: (req: UserRequest, next: Imprint[]) => setImprintsLive(req, next) 
-  });
-  registerAccountsRoutes(app);
-  registerDiagnosticsRoutes(app, { getOrchestrationLog: (req?: UserRequest) => getOrchestrationLogLive(req), getConversations: (req?: UserRequest) => getConversationsLive(req) });
-  registerDiagnosticTracesRoutes(app, { getTraces: (req?: UserRequest) => getTracesRepo(req).getAll(), setTraces: (req: UserRequest, next) => getTracesRepo(req).setAll(next) });
-  registerUnifiedDiagnosticsRoutes(app, {
-    getOrchestrationLog: (req?: UserRequest) => getOrchestrationLog(req),
-    getConversations: (req?: UserRequest) => getConversationsLive(req),
-    getProviderEvents: (req?: UserRequest) => getProviderRepo(req).getAll(),
-    getTraces: (req?: UserRequest) => getTraces(req)
-  });
-
-  // Initialize FetcherManager with per-user fetcher factory
   const fetcherManager = new FetcherManager((uid: string) => {
-    // Get user repository bundle directly for background operations
     const userBundle = repoBundleRegistry.getBundle(uid);
-    
+
     return {
       uid,
       getSettings: () => userBundle.settings.getAll()[0] || {},
@@ -205,14 +68,13 @@ export function createServer() {
       setConversations: (next: any[]) => userBundle.conversations.setAll(next),
       getAccounts: () => userBundle.accounts.getAll(),
       setAccounts: (accounts: any[]) => userBundle.accounts.setAll(accounts),
-      logOrch: (e: any) => { 
-        // Create mock request for logging service
+      logOrch: (e: any) => {
         const mockReq = { userContext: { uid, repos: userBundle } } as any;
-        svcLogOrch(e, mockReq); 
+        svcLogOrch(e, mockReq);
       },
-      logProviderEvent: (e: any) => { 
+      logProviderEvent: (e: any) => {
         const mockReq = { userContext: { uid, repos: userBundle } } as any;
-        svcLogProviderEvent(e, mockReq); 
+        svcLogProviderEvent(e, mockReq);
       },
       getFetcherLog: () => userBundle.fetcherLog.getAll(),
       setFetcherLog: (next: any[]) => userBundle.fetcherLog.setAll(next),
@@ -221,17 +83,7 @@ export function createServer() {
     };
   });
 
-  registerFetcherRoutes(app, {
-    getStatus: (req: UserRequest) => fetcherManager.getStatus(req),
-    startFetcherLoop: (req: UserRequest) => fetcherManager.startFetcherLoop(req),
-    stopFetcherLoop: (req: UserRequest) => fetcherManager.stopFetcherLoop(req),
-    fetchEmails: (req: UserRequest) => fetcherManager.fetchEmails(req),
-    getSettings: (req: UserRequest) => getSettingsLive(req),
-    getFetcherLog: (req: UserRequest) => fetcherManager.getFetcherLog(req),
-    setFetcherLog: (req: UserRequest, next) => fetcherManager.setFetcherLog(req, next)
-  });
-  // Cleanup endpoints (per-user)
-  registerCleanupRoutes(app);
+  registerRoutes(app, { ...repos, fetcherManager });
   
   // Bootstrapping per-user fetchers on server startup for users who enabled auto-start
   try {
