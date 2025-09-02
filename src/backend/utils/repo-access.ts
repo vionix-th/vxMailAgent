@@ -23,16 +23,16 @@ export function requireRepos(req: UserRequest): RepoBundle {
 }
 
 /** Get all items from a repository by key. */
-export function repoGetAll<T = any>(req: UserRequest, key: keyof RepoBundle): T[] {
-  const repo = requireUserRepo(req, key) as unknown as { getAll: () => T[] };
+export async function repoGetAll<T = any>(req: UserRequest, key: keyof RepoBundle): Promise<T[]> {
+  const repo = requireUserRepo(req, key) as unknown as { getAll: () => Promise<T[]> };
   if (!repo || typeof repo.getAll !== 'function') throw new Error('Repository does not support getAll');
   return repo.getAll();
 }
 
 /** Replace all items in a repository by key. */
-export function repoSetAll<T = any>(req: UserRequest, key: keyof RepoBundle, next: T[]): void {
-  const repo = requireUserRepo(req, key) as unknown as { setAll?: (n: T[]) => void };
+export async function repoSetAll<T = any>(req: UserRequest, key: keyof RepoBundle, next: T[]): Promise<void> {
+  const repo = requireUserRepo(req, key) as unknown as { setAll?: (n: T[]) => Promise<void> };
   if (!repo || typeof repo.setAll !== 'function') throw new Error('Repository does not support setAll');
-  repo.setAll!(next);
+  await repo.setAll!(next);
 }
 

@@ -55,16 +55,16 @@ export function getWorkspace(thread: ConversationThread): WorkspaceItem[] {
 /**
  * Replaces the workspace items for a conversation and persists the updated list.
  */
-export function setWorkspace(
+export async function setWorkspace(
   conversations: ConversationThread[],
   index: number,
   items: WorkspaceItem[],
   conversationsFilePath: string
-) {
+): Promise<void> {
   const current = conversations[index];
   conversations[index] = { ...current, workspaceItems: items } as ConversationThread;
   try {
-    persistence.encryptAndPersist(conversations, conversationsFilePath);
+    await persistence.encryptAndPersist(conversations, conversationsFilePath);
   } catch {}
 }
 
@@ -135,7 +135,7 @@ export async function runWorkspaceOp<TOut = any>(
     nowIso: () => string;
     resolve: () => { index: number; thread: ConversationThread };
     get: (thread: ConversationThread) => WorkspaceItem[];
-    set: (index: number, items: WorkspaceItem[]) => void;
+    set: (index: number, items: WorkspaceItem[]) => Promise<void>;
   }) => Promise<TOut>
 ): Promise<TOut> {
   const { conversations, dirThreadId, conversationsFilePath } = ctx;

@@ -22,29 +22,29 @@ function getTracesRepo(req?: UserRequest): TracesRepository {
 }
 
 /** Append an orchestration diagnostic entry to the log. */
-export function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest) {
+export async function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest): Promise<void> {
   const repo = getOrchRepo(req);
-  const list = repo.getAll();
+  const list = await repo.getAll();
   list.push(e);
-  repo.setAll(list);
+  await repo.setAll(list);
 }
 
 /** Persist a provider request/response diagnostic entry. */
-export function logProviderEvent(e: ProviderEvent, req?: UserRequest) {
+export async function logProviderEvent(e: ProviderEvent, req?: UserRequest): Promise<void> {
   const repo = getProviderRepo(req);
-  repo.append(e);
+  await repo.append(e);
 }
 
 /** Retrieve all orchestration diagnostic entries. */
-export function getOrchestrationLog(req?: UserRequest) {
+export async function getOrchestrationLog(req?: UserRequest): Promise<OrchestrationDiagnosticEntry[]> {
   const repo = getOrchRepo(req);
   return repo.getAll();
 }
 
 /** Replace the orchestration diagnostic log with the provided list. */
-export function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: UserRequest) {
+export async function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: UserRequest): Promise<void> {
   const repo = getOrchRepo(req);
-  repo.setAll(next);
+  await repo.setAll(next);
 }
 
 // ---------- Structured tracing ----------
@@ -83,7 +83,7 @@ function redact(obj: any): any {
  * Create a new trace and persist it if tracing is enabled.
  * Returns the generated trace id.
  */
-export function beginTrace(seed?: Partial<Trace>, req?: UserRequest): string {
+export async function beginTrace(seed?: Partial<Trace>, req?: UserRequest): Promise<string> {
   const id = seed?.id || newId();
   const t: Trace = {
     id,
@@ -95,15 +95,15 @@ export function beginTrace(seed?: Partial<Trace>, req?: UserRequest): string {
     spans: [],
   };
   const repo = getTracesRepo(req);
-  if (TRACE_PERSIST && repo) repo.append(t);
+  if (TRACE_PERSIST && repo) await repo.append(t);
   return id;
 }
 
 /** Update a trace when it completes, optionally recording status or error. */
-export function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: UserRequest) {
+export async function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: UserRequest): Promise<void> {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
-  repo.update(id, (t) => {
+  await repo.update(id, (t) => {
     t.endedAt = new Date().toISOString();
     if (status) t.status = status;
     if (error) t.error = error;
@@ -113,12 +113,12 @@ export function endTrace(id: string, status?: 'ok' | 'error', error?: string, re
 /**
  * Start a new span within an existing trace. Returns the span id.
  */
-export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }, req?: UserRequest): string {
+export async function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }, req?: UserRequest): Promise<string> {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return '';
   const sid = span.id || newId();
   const now = new Date().toISOString();
-  repo.update(traceId, (t) => {
+  await repo.update(traceId, (t) => {
     if (t.spans.length >= TRACE_MAX_SPANS) return;
     const s: Span = {
       id: sid,
@@ -144,10 +144,10 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
 /**
  * Finalize a span and optionally annotate its status, error, or response.
  */
-export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: UserRequest) {
+export async function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: UserRequest): Promise<void> {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
-  repo.update(traceId, (t) => {
+  await repo.update(traceId, (t) => {
     const s = t.spans.find(x => x.id === spanId);
     if (!s) return;
     const end = new Date().toISOString();
@@ -162,10 +162,10 @@ export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok'
 }
 
 /** Merge additional annotations into an existing span. */
-export function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: UserRequest) {
+export async function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: UserRequest): Promise<void> {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
-  repo.update(traceId, (t) => {
+  await repo.update(traceId, (t) => {
     const s = t.spans.find(x => x.id === spanId);
     if (!s) return;
     s.annotations = Object.assign({}, s.annotations || {}, annotations);
@@ -173,7 +173,7 @@ export function annotateSpan(traceId: string, spanId: string, annotations: Recor
 }
 
 /** Retrieve all traces available to the request. */
-export function getTraces(req?: UserRequest) {
+export async function getTraces(req?: UserRequest): Promise<Trace[]> {
   const repo = getTracesRepo(req);
   return repo ? repo.getAll() : [];
 }

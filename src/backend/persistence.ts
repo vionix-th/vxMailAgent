@@ -2,33 +2,9 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { VX_MAILAGENT_KEY, USER_MAX_FILE_SIZE_MB } from './config';
-import { validatePathSafety } from './utils/paths';
+import { validatePathSafety, resolveDataDir } from './utils/paths';
 import { logger } from './services/logger';
 
-/**
- * Resolve the data directory for persistent storage. Uses `VX_MAILAGENT_DATA_DIR`
- * when set, otherwise probes common locations for both source and compiled
- * runtimes.
- */
-const resolveDataDir = (): string => {
-  const envDir = process.env.VX_MAILAGENT_DATA_DIR;
-  if (envDir && envDir.trim()) return path.resolve(envDir);
-  const candidates = [
-    // ts-node runtime (src/backend -> ../../data => repo/data)
-    path.resolve(__dirname, '../../data'),
-    // compiled runtime (dist/backend -> ../../../../data => repo/data)
-    path.resolve(__dirname, '../../../../data'),
-    // when launched with cwd at src/backend
-    path.resolve(process.cwd(), '../../data'),
-    // when launched with cwd at repo root
-    path.resolve(process.cwd(), 'data'),
-  ];
-  for (const p of candidates) {
-    try { if (fs.existsSync(p) && fs.statSync(p).isDirectory()) return p; } catch {}
-  }
-  // Fallback to the ts-node default
-  return candidates[0];
-};
 export const DATA_DIR = resolveDataDir();
 
 const ALGORITHM = 'aes-256-gcm';
@@ -55,20 +31,20 @@ const getKey = (): Buffer | undefined => {
  * @param filePath - Target file path
  * @param containerPath - Optional container path for security validation
  */
-export function encryptAndPersist(obj: any, filePath: string, containerPath?: string) {
+export async function encryptAndPersist(obj: any, filePath: string, containerPath?: string): Promise<void> {
   // Security validation if container path provided
   if (containerPath && !validatePathSafety(filePath, containerPath)) {
     throw new Error(`Security violation: path ${filePath} is not safe relative to ${containerPath}`);
   }
-  
+
   const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  }
-  
+  try {
+    await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+  } catch {}
+
   const key = getKey();
   let content: string;
-  
+
   if (!key) {
     content = JSON.stringify(obj);
   } else {
@@ -79,33 +55,28 @@ export function encryptAndPersist(obj: any, filePath: string, containerPath?: st
     const tag = cipher.getAuthTag();
     content = Buffer.concat([iv, tag, encrypted]).toString(ENCODING);
   }
-  
+
   // Size validation
   const maxSizeBytes = USER_MAX_FILE_SIZE_MB * 1024 * 1024;
   if (Buffer.byteLength(content, 'utf8') > maxSizeBytes) {
     throw new Error(`File size exceeds limit of ${USER_MAX_FILE_SIZE_MB}MB`);
   }
-  
+
   // Atomic write: tmp file + fsync + rename
   const tmpPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substr(2, 9)}`;
-  
+
   try {
-    // Write to temporary file with secure permissions
-    fs.writeFileSync(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
-    
-    // Force write to disk
-    const fd = fs.openSync(tmpPath, 'r+');
-    fs.fsyncSync(fd);
-    fs.closeSync(fd);
-    
-    // Atomic rename
-    fs.renameSync(tmpPath, filePath);
-  } catch (error) {
-    // Clean up temp file on error
+    await fs.promises.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
+    const handle = await fs.promises.open(tmpPath, 'r+');
     try {
-      if (fs.existsSync(tmpPath)) {
-        fs.unlinkSync(tmpPath);
-      }
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.promises.rename(tmpPath, filePath);
+  } catch (error) {
+    try {
+      await fs.promises.unlink(tmpPath);
     } catch {}
     throw error;
   }
@@ -117,25 +88,25 @@ export function encryptAndPersist(obj: any, filePath: string, containerPath?: st
  * @param filePath - Path to file to load
  * @param containerPath - Optional container path for security validation
  */
-export function loadAndDecrypt(filePath: string, containerPath?: string): any {
+export async function loadAndDecrypt(filePath: string, containerPath?: string): Promise<any> {
   // Security validation if container path provided
   if (containerPath && !validatePathSafety(filePath, containerPath)) {
     throw new Error(`Security violation: path ${filePath} is not safe relative to ${containerPath}`);
   }
-  
+
   const key = getKey();
-  const payload = fs.readFileSync(filePath, { encoding: 'utf8' });
-  
+  const payload = await fs.promises.readFile(filePath, { encoding: 'utf8' });
+
   // Size validation
   const maxSizeBytes = USER_MAX_FILE_SIZE_MB * 1024 * 1024;
   if (Buffer.byteLength(payload, 'utf8') > maxSizeBytes) {
     throw new Error(`File size exceeds limit of ${USER_MAX_FILE_SIZE_MB}MB`);
   }
-  
+
   if (!key) {
     return JSON.parse(payload);
   }
-  
+
   try {
     const buf = Buffer.from(payload, ENCODING);
     const iv = buf.slice(0, IV_LENGTH);

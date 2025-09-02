@@ -30,7 +30,7 @@ export class UserContextError extends Error {
  * Middleware to attach user context to requests.
  * Requires authentication middleware to run first.
  */
-export function attachUserContext(req: UserRequest, res: Response, next: NextFunction): Response | void {
+export async function attachUserContext(req: UserRequest, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     // Allow public endpoints (auth/health) to proceed without user context
     const path = (req as any).path || req.url || '';
@@ -64,7 +64,7 @@ export function attachUserContext(req: UserRequest, res: Response, next: NextFun
     }
     
     // Get or create repository bundle for user
-    const repos = getUserRepoBundle(uid);
+    const repos = await getUserRepoBundle(uid);
     
     // Attach user context to request
     (req as UserRequest).userContext = {
