@@ -1,6 +1,8 @@
 import { FetcherService, FetcherDeps, initFetcher } from './fetcher';
 import { UserRequest } from '../middleware/user-context';
 import { requireReq, requireUid } from '../utils/repo-access';
+import { FETCHER_MANAGER_TTL_MINUTES, FETCHER_MANAGER_MAX_FETCHERS } from '../config';
+import logger from './logger';
 
 /**
  * Per-user fetcher dependencies that include user context
@@ -25,13 +27,21 @@ export interface UserFetcherDeps {
   getUserReq: () => UserRequest;
 }
 
+interface FetcherEntry {
+  service: FetcherService;
+  lastAccessed: number;
+}
+
 /**
  * Manager for per-user fetcher instances
  */
 export class FetcherManager {
-  private fetchers = new Map<string, FetcherService>();
-  
-  constructor(private createUserFetcher: (uid: string) => UserFetcherDeps) {}
+  private fetchers = new Map<string, FetcherEntry>();
+  private cleanupTimer: NodeJS.Timeout | null = null;
+
+  constructor(private createUserFetcher: (uid: string) => UserFetcherDeps) {
+    this.startCleanupTimer();
+  }
 
   /**
    * Get or create fetcher for user
@@ -39,7 +49,11 @@ export class FetcherManager {
   getFetcher(req: UserRequest): FetcherService {
     const ureq = requireReq(req);
     const uid = requireUid(ureq);
-    if (!this.fetchers.has(uid)) {
+    let entry = this.fetchers.get(uid);
+    if (!entry) {
+      if (this.fetchers.size >= FETCHER_MANAGER_MAX_FETCHERS) {
+        this.evictOldest();
+      }
       const userDeps = this.createUserFetcher(uid);
       // Convert user deps to standard fetcher deps
       const fetcherDeps: FetcherDeps = {
@@ -59,9 +73,12 @@ export class FetcherManager {
         getToolHandler: userDeps.getToolHandler,
         getUserReq: userDeps.getUserReq,
       };
-      this.fetchers.set(uid, initFetcher(fetcherDeps));
+      entry = { service: initFetcher(fetcherDeps), lastAccessed: Date.now() };
+      this.fetchers.set(uid, entry);
+    } else {
+      entry.lastAccessed = Date.now();
     }
-    return this.fetchers.get(uid)!;
+    return entry.service;
   }
 
   /**
@@ -113,10 +130,40 @@ export class FetcherManager {
   }
 
   /**
-   * Clean up expired user fetchers (optional TTL-based eviction)
+   * Clean up expired user fetchers (TTL-based eviction)
    */
   cleanup(): void {
-    // Implementation could include TTL-based eviction similar to RepoBundleRegistry
-    // For now, keep all fetchers active
+    const ttlMs = Math.max(0, FETCHER_MANAGER_TTL_MINUTES) * 60 * 1000;
+    if (ttlMs <= 0) return;
+    const now = Date.now();
+    for (const [uid, entry] of this.fetchers.entries()) {
+      if (now - entry.lastAccessed > ttlMs) {
+        try { entry.service.stopFetcherLoop(); } catch {}
+        this.fetchers.delete(uid);
+        logger.info('FETCHER_MANAGER evicted idle fetcher', { uid });
+      }
+    }
+  }
+
+  private evictOldest(): void {
+    let oldestUid: string | null = null;
+    let oldestTime = Infinity;
+    for (const [uid, entry] of this.fetchers.entries()) {
+      if (entry.lastAccessed < oldestTime) {
+        oldestTime = entry.lastAccessed;
+        oldestUid = uid;
+      }
+    }
+    if (oldestUid) {
+      const entry = this.fetchers.get(oldestUid)!;
+      try { entry.service.stopFetcherLoop(); } catch {}
+      this.fetchers.delete(oldestUid);
+      logger.info('FETCHER_MANAGER evicted oldest fetcher to respect cap', { uid: oldestUid });
+    }
+  }
+
+  private startCleanupTimer(): void {
+    if (this.cleanupTimer) return;
+    this.cleanupTimer = setInterval(() => this.cleanup(), 5 * 60 * 1000);
   }
 }

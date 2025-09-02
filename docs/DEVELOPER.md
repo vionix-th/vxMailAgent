@@ -84,6 +84,7 @@ Location: `src/backend/repository/registry.ts`
   - Config (multi-user limits): `src/backend/config.ts`
     - `USER_REGISTRY_TTL_MINUTES`, `USER_REGISTRY_MAX_ENTRIES`
     - `USER_MAX_CONVERSATIONS`, `USER_MAX_LOGS_PER_TYPE`, `USER_MAX_FILE_SIZE_MB`
+    - `FETCHER_MANAGER_TTL_MINUTES`, `FETCHER_MANAGER_MAX_FETCHERS`
     - Behavior is always per-user; no legacy global stores.
 
 #### 3. Repository Access Helpers (standard pattern)
@@ -524,6 +525,7 @@ Response shape:
 - Dependencies: `UserFetcherDeps` includes `settings` and repository accessors for user-isolated data access.
 - **SECURITY**: Account-related dependencies (`getAccounts`, `setAccounts`) have been removed - accounts are accessed through user-scoped repositories only.
 - Fetcher state is tracked in-memory; settings are persisted to the user's `settings.json` via user context.
+- Tracks last access time and evicts idle instances based on `FETCHER_MANAGER_TTL_MINUTES` with a cap of `FETCHER_MANAGER_MAX_FETCHERS`.
 - Orchestration integration: fetchers can trigger orchestration runs via the `runOrchestration` callback.
 
 ### Cleanup Service

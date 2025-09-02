@@ -52,6 +52,8 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
     - `USER_MAX_FILE_SIZE_MB` (default 50)
     - `USER_MAX_CONVERSATIONS` (default 10000)
     - `USER_MAX_LOGS_PER_TYPE` (default 10000)
+    - `FETCHER_MANAGER_TTL_MINUTES` (default 60)
+    - `FETCHER_MANAGER_MAX_FETCHERS` (default 100)
     - `FETCHER_TTL_DAYS` — TTL for fetcher logs
     - `ORCHESTRATION_TTL_DAYS` — TTL for orchestration logs (default 7)
 

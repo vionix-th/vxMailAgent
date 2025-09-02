@@ -60,6 +60,8 @@ export const USER_REGISTRY_MAX_ENTRIES = parseInt(process.env.USER_REGISTRY_MAX_
 export const USER_MAX_FILE_SIZE_MB = parseInt(process.env.USER_MAX_FILE_SIZE_MB || '50', 10);
 export const USER_MAX_CONVERSATIONS = parseInt(process.env.USER_MAX_CONVERSATIONS || '10000', 10);
 export const USER_MAX_LOGS_PER_TYPE = parseInt(process.env.USER_MAX_LOGS_PER_TYPE || '10000', 10);
+export const FETCHER_MANAGER_TTL_MINUTES = parseInt(process.env.FETCHER_MANAGER_TTL_MINUTES || '60', 10);
+export const FETCHER_MANAGER_MAX_FETCHERS = parseInt(process.env.FETCHER_MANAGER_MAX_FETCHERS || '100', 10);
 
 export function envSummary() {
   return {
@@ -96,6 +98,10 @@ export function envSummary() {
     },
     ORCHESTRATION: {
       ORCHESTRATION_TTL_DAYS,
+    },
+    FETCHER_MANAGER: {
+      FETCHER_MANAGER_TTL_MINUTES,
+      FETCHER_MANAGER_MAX_FETCHERS,
     },
     NODE_ENV: process.env.NODE_ENV || 'development',
   };
