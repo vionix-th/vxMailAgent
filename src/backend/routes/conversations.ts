@@ -236,7 +236,8 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
       if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
       const ureq = requireReq(req as any as ReqLike);
       const list = await deps.getConversations(ureq);
-      const next = list.filter((c) => !ids.includes(c.id));
+      const set = new Set(ids);
+      const next = list.filter((c) => !c.id || !set.has(c.id));
       const deleted = list.length - next.length;
       await deps.setConversations(ureq, next);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });

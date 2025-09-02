@@ -30,7 +30,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
       success: true
     }, req);
     
-    const all = repoGetAll<any>(ureq, 'settings');
+    const all = await repoGetAll<any>(ureq, 'settings');
     const settings = (Array.isArray(all) && all[0]) ? all[0] : defaultSettings();
     logger.info('GET /api/settings', { uid });
     res.json({
@@ -58,7 +58,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
       sessionTimeoutMinutes: typeof req.body?.sessionTimeoutMinutes === 'number' ? req.body.sessionTimeoutMinutes : 15,
     } as any;
     
-    repoSetAll<any>(ureq, 'settings', [next]);
+    await repoSetAll<any>(ureq, 'settings', [next]);
     
     securityAudit.logDataAccess(uid, {
       resource: 'settings',
