@@ -1,10 +1,12 @@
 import express from 'express';
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent } from '../../shared/types';
 import { conversationEngine } from '../services/engine';
+import { runAgentConversation } from '../services/orchestration';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { createToolHandler } from '../toolCalls';
 import logger from '../services/logger';
-import { requireReq, requireRepos, ReqLike } from '../utils/repo-access';
+import { requireReq, requireRepos } from '../utils/repo-access';
+import type { ReqLike } from '../interfaces';
 
 export interface ConversationsRoutesDeps {
   getConversations: (req?: ReqLike) => Promise<ConversationThread[]>;
@@ -181,8 +183,6 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
       } else {
         // Agent threads: use unified agent conversation logic
         try {
-          const { runAgentConversation } = require('../services/orchestration');
-          
           const agentResult = await runAgentConversation(
             t,
             userContent, // Use the user's message content

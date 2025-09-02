@@ -3,10 +3,10 @@ import { newId } from '../utils/id';
 import { conversationEngine } from './engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { FetcherLogEntry, Account, ConversationThread, OrchestrationDiagnosticEntry, ProviderEvent, Filter, Director, Agent, Prompt } from '../../shared/types';
-import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread } from './orchestration';
+import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread, runAgentConversation } from './orchestration';
 import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, PROVIDER_REQUEST_TIMEOUT_MS, CONVERSATION_STEP_TIMEOUT_MS } from '../config';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
-import { ReqLike } from '../utils/repo-access';
+import type { ReqLike } from '../interfaces';
 import logger from './logger';
 
 /** Dependencies required by the fetcher service. */
@@ -363,9 +363,8 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                     const tAg0 = Date.now();
                     
                     try {
-                      const { runAgentConversation } = require('./orchestration');
                       const agentInput = String(args.input || '');
-                      
+
                       const agentResult = await runAgentConversation(
                         agentThread,
                         agentInput,
