@@ -1,17 +1,18 @@
 import type { Account, EmailEnvelope } from '../../../shared/types';
 import type { IMailProvider, FetchOptions } from './base';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } from '../../config';
+import { ensureValidGoogleAccessToken, getGoogleOAuth2Client } from '../../oauth/google';
+import { google } from 'googleapis';
 
 export const gmailProvider: IMailProvider = {
   id: 'gmail',
 
   async ensureValidAccessToken(account: Account) {
-    const { ensureValidGoogleAccessToken } = require('../../oauth/google');
     const result = await ensureValidGoogleAccessToken(
       account,
       GOOGLE_CLIENT_ID!,
       GOOGLE_CLIENT_SECRET!,
-      GOOGLE_REDIRECT_URI!
+      GOOGLE_REDIRECT_URI!,
     );
     return result;
   },
@@ -21,13 +22,10 @@ export const gmailProvider: IMailProvider = {
     const unread = (typeof opts?.unreadOnly === 'boolean' ? opts!.unreadOnly : true);
     const q = unread ? 'is:unread' : '';
 
-    const { google } = require('googleapis');
-    const { getGoogleOAuth2Client } = require('../../oauth/google');
-
     const oauth2Client = getGoogleOAuth2Client(
       GOOGLE_CLIENT_ID!,
       GOOGLE_CLIENT_SECRET!,
-      GOOGLE_REDIRECT_URI!
+      GOOGLE_REDIRECT_URI!,
     );
     oauth2Client.setCredentials({ access_token: account.tokens.accessToken });
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
@@ -37,16 +35,16 @@ export const gmailProvider: IMailProvider = {
 
     const envelopes: EmailEnvelope[] = [];
     for (const msg of items) {
-      const msgRes = await gmail.users.messages.get({ userId: 'me', id: msg.id });
-      const headers = msgRes.data.payload?.headers || [];
+      const msgRes = await gmail.users.messages.get({ userId: 'me', id: String(msg.id) });
+      const headers = msgRes.data?.payload?.headers || [];
       const getHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
       const subject: string = getHeader('Subject');
       const from: string = getHeader('From');
       const date: string = getHeader('Date');
-      const snippet: string = msgRes.data.snippet || '';
-      const bodies = extractGmailBodies(msgRes.data.payload);
+      const snippet: string = msgRes.data?.snippet || '';
+      const bodies = extractGmailBodies(msgRes.data?.payload);
       envelopes.push({
-        id: String(msg.id || msgRes.data.id),
+        id: String(msg.id || msgRes.data?.id),
         subject,
         from,
         date,

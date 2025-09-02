@@ -1,8 +1,8 @@
-import { UserContext } from '../middleware/user-context';
+import type { UserContext } from '../middleware/user-context';
+import type { ReqLike } from '../interfaces';
 import { RepoBundle } from '../repository/registry';
 
-/** Minimal request-like type carrying user context. */
-export type ReqLike = { userContext?: UserContext };
+export type { ReqLike } from '../interfaces';
 
 /** Ensure the request-like object has a valid user context. */
 export function requireReq<T extends ReqLike>(req?: T): T & { userContext: UserContext } {

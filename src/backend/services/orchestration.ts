@@ -1,7 +1,9 @@
 import { Agent, Director, Filter, Prompt, ConversationThread } from '../../shared/types';
 import { beginSpan, endSpan } from './logging';
-import { ReqLike } from '../utils/repo-access';
 import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
+import { conversationEngine } from './engine';
+import { newId } from '../utils/id';
+import type { ReqLike } from '../interfaces';
 
 export interface EmailContext {
   from: string;
@@ -171,7 +173,6 @@ export async function runAgentConversation(
     while (stepCount < LOOP_MAX) {
       stepCount++;
       
-      const { conversationEngine } = require('./engine');
 
       const t0 = Date.now();
       let stepTimeoutId: any;
@@ -196,7 +197,7 @@ export async function runAgentConversation(
         try {
           if (result.request) {
             logProviderEvent({
-              id: require('../utils/id').newId(),
+              id: newId(),
               conversationId: agentThread.id,
               provider: 'openai',
               type: 'request',
@@ -206,7 +207,7 @@ export async function runAgentConversation(
           }
           const usage = (result.response && (result.response as any).usage) || undefined;
           logProviderEvent({
-            id: require('../utils/id').newId(),
+            id: newId(),
             conversationId: agentThread.id,
             provider: 'openai',
             type: 'response',
@@ -315,7 +316,7 @@ export async function runAgentConversation(
       try {
         const now = new Date().toISOString();
         logProviderEvent({
-          id: require('../utils/id').newId(),
+          id: newId(),
           conversationId: agentThread.id,
           provider: 'openai',
           type: 'error',

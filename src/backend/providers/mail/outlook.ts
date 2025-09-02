@@ -2,16 +2,16 @@ import { graphRequest } from '../../utils/graph';
 import type { Account, EmailEnvelope } from '../../../shared/types';
 import type { IMailProvider, FetchOptions } from './base';
 import { OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET } from '../../config';
+import { ensureValidOutlookAccessToken } from '../../oauth-outlook';
 
 export const outlookProvider: IMailProvider = {
   id: 'outlook',
 
   async ensureValidAccessToken(account: Account) {
-    const { ensureValidOutlookAccessToken } = require('../../oauth-outlook');
     const result = await ensureValidOutlookAccessToken(
       account,
       OUTLOOK_CLIENT_ID!,
-      OUTLOOK_CLIENT_SECRET!
+      OUTLOOK_CLIENT_SECRET!,
     );
     return result;
   },

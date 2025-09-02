@@ -2,7 +2,8 @@ import { OrchestrationDiagnosticEntry, ProviderEvent, Trace, Span } from '../../
 import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS, TRACE_VERBOSE } from '../config';
 import { newId } from '../utils/id';
 import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
-import { ReqLike, requireReq, requireUserRepo } from '../utils/repo-access';
+import { requireReq, requireUserRepo } from '../utils/repo-access';
+import type { ReqLike } from '../interfaces';
 
 // Resolve per-user repositories - user context required
 function getOrchRepo(req?: ReqLike): OrchestrationLogRepository {

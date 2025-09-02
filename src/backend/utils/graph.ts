@@ -6,6 +6,7 @@
  * @param body Optional JSON payload string.
  */
 import { GRAPH_REQUEST_TIMEOUT_MS } from '../config';
+import https from 'https';
 
 export async function graphRequest<T = any>(
   pathWithQuery: string,
@@ -25,7 +26,6 @@ export async function graphRequest<T = any>(
   };
   const payload = typeof body === 'string' ? body : undefined;
   const json = await new Promise<any>((resolve, reject) => {
-    const https = require('https');
     const req = https.request(options as any, (res: any) => {
       const chunks: Buffer[] = [];
       res.on('data', (d: any) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
