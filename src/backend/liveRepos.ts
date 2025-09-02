@@ -1,6 +1,7 @@
 import { Filter, Director, Agent, Prompt, Imprint, OrchestrationDiagnosticEntry, ConversationThread } from '../shared/types';
 import { requireReq, requireUserRepo, repoGetAll, repoSetAll } from './utils/repo-access';
 import { UserRequest } from './middleware/user-context';
+import { RepoBundle } from './repository/registry';
 
 export interface LiveRepos {
   getPrompts(req?: UserRequest): Prompt[];
@@ -22,8 +23,8 @@ export interface LiveRepos {
 }
 
 export function createLiveRepos(): LiveRepos {
-  const get = <T>(name: string) => (req?: UserRequest) => repoGetAll<T>(requireReq(req), name);
-  const set = <T>(name: string) => (req: UserRequest, next: T[]) => repoSetAll<T>(requireReq(req), name, next);
+  const get = <T>(name: keyof RepoBundle) => (req?: UserRequest) => repoGetAll<T>(requireReq(req), name);
+  const set = <T>(name: keyof RepoBundle) => (req: UserRequest, next: T[]) => repoSetAll<T>(requireReq(req), name, next);
 
   return {
     getPrompts: get<Prompt>('prompts'),
