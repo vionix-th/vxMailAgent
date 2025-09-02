@@ -2,17 +2,16 @@ import express from 'express';
 import { Account } from '../../shared/types';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt, verifyJwt } from '../utils/jwt';
-import { UserRequest } from '../middleware/user-context';
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo } from '../oauth/google';
 import { getOutlookAuthUrl, getOutlookTokens, getOutlookUserInfo } from '../oauth-outlook';
 import { computeExpiryISO } from '../oauth/common';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
 
 /**
  * Gets accounts from the per-user repository (user context required).
  */
-function getAccounts(req: UserRequest): Account[] {
+function getAccounts(req: ReqLike): Account[] {
   const ureq = requireReq(req);
   return repoGetAll<Account>(ureq, 'accounts');
 }
@@ -20,7 +19,7 @@ function getAccounts(req: UserRequest): Account[] {
 /**
  * Saves accounts to the per-user repository (user context required).
  */
-function saveAccounts(req: UserRequest, accounts: Account[]): void {
+function saveAccounts(req: ReqLike, accounts: Account[]): void {
   const ureq = requireReq(req);
   repoSetAll<Account>(ureq, 'accounts', accounts);
 }
@@ -42,7 +41,7 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 
-  app.get('/api/accounts/oauth/google/callback', async (req: UserRequest, res: express.Response) => {
+  app.get('/api/accounts/oauth/google/callback', async (req, res: express.Response) => {
     const code = String((req.query as any).code || '');
     const stateToken = String((req.query as any).state || '');
     if (!code) return res.status(400).json({ error: 'Missing code' });
@@ -64,10 +63,10 @@ export default function registerAccountsRoutes(app: express.Express) {
           expiry: tokens.expiryISO,
         },
       } as any;
-      const accounts = getAccounts(req);
+      const accounts = getAccounts(req as ReqLike);
       const idx = accounts.findIndex(a => a.id === account.id);
       if (idx >= 0) accounts[idx] = account; else accounts.push(account);
-      saveAccounts(req, accounts);
+      saveAccounts(req as ReqLike, accounts);
       res.json({ account });
     } catch (e) {
       let message = 'OAuth2 callback failed';
@@ -97,7 +96,7 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 
-  app.get('/api/accounts/oauth/outlook/callback', async (req: UserRequest, res: express.Response) => {
+  app.get('/api/accounts/oauth/outlook/callback', async (req, res: express.Response) => {
     const code = String((req.query as any).code || '');
     const stateToken = String((req.query as any).state || '');
     if (!code) return res.status(400).json({ error: 'Missing code' });
@@ -134,18 +133,18 @@ export default function registerAccountsRoutes(app: express.Express) {
           expiry: expiryIso,
         },
       } as any;
-      const accounts = getAccounts(req);
+      const accounts = getAccounts(req as ReqLike);
       const idx = accounts.findIndex(a => a.id === account.id);
       if (idx >= 0) accounts[idx] = account; else accounts.push(account);
-      saveAccounts(req, accounts);
+      saveAccounts(req as ReqLike, accounts);
       res.json({ account });
     } catch (e) {
       res.status(500).json({ error: 'Outlook OAuth2 callback failed' });
     }
   });
-  app.get('/api/accounts', (req: UserRequest, res) => {
+  app.get('/api/accounts', (req, res) => {
     try {
-      const ureq = requireReq(req);
+      const ureq = requireReq(req as ReqLike);
       const accounts = getAccounts(ureq);
       logger.info('Loaded accounts', { count: accounts.length, uid: requireUid(ureq) });
       res.json(accounts);
@@ -161,7 +160,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (!OUTLOOK_CLIENT_ID || !OUTLOOK_CLIENT_SECRET) {
         return res.status(400).json({ error: 'Missing Outlook OAuth env vars (OUTLOOK_CLIENT_ID/OUTLOOK_CLIENT_SECRET)' });
       }
-      const accounts = getAccounts(req as UserRequest);
+      const accounts = getAccounts(req as ReqLike);
       if (accounts.length === 0) {
         return res.status(404).json({ error: 'no accounts found' });
       }
@@ -203,7 +202,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         account.tokens.expiry = result.expiry;
         account.tokens.refreshToken = result.refreshToken;
         accounts[idx] = account;
-        saveAccounts(req as UserRequest, accounts);
+        saveAccounts(req as ReqLike, accounts);
         logger.info('Refreshed + persisted during outlook-test', { id });
       }
 
@@ -243,10 +242,10 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: (e as any)?.message || String(e) });
     }
   });
-  app.post('/api/accounts', (req: UserRequest, res) => {
+  app.post('/api/accounts', (req, res) => {
     try {
       const newAccount: Account = req.body;
-      const ureq = requireReq(req);
+      const ureq = requireReq(req as ReqLike);
       const accounts = getAccounts(ureq);
       const idx = accounts.findIndex(a => a.id === newAccount.id);
       
@@ -267,10 +266,10 @@ export default function registerAccountsRoutes(app: express.Express) {
       res.status(500).json({ error: 'Failed to save account' });
     }
   });
-  app.put('/api/accounts/:id', (req: UserRequest, res: express.Response) => {
+  app.put('/api/accounts/:id', (req, res: express.Response) => {
     try {
       const id = req.params.id;
-      const accounts = getAccounts(req);
+      const accounts = getAccounts(req as ReqLike);
       const idx = accounts.findIndex(a => a.id === id);
       
       if (idx === -1) {
@@ -278,7 +277,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       }
       
       accounts[idx] = req.body;
-      saveAccounts(req, accounts);
+      saveAccounts(req as ReqLike, accounts);
       logger.info('Updated account', { id });
       res.json({ success: true });
     } catch (e) {
@@ -290,7 +289,7 @@ export default function registerAccountsRoutes(app: express.Express) {
     logger.debug('DELETE /api/accounts/:id invoked', { id: req.params.id });
     try {
       const id = req.params.id;
-      const accounts = getAccounts(req as UserRequest);
+      const accounts = getAccounts(req as ReqLike);
       const idx = accounts.findIndex(a => a.id === id);
       if (idx === -1) {
         return res.status(404).json({ error: 'Account not found' });
@@ -331,7 +330,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       }
       const before = accounts.length;
       const filteredAccounts = accounts.filter(a => a.id !== id);
-      saveAccounts(req as UserRequest, filteredAccounts);
+      saveAccounts(req as ReqLike, filteredAccounts);
       const after = filteredAccounts.length;
       logger.debug('Deleted account', { id, before, after });
       res.json({ success: true, revokeStatus, revokeError });
@@ -348,7 +347,7 @@ export default function registerAccountsRoutes(app: express.Express) {
     const id = req.params.id;
     logger.info('POST /api/accounts/:id/refresh invoked', { id });
     try {
-      const accounts = getAccounts(req as UserRequest);
+      const accounts = getAccounts(req as ReqLike);
       if (accounts.length === 0) {
         return res.status(404).json({ error: 'no accounts found' });
       }
@@ -392,7 +391,7 @@ export default function registerAccountsRoutes(app: express.Express) {
           account.tokens.expiry = result.expiry;
           account.tokens.refreshToken = result.refreshToken;
           accounts[idx] = account;
-          saveAccounts(req as UserRequest, accounts);
+          saveAccounts(req as ReqLike, accounts);
           logger.info('Refreshed + persisted Gmail access token', { id });
         }
         return res.json({ ok: true, updated: result.updated, tokens: account.tokens });
@@ -431,7 +430,7 @@ export default function registerAccountsRoutes(app: express.Express) {
           account.tokens.expiry = result.expiry;
           account.tokens.refreshToken = result.refreshToken;
           accounts[idx] = account;
-          saveAccounts(req as UserRequest, accounts);
+          saveAccounts(req as ReqLike, accounts);
           logger.info('Refreshed + persisted Outlook access token', { id });
         }
         return res.json({ ok: true, updated: result.updated, tokens: account.tokens });
@@ -450,7 +449,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
         return res.status(400).json({ error: 'Missing Google OAuth env vars (GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI)' });
       }
-      const accounts = getAccounts(req as UserRequest);
+      const accounts = getAccounts(req as ReqLike);
       const idx = accounts.findIndex(a => a.id === id);
       if (idx === -1) return res.status(404).json({ error: 'account not found' });
       const account = accounts[idx];
@@ -494,7 +493,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         account.tokens.expiry = result.expiry;
         account.tokens.refreshToken = result.refreshToken;
         accounts[idx] = account;
-        saveAccounts(req as UserRequest, accounts);
+        saveAccounts(req as ReqLike, accounts);
         logger.info('Refreshed + persisted during gmail-test', { id });
       }
       const { google } = require('googleapis');
@@ -520,3 +519,4 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
   });
 }
+

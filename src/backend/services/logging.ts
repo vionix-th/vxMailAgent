@@ -2,27 +2,26 @@ import { OrchestrationDiagnosticEntry, ProviderEvent, Trace, Span } from '../../
 import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS, TRACE_VERBOSE } from '../config';
 import { newId } from '../utils/id';
 import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
-import { UserRequest } from '../middleware/user-context';
-import { requireReq, requireUserRepo } from '../utils/repo-access';
+import { ReqLike, requireReq, requireUserRepo } from '../utils/repo-access';
 
 // Resolve per-user repositories - user context required
-function getOrchRepo(req?: UserRequest): OrchestrationLogRepository {
+function getOrchRepo(req?: ReqLike): OrchestrationLogRepository {
   const ureq = requireReq(req);
   return requireUserRepo(ureq, 'orchestrationLog');
 }
 
-function getProviderRepo(req?: UserRequest): ProviderEventsRepository {
+function getProviderRepo(req?: ReqLike): ProviderEventsRepository {
   const ureq = requireReq(req);
   return requireUserRepo(ureq, 'providerEvents');
 }
 
-function getTracesRepo(req?: UserRequest): TracesRepository {
+function getTracesRepo(req?: ReqLike): TracesRepository {
   const ureq = requireReq(req);
   return requireUserRepo(ureq, 'traces');
 }
 
 /** Append an orchestration diagnostic entry to the log. */
-export async function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest): Promise<void> {
+export async function logOrch(e: OrchestrationDiagnosticEntry, req?: ReqLike): Promise<void> {
   const repo = getOrchRepo(req);
   const list = await repo.getAll();
   list.push(e);
@@ -30,19 +29,19 @@ export async function logOrch(e: OrchestrationDiagnosticEntry, req?: UserRequest
 }
 
 /** Persist a provider request/response diagnostic entry. */
-export async function logProviderEvent(e: ProviderEvent, req?: UserRequest): Promise<void> {
+export async function logProviderEvent(e: ProviderEvent, req?: ReqLike): Promise<void> {
   const repo = getProviderRepo(req);
   await repo.append(e);
 }
 
 /** Retrieve all orchestration diagnostic entries. */
-export async function getOrchestrationLog(req?: UserRequest): Promise<OrchestrationDiagnosticEntry[]> {
+export async function getOrchestrationLog(req?: ReqLike): Promise<OrchestrationDiagnosticEntry[]> {
   const repo = getOrchRepo(req);
   return repo.getAll();
 }
 
 /** Replace the orchestration diagnostic log with the provided list. */
-export async function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: UserRequest): Promise<void> {
+export async function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: ReqLike): Promise<void> {
   const repo = getOrchRepo(req);
   await repo.setAll(next);
 }
@@ -83,7 +82,7 @@ function redact(obj: any): any {
  * Create a new trace and persist it if tracing is enabled.
  * Returns the generated trace id.
  */
-export async function beginTrace(seed?: Partial<Trace>, req?: UserRequest): Promise<string> {
+export async function beginTrace(seed?: Partial<Trace>, req?: ReqLike): Promise<string> {
   const id = seed?.id || newId();
   const t: Trace = {
     id,
@@ -100,7 +99,7 @@ export async function beginTrace(seed?: Partial<Trace>, req?: UserRequest): Prom
 }
 
 /** Update a trace when it completes, optionally recording status or error. */
-export async function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: UserRequest): Promise<void> {
+export async function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: ReqLike): Promise<void> {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   await repo.update(id, (t) => {
@@ -113,7 +112,7 @@ export async function endTrace(id: string, status?: 'ok' | 'error', error?: stri
 /**
  * Start a new span within an existing trace. Returns the span id.
  */
-export async function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }, req?: UserRequest): Promise<string> {
+export async function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }, req?: ReqLike): Promise<string> {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return '';
   const sid = span.id || newId();
@@ -144,7 +143,7 @@ export async function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'
 /**
  * Finalize a span and optionally annotate its status, error, or response.
  */
-export async function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: UserRequest): Promise<void> {
+export async function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: ReqLike): Promise<void> {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   await repo.update(traceId, (t) => {
@@ -162,7 +161,7 @@ export async function endSpan(traceId: string, spanId: string, input?: { status?
 }
 
 /** Merge additional annotations into an existing span. */
-export async function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: UserRequest): Promise<void> {
+export async function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: ReqLike): Promise<void> {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   await repo.update(traceId, (t) => {
@@ -173,7 +172,7 @@ export async function annotateSpan(traceId: string, spanId: string, annotations:
 }
 
 /** Retrieve all traces available to the request. */
-export async function getTraces(req?: UserRequest): Promise<Trace[]> {
+export async function getTraces(req?: ReqLike): Promise<Trace[]> {
   const repo = getTracesRepo(req);
   return repo ? repo.getAll() : [];
 }

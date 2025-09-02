@@ -1,13 +1,13 @@
 import express from 'express';
 import { Director } from '../../shared/types';
 import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
-import { UserRequest } from '../middleware/user-context';
+import { ReqLike } from '../utils/repo-access';
 // persistence is handled by injected deps.setDirectors
 import logger from '../services/logger';
 
 export interface DirectorsRoutesDeps {
-  getDirectors: (req?: UserRequest) => Director[];
-  setDirectors: (req: UserRequest, next: Director[]) => void;
+  getDirectors: (req?: ReqLike) => Director[];
+  setDirectors: (req: ReqLike, next: Director[]) => void;
 }
 
 export default function registerDirectorsRoutes(app: express.Express, deps: DirectorsRoutesDeps) {
@@ -23,7 +23,7 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
   // GET /api/directors
   app.get('/api/directors', (req, res) => {
     logger.info('GET /api/directors');
-    const list = deps.getDirectors(req as UserRequest).map(d => ({ ...d, promptId: (d as any).promptId || '' }));
+    const list = deps.getDirectors(req as ReqLike).map(d => ({ ...d, promptId: (d as any).promptId || '' }));
     res.json(list);
   });
 
@@ -34,8 +34,8 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
       return res.status(400).json({ error: 'apiConfigId is required for Director' });
     }
     const clean: Director = { ...director, promptId: (director as any).promptId || '', enabledToolCalls: sanitizeEnabled((director as any).enabledToolCalls) } as Director;
-    const next = [...deps.getDirectors(req as UserRequest), clean];
-    deps.setDirectors(req as UserRequest, next);
+    const next = [...deps.getDirectors(req as ReqLike), clean];
+    deps.setDirectors(req as ReqLike, next);
     logger.info('POST /api/directors: added director', { id: director.id });
     res.json({ success: true });
   });
@@ -43,7 +43,7 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
   // PUT /api/directors/:id
   app.put('/api/directors/:id', (req, res) => {
     const id = req.params.id;
-    const current = deps.getDirectors(req as UserRequest);
+    const current = deps.getDirectors(req as ReqLike);
     const idx = current.findIndex(d => d.id === id);
     if (idx === -1) {
       logger.warn('PUT /api/directors/:id not found', { id });
@@ -52,7 +52,7 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     const clean: Director = { ...req.body, promptId: req.body.promptId || '', enabledToolCalls: sanitizeEnabled((req.body as any).enabledToolCalls) } as Director;
     const next = current.slice();
     next[idx] = clean;
-    deps.setDirectors(req as UserRequest, next);
+    deps.setDirectors(req as ReqLike, next);
     logger.info('PUT /api/directors/:id updated', { id });
     res.json({ success: true });
   });
@@ -60,12 +60,13 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
   // DELETE /api/directors/:id
   app.delete('/api/directors/:id', (req, res) => {
     const id = req.params.id;
-    const current = deps.getDirectors(req as UserRequest);
+    const current = deps.getDirectors(req as ReqLike);
     const before = current.length;
     const next = current.filter(d => d.id !== id);
-    deps.setDirectors(req as UserRequest, next);
+    deps.setDirectors(req as ReqLike, next);
     const after = next.length;
     logger.info('DELETE /api/directors/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 }
+

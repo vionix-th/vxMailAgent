@@ -4,17 +4,17 @@ import fs from 'fs';
 import { Prompt } from '../../shared/types';
 import { chatCompletion } from '../providers/openai';
 
-import { requireUserContext, UserRequest } from '../middleware/user-context';
+import { requireUserContext } from '../middleware/user-context';
 import logger from '../services/logger';
-import { requireReq, requireUid, repoGetAll, repoSetAll } from '../utils/repo-access';
+import { requireReq, requireUid, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
 import type { TemplateItem } from '../../shared/types';
 
 export interface PromptsRoutesDeps {
-  getPrompts: (req?: UserRequest) => Prompt[];
-  setPrompts: (req: UserRequest, next: Prompt[]) => void;
+  getPrompts: (req?: ReqLike) => Prompt[];
+  setPrompts: (req: ReqLike, next: Prompt[]) => void;
   getSettings: () => any;
-  getAgents: (req?: UserRequest) => Array<{ id: string; name: string; promptId?: string; apiConfigId: string }>;
-  getDirectors: (req?: UserRequest) => Array<{ id: string; name: string; agentIds: string[]; promptId?: string; apiConfigId: string }>;
+  getAgents: (req?: ReqLike) => Array<{ id: string; name: string; promptId?: string; apiConfigId: string }>;
+  getDirectors: (req?: ReqLike) => Array<{ id: string; name: string; agentIds: string[]; promptId?: string; apiConfigId: string }>;
 }
 
  
@@ -206,7 +206,7 @@ const DEFAULT_OPTIMIZER: TemplateItem = {
   ]
 };
 
-function loadUserTemplates(req?: UserRequest): TemplateItem[] {
+function loadUserTemplates(req?: ReqLike): TemplateItem[] {
   try {
     const ureq = requireReq(req);
     let arr = repoGetAll<TemplateItem>(ureq, 'templates');
@@ -245,14 +245,14 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // GET /api/prompts
   app.get('/api/prompts', requireUserContext as any, (req, res) => {
     logger.info('GET /api/prompts');
-    res.json(deps.getPrompts(req as UserRequest));
+    res.json(deps.getPrompts(req as ReqLike));
   });
 
   // POST /api/prompts
   app.post('/api/prompts', requireUserContext as any, (req, res) => {
     const prompt: Prompt = req.body;
-    const next = [...deps.getPrompts(req as UserRequest), prompt];
-    deps.setPrompts(req as UserRequest, next);
+    const next = [...deps.getPrompts(req as ReqLike), prompt];
+    deps.setPrompts(req as ReqLike, next);
     logger.info('POST /api/prompts: added prompt', { id: prompt.id });
     res.json({ success: true });
   });
@@ -260,7 +260,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // PUT /api/prompts/:id
   app.put('/api/prompts/:id', requireUserContext as any, (req, res) => {
     const id = req.params.id;
-    const current = deps.getPrompts(req as UserRequest);
+    const current = deps.getPrompts(req as ReqLike);
     const idx = current.findIndex(p => p.id === id);
     if (idx === -1) {
       logger.warn('PUT /api/prompts/:id not found', { id });
@@ -268,7 +268,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     }
     const next = current.slice();
     next[idx] = req.body;
-    deps.setPrompts(req as UserRequest, next);
+    deps.setPrompts(req as ReqLike, next);
     logger.info('PUT /api/prompts/:id updated', { id });
     res.json({ success: true });
   });
@@ -276,10 +276,10 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // DELETE /api/prompts/:id
   app.delete('/api/prompts/:id', requireUserContext as any, (req, res) => {
     const id = req.params.id;
-    const current = deps.getPrompts(req as UserRequest);
+    const current = deps.getPrompts(req as ReqLike);
     const before = current.length;
     const next = current.filter(p => p.id !== id);
-    deps.setPrompts(req as UserRequest, next);
+    deps.setPrompts(req as ReqLike, next);
     const after = next.length;
     logger.info('DELETE /api/prompts/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
@@ -298,7 +298,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
       if (!api) return res.status(400).json({ error: 'No API configuration available' });
 
       // Always resolve optimizer/system messages from the canonical 'prompt_optimizer' template
-      const list = loadUserTemplates(req as UserRequest);
+      const list = loadUserTemplates(req as ReqLike);
       const opt = list.find(t => t.id === 'prompt_optimizer');
       if (!opt) {
         return res.status(500).json({ error: 'optimizer_template_missing' });
@@ -311,8 +311,8 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
       const includingPacks = parseIncluding(payload, req.query);
       const finalPacks = Array.from(new Set<ContextPackName>([...selectedPacks, ...includingPacks])) as ContextPackName[];
       // Runtime agents/directors (ids/names only), and supported tools/actions
-      const agents = (deps.getAgents?.(req as UserRequest) || []).map(a => ({ id: a.id, name: a.name }));
-      const directors = (deps.getDirectors?.(req as UserRequest) || []).map(d => ({ id: d.id, name: d.name, agentIds: d.agentIds }));
+      const agents = (deps.getAgents?.(req as ReqLike) || []).map(a => ({ id: a.id, name: a.name }));
+      const directors = (deps.getDirectors?.(req as ReqLike) || []).map(d => ({ id: d.id, name: d.name, agentIds: d.agentIds }));
       const tools = [
         { kind: 'calendar', actions: ['read', 'add'] },
         { kind: 'todo', actions: ['add'] },

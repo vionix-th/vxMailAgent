@@ -11,7 +11,7 @@ export interface UserRequest extends Request {
   userContext?: UserContext;
 }
 
-interface UserContext {
+export interface UserContext {
   uid: string;
   repos: RepoBundle;
 }

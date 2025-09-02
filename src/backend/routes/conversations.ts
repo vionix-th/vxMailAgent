@@ -3,23 +3,22 @@ import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent } from '../../shared/types';
 import { conversationEngine } from '../services/engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
-import { UserRequest } from '../middleware/user-context';
 import { createToolHandler } from '../toolCalls';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll, requireRepos } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireRepos, ReqLike } from '../utils/repo-access';
 
 export interface ConversationsRoutesDeps {
-  getConversations: (req?: UserRequest) => ConversationThread[];
-  setConversations: (req: UserRequest, next: ConversationThread[]) => void;
-  getSettings: (req?: UserRequest) => any;
-  logProviderEvent: (ev: ProviderEvent, req?: UserRequest) => void;
+  getConversations: (req?: ReqLike) => ConversationThread[];
+  setConversations: (req: ReqLike, next: ConversationThread[]) => void;
+  getSettings: (req?: ReqLike) => any;
+  logProviderEvent: (ev: ProviderEvent, req?: ReqLike) => void;
   newId: () => string;
-  getDirectors: (req?: UserRequest) => Director[];
-  getAgents: (req?: UserRequest) => Agent[];
+  getDirectors: (req?: ReqLike) => Director[];
+  getAgents: (req?: ReqLike) => Agent[];
 }
 
 export default function registerConversationsRoutes(app: express.Express, deps: ConversationsRoutesDeps) {
-  function makeCleanup(req: UserRequest) {
+  function makeCleanup(req: ReqLike) {
     const ureq = requireReq(req);
     const hub: RepositoryHub = {
       // Conversations
@@ -48,7 +47,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
   app.get('/api/conversations', (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const list = deps.getConversations(req as UserRequest) || [];
+      const list = deps.getConversations(req as any as ReqLike) || [];
       const limit = Math.max(0, Math.min(1000, Number(q.limit) || 200));
       const offset = Math.max(0, Number(q.offset) || 0);
       const paged = list.slice(offset, offset + limit);
@@ -62,7 +61,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
   app.get('/api/conversations/:id', (req, res) => {
     try {
       const id = req.params.id;
-      const thread = deps.getConversations(req as UserRequest).find((c) => c.id === id);
+      const thread = deps.getConversations(req as any as ReqLike).find((c) => c.id === id);
       if (!thread) return res.status(404).json({ error: 'Conversation not found' });
       return res.json(thread);
     } catch (e: any) {
@@ -75,7 +74,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     const directorId = String(req.query.directorId || '').trim();
     const emailId = String(req.query.emailId || '').trim();
     if (!directorId || !emailId) return res.status(400).json({ error: 'directorId and emailId are required' });
-    const threads = deps.getConversations(req as UserRequest).filter(
+    const threads = deps.getConversations(req as any as ReqLike).filter(
       (c) => c.kind === 'director' && c.directorId === directorId && (c.email as any)?.id === emailId
     );
     if (!threads.length) return res.status(404).json({ error: 'Conversation not found' });
@@ -89,7 +88,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     const id = req.params.id;
     const content = String(req.body?.content || '');
     if (!content.trim()) return res.status(400).json({ error: 'Message content is required' });
-    const conversations = deps.getConversations(req as UserRequest);
+    const conversations = deps.getConversations(req as any as ReqLike);
     const idx = conversations.findIndex((c) => c.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Conversation not found' });
     const t = conversations[idx];
@@ -105,7 +104,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     };
     const next = conversations.slice();
     next[idx] = updated;
-    deps.setConversations(req as UserRequest, next);
+    deps.setConversations(req as any as ReqLike, next);
     logger.info('POST /api/conversations/:id/messages appended user message', { id, length: content.length });
     return res.json({ success: true });
   });
@@ -114,7 +113,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
   app.post('/api/conversations/:id/assistant', async (req, res) => {
     try {
       const id = req.params.id;
-      const conversations = deps.getConversations(req as UserRequest);
+      const conversations = deps.getConversations(req as any as ReqLike);
       const idx = conversations.findIndex((c) => c.id === id);
       if (idx === -1) return res.status(404).json({ error: 'Conversation not found' });
       const t = conversations[idx];
@@ -122,7 +121,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
         return res.status(400).json({ error: 'Conversation is finalized' });
       }
 
-      const api = deps.getSettings(requireReq(req as UserRequest)).apiConfigs.find((c: any) => c.id === t.apiConfigId);
+      const api = deps.getSettings(requireReq(req as any as ReqLike)).apiConfigs.find((c: any) => c.id === t.apiConfigId);
       if (!api) return res.status(404).json({ error: 'API config not found' });
 
       // Use existing transcript as-is (OpenAI-aligned)
@@ -154,7 +153,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             role: 'director',
             roleCaps: { canSpawnAgents: true },
             toolRegistry: TOOL_DESCRIPTORS,
-            context: { conversationId: id, agents: deps.getAgents(req as UserRequest) || [] },
+            context: { conversationId: id, agents: deps.getAgents(req as any as ReqLike) || [] },
           });
           result = {
             assistantMessage: engineOut.assistantMessage,
@@ -179,17 +178,17 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
           provider: 'openai',
         } as any;
         {
-          const cur = deps.getConversations(req as UserRequest);
+          const cur = deps.getConversations(req as any as ReqLike);
           const i2 = cur.findIndex((c) => c.id === id);
           if (i2 !== -1) {
             const next = cur.slice();
             next[i2] = updated;
-            deps.setConversations(req as UserRequest, next);
+            deps.setConversations(req as any as ReqLike, next);
           }
         }
         // Provider events (req-aware)
         try {
-          if (result.request) deps.logProviderEvent({ id: deps.newId(), conversationId: id, provider: 'openai', type: 'request', timestamp: now, payload: result.request }, req as UserRequest);
+          if (result.request) deps.logProviderEvent({ id: deps.newId(), conversationId: id, provider: 'openai', type: 'request', timestamp: now, payload: result.request }, req as any as ReqLike);
           const usage = (result.response && (result.response as any).usage) || undefined;
           deps.logProviderEvent({
             id: deps.newId(),
@@ -200,7 +199,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             latencyMs,
             usage: usage ? { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } : undefined,
             payload: result.response,
-          }, req as UserRequest);
+          }, req as any as ReqLike);
         } catch {}
         lastStep = result;
       } else {
@@ -211,13 +210,13 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
           const agentResult = await runAgentConversation(
             t,
             userContent, // Use the user's message content
-            deps.getConversations(req as UserRequest),
+            deps.getConversations(req as any as ReqLike),
             api,
             TOOL_DESCRIPTORS,
-            (next: ConversationThread[]) => deps.setConversations(req as UserRequest, next),
-            createToolHandler(requireRepos(requireReq(req as UserRequest))),
+            (next: ConversationThread[]) => deps.setConversations(req as any as ReqLike, next),
+            createToolHandler(requireRepos(requireReq(req as any as ReqLike))),
             undefined, // No traceId in routes path
-            (ev: ProviderEvent) => deps.logProviderEvent(ev, req as UserRequest) // Req-aware provider logging
+            (ev: ProviderEvent) => deps.logProviderEvent(ev, req as any as ReqLike) // Req-aware provider logging
           );
           
           if (agentResult.success) {
@@ -242,7 +241,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
   app.delete('/api/conversations/:id', (req, res) => {
     try {
       const id = req.params.id;
-      const cleanup = makeCleanup(req as UserRequest);
+      const cleanup = makeCleanup(req as any as ReqLike);
       const { deleted } = cleanup.removeConversationsByIds([id]);
       if (deleted === 0) return res.status(404).json({ error: 'Conversation not found' });
       return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
@@ -256,7 +255,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     try {
       const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];
       if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
-      const cleanup = makeCleanup(req as UserRequest);
+      const cleanup = makeCleanup(req as any as ReqLike);
       const { deleted } = cleanup.removeConversationsByIds(ids);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
     } catch (e: any) {

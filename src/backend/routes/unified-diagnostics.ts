@@ -1,12 +1,12 @@
 import express from 'express';
 import { OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, Trace } from '../../shared/types';
-import { UserRequest } from '../middleware/user-context';
+import { ReqLike } from '../utils/repo-access';
 
 export interface UnifiedDiagnosticsRoutesDeps {
-  getOrchestrationLog: (req?: UserRequest) => OrchestrationDiagnosticEntry[];
-  getConversations: (req?: UserRequest) => ConversationThread[];
-  getProviderEvents: (req?: UserRequest) => ProviderEvent[];
-  getTraces: (req?: UserRequest) => Trace[];
+  getOrchestrationLog: (req?: ReqLike) => OrchestrationDiagnosticEntry[];
+  getConversations: (req?: ReqLike) => ConversationThread[];
+  getProviderEvents: (req?: ReqLike) => ProviderEvent[];
+  getTraces: (req?: ReqLike) => Trace[];
 }
 
 // Unified diagnostic tree structure
@@ -278,10 +278,10 @@ export default function registerUnifiedDiagnosticsRoutes(app: express.Express, d
   // GET unified hierarchical diagnostics tree
   app.get('/api/diagnostics/unified', (req, res) => {
     try {
-      const orchestrationEntries = deps.getOrchestrationLog(req as UserRequest);
-      const conversations = deps.getConversations(req as UserRequest);
-      const providerEvents = deps.getProviderEvents(req as UserRequest);
-      const traces = deps.getTraces(req as UserRequest);
+      const orchestrationEntries = deps.getOrchestrationLog(req as any as ReqLike);
+      const conversations = deps.getConversations(req as any as ReqLike);
+      const providerEvents = deps.getProviderEvents(req as any as ReqLike);
+      const traces = deps.getTraces(req as any as ReqLike);
 
       const tree = buildHierarchicalTree(orchestrationEntries, conversations, providerEvents, traces);
 
@@ -317,10 +317,10 @@ export default function registerUnifiedDiagnosticsRoutes(app: express.Express, d
 
       switch (nodeType) {
         case 'conv':
-          result = deps.getConversations(req as UserRequest).find(c => c.id === id);
+          result = deps.getConversations(req as any as ReqLike).find(c => c.id === id);
           break;
         case 'event':
-          result = deps.getProviderEvents(req as UserRequest).find(e => e.id === id);
+          result = deps.getProviderEvents(req as any as ReqLike).find(e => e.id === id);
           break;
         default:
           return res.status(400).json({ error: 'Invalid node type' });

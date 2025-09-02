@@ -1,6 +1,6 @@
 import { Agent, Director, Filter, Prompt, ConversationThread } from '../../shared/types';
 import { beginSpan, endSpan } from './logging';
-import { UserRequest } from '../middleware/user-context';
+import { ReqLike } from '../utils/repo-access';
 import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
 
 export interface EmailContext {
@@ -75,7 +75,7 @@ export function ensureAgentThread(
   nowIso: string,
   newIdFn: () => string,
   traceId?: string,
-  req?: UserRequest,
+  req?: ReqLike,
 ): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'finalized' | 'invalid' } {
   const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }, req) : '';
 

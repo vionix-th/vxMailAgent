@@ -1,7 +1,7 @@
 import express from 'express';
-import { requireUserContext, UserRequest } from '../middleware/user-context';
+import { requireUserContext } from '../middleware/user-context';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
 import type { TemplateItem } from '../../shared/types';
 
  
@@ -27,7 +27,7 @@ function seedTemplates(): TemplateItem[] {
   ];
 }
 
-function loadTemplates(req?: UserRequest): TemplateItem[] {
+function loadTemplates(req?: ReqLike): TemplateItem[] {
   try {
     const ureq = requireReq(req);
     let arr = repoGetAll<TemplateItem>(ureq, 'templates');
@@ -63,7 +63,7 @@ function loadTemplates(req?: UserRequest): TemplateItem[] {
   }
 }
 
-function saveTemplates(req: UserRequest, items: TemplateItem[]) {
+function saveTemplates(req: ReqLike, items: TemplateItem[]) {
   const ureq = requireReq(req);
   repoSetAll<TemplateItem>(ureq, 'templates', items);
 }
@@ -71,7 +71,7 @@ function saveTemplates(req: UserRequest, items: TemplateItem[]) {
 export default function registerTemplatesRoutes(app: express.Express) {
   // List templates
   app.get('/api/prompt-templates', requireUserContext as any, (req, res) => {
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     logger.info('GET /api/prompt-templates', { uid: requireUid(ureq) });
     res.json(loadTemplates(ureq));
   });
@@ -82,21 +82,21 @@ export default function registerTemplatesRoutes(app: express.Express) {
     if (!item || !item.id || !item.name || !Array.isArray(item.messages)) {
       return res.status(400).json({ error: 'Invalid template' });
     }
-    const current = loadTemplates(req as UserRequest);
+    const current = loadTemplates(req as ReqLike);
     if (current.some(t => t.id === item.id)) return res.status(400).json({ error: 'Duplicate id' });
     const next = [...current, item];
-    saveTemplates(req as UserRequest, next);
+    saveTemplates(req as ReqLike, next);
     res.json({ success: true });
   });
 
   // Update
   app.put('/api/prompt-templates/:id', requireUserContext as any, (req, res) => {
     const id = req.params.id;
-    const current = loadTemplates(req as UserRequest);
+    const current = loadTemplates(req as ReqLike);
     const idx = current.findIndex(t => t.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     current[idx] = req.body;
-    saveTemplates(req as UserRequest, current);
+    saveTemplates(req as ReqLike, current);
     res.json({ success: true });
   });
 
@@ -106,9 +106,10 @@ export default function registerTemplatesRoutes(app: express.Express) {
     if (id === 'prompt_optimizer') {
       return res.status(400).json({ error: 'prompt_optimizer is required and cannot be deleted' });
     }
-    const current = loadTemplates(req as UserRequest);
+    const current = loadTemplates(req as ReqLike);
     const next = current.filter(t => t.id !== id);
-    saveTemplates(req as UserRequest, next);
+    saveTemplates(req as ReqLike, next);
     res.json({ success: true });
   });
 }
+

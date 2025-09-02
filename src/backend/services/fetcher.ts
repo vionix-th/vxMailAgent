@@ -6,7 +6,7 @@ import { FetcherLogEntry, Account, ConversationThread, OrchestrationDiagnosticEn
 import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread } from './orchestration';
 import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, PROVIDER_REQUEST_TIMEOUT_MS, CONVERSATION_STEP_TIMEOUT_MS } from '../config';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
-import { UserRequest } from '../middleware/user-context';
+import { ReqLike } from '../utils/repo-access';
 import logger from './logger';
 
 /** Dependencies required by the fetcher service. */
@@ -26,7 +26,7 @@ export interface FetcherDeps {
   setFetcherLog: (next: FetcherLogEntry[]) => void;
   getToolHandler: () => (name: string, params: any) => Promise<any>;
   // Provides the per-user request context for tracing/logging repositories
-  getUserReq: () => UserRequest;
+  getUserReq: () => ReqLike;
 }
 
 /** Interface for the fetcher service. */

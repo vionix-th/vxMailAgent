@@ -1,9 +1,8 @@
 import express from 'express';
 import { MemoryEntry } from '../../shared/types';
 import { newId } from '../utils/id';
-import { UserRequest } from '../middleware/user-context';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
 
 export interface MemoryRoutesDeps {}
 
@@ -11,7 +10,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
   // GET /api/memory
   app.get('/api/memory', (req, res) => {
     const { scope, query, owner, tag, q } = req.query as Record<string, string>;
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     let result = repoGetAll<MemoryEntry>(ureq, 'memory');
     if (scope) result = result.filter(e => e.scope === scope);
     if (owner) result = result.filter(e => e.owner === owner);
@@ -27,7 +26,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     entry.id = entry.id || newId();
     entry.created = entry.created || new Date().toISOString();
     entry.updated = new Date().toISOString();
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     const next = [...repoGetAll<MemoryEntry>(ureq, 'memory'), entry];
     repoSetAll<MemoryEntry>(ureq, 'memory', next);
     logger.info('POST /api/memory: added', { id: entry.id });
@@ -37,7 +36,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
   // PUT /api/memory/:id
   app.put('/api/memory/:id', (req, res) => {
     const id = req.params.id;
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     const current = repoGetAll<MemoryEntry>(ureq, 'memory');
     const idx = current.findIndex(e => e.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Memory entry not found' });
@@ -52,7 +51,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
   // DELETE /api/memory/:id
   app.delete('/api/memory/:id', (req, res) => {
     const id = req.params.id;
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     const current = repoGetAll<MemoryEntry>(ureq, 'memory');
     const before = current.length;
     const next = current.filter(e => e.id !== id);
@@ -68,7 +67,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids array required' });
     }
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     const current = repoGetAll<MemoryEntry>(ureq, 'memory');
     const before = current.length;
     const setIds = new Set(ids);

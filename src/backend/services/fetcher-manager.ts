@@ -1,6 +1,5 @@
 import { FetcherService, FetcherDeps, initFetcher } from './fetcher';
-import { UserRequest } from '../middleware/user-context';
-import { requireReq, requireUid } from '../utils/repo-access';
+import { ReqLike, requireReq, requireUid } from '../utils/repo-access';
 import { FETCHER_MANAGER_TTL_MINUTES, FETCHER_MANAGER_MAX_FETCHERS } from '../config';
 import logger from './logger';
 
@@ -24,7 +23,7 @@ export interface UserFetcherDeps {
   setFetcherLog: (next: any[]) => void;
   getToolHandler: () => (name: string, params: any) => Promise<any>;
   // Provides a mock per-user request used by logging/tracing
-  getUserReq: () => UserRequest;
+  getUserReq: () => ReqLike;
 }
 
 interface FetcherEntry {
@@ -46,7 +45,7 @@ export class FetcherManager {
   /**
    * Get or create fetcher for user
    */
-  getFetcher(req: UserRequest): FetcherService {
+  getFetcher(req: ReqLike): FetcherService {
     const ureq = requireReq(req);
     const uid = requireUid(ureq);
     let entry = this.fetchers.get(uid);
@@ -84,7 +83,7 @@ export class FetcherManager {
   /**
    * Start fetcher loop for user or global
    */
-  startFetcherLoop(req: UserRequest): void {
+  startFetcherLoop(req: ReqLike): void {
     const fetcher = this.getFetcher(req);
     fetcher.startFetcherLoop();
   }
@@ -92,7 +91,7 @@ export class FetcherManager {
   /**
    * Stop fetcher loop for user or global
    */
-  stopFetcherLoop(req: UserRequest): void {
+  stopFetcherLoop(req: ReqLike): void {
     const fetcher = this.getFetcher(req);
     fetcher.stopFetcherLoop();
   }
@@ -100,7 +99,7 @@ export class FetcherManager {
   /**
    * Get fetcher status for user or global
    */
-  getStatus(req: UserRequest) {
+  getStatus(req: ReqLike) {
     const fetcher = this.getFetcher(req);
     return fetcher.getStatus();
   }
@@ -108,7 +107,7 @@ export class FetcherManager {
   /**
    * Fetch emails for user or global
    */
-  async fetchEmails(req: UserRequest): Promise<void> {
+  async fetchEmails(req: ReqLike): Promise<void> {
     const fetcher = this.getFetcher(req);
     await fetcher.fetchEmails();
   }
@@ -116,7 +115,7 @@ export class FetcherManager {
   /**
    * Get fetcher log for user or global
    */
-  getFetcherLog(req: UserRequest) {
+  getFetcherLog(req: ReqLike) {
     const fetcher = this.getFetcher(req);
     return fetcher.getFetcherLog();
   }
@@ -124,7 +123,7 @@ export class FetcherManager {
   /**
    * Set fetcher log for user or global
    */
-  setFetcherLog(req: UserRequest, next: any[]): void {
+  setFetcherLog(req: ReqLike, next: any[]): void {
     const fetcher = this.getFetcher(req);
     fetcher.setFetcherLog(next);
   }

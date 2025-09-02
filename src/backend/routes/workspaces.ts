@@ -1,26 +1,25 @@
 import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
-import { UserRequest } from '../middleware/user-context';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
 
 export interface WorkspacesRoutesDeps {
-  getConversations: (req?: UserRequest) => ConversationThread[];
-  setConversations: (req: UserRequest, next: ConversationThread[]) => void;
+  getConversations: (req?: ReqLike) => ConversationThread[];
+  setConversations: (req: ReqLike, next: ConversationThread[]) => void;
 }
 
 export default function registerWorkspacesRoutes(app: express.Express, deps: WorkspacesRoutesDeps) {
   // List all workspace items
   app.get('/api/workspaces/:id/items', (req, res) => {
     const includeDeleted = String(req.query.includeDeleted || 'false').toLowerCase() === 'true';
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     const items = repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
     res.json(includeDeleted ? items : items.filter(i => !i.deleted));
   });
 
   app.get('/api/workspaces/:id/items/:itemId', (req, res) => {
     const { itemId } = req.params as { id: string; itemId: string };
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     const items = repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
     const item = items.find(i => i.id === itemId);
     if (!item) return res.status(404).json({ error: 'Item not found' });
@@ -31,7 +30,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const { itemId } = req.params as { id: string; itemId: string };
     const expectedRevision = typeof req.body?.expectedRevision === 'number' ? (req.body.expectedRevision as number) : undefined;
     const { label, description, tags, mimeType, encoding, data } = req.body as { label?: string; description?: string; tags?: string[]; mimeType?: string; encoding?: 'utf8'|'base64'|'binary'; data?: string };
-    const ureq = requireReq(req as UserRequest);
+    const ureq = requireReq(req as ReqLike);
     const items = repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
     const itemIdx = items.findIndex(i => i.id === itemId);
     if (itemIdx === -1) return res.status(404).json({ error: 'Item not found' });
@@ -65,14 +64,14 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
   app.delete('/api/workspaces/:id/items/:itemId', (req, res) => {
     const { itemId } = req.params as { id: string; itemId: string };
     const hard = String(req.query.hard || 'false').toLowerCase() === 'true';
-    const conversations = deps.getConversations(req as UserRequest);
+    const conversations = deps.getConversations(req as ReqLike);
     const idx = conversations.findIndex(c => c.id === itemId);
     if (idx === -1) return res.status(404).json({ error: 'Conversation not found' });
     const updated = { ...conversations[idx], workspaceId: req.params.id };
     const next = conversations.slice();
     next[idx] = updated;
-    deps.setConversations(req as UserRequest, next);
-    const ureq = requireReq(req as UserRequest);
+    deps.setConversations(req as ReqLike, next);
+    const ureq = requireReq(req as ReqLike);
     const items = repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
     const itemIdx = items.findIndex(i => i.id === itemId);
     if (itemIdx === -1) return res.status(404).json({ error: 'Item not found' });

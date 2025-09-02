@@ -1,10 +1,9 @@
 import express from 'express';
 import { createCleanupService, RepositoryHub } from '../services/cleanup';
-import { UserRequest } from '../middleware/user-context';
-import { requireReq, repoGetAll, repoSetAll } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
 
 export default function registerCleanupRoutes(app: express.Express) {
-  function makeCleanup(req: UserRequest) {
+  function makeCleanup(req: ReqLike) {
     const ureq = requireReq(req);
     const hub: RepositoryHub = {
       getConversations: () => repoGetAll<any>(ureq, 'conversations'),
@@ -26,7 +25,7 @@ export default function registerCleanupRoutes(app: express.Express) {
   // Stats for current user (used by frontend settings)
   app.get('/api/cleanup/stats', (req, res) => {
     try {
-      const cleanup = makeCleanup(req as UserRequest);
+      const cleanup = makeCleanup(req as ReqLike);
       const stats = cleanup.getStats();
       res.json(stats);
     } catch (e: any) {
@@ -37,7 +36,7 @@ export default function registerCleanupRoutes(app: express.Express) {
   // Purge all logs and data for the current user (frontend expects /api/cleanup/all)
   app.delete('/api/cleanup/all', (req, res) => {
     try {
-      const cleanup = makeCleanup(req as UserRequest);
+      const cleanup = makeCleanup(req as ReqLike);
       const { deleted, message } = cleanup.purgeAll();
       res.json({ success: true, deleted, message });
     } catch (e: any) {
@@ -47,27 +46,28 @@ export default function registerCleanupRoutes(app: express.Express) {
 
   // Individual purge endpoints expected by frontend
   app.delete('/api/cleanup/fetcher-logs', (req, res) => {
-    try { const out = makeCleanup(req as UserRequest).purge('fetcher'); res.json({ success: true, ...out }); }
+    try { const out = makeCleanup(req as ReqLike).purge('fetcher'); res.json({ success: true, ...out }); }
     catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
   app.delete('/api/cleanup/orchestration-logs', (req, res) => {
-    try { const out = makeCleanup(req as UserRequest).purge('orchestration'); res.json({ success: true, ...out }); }
+    try { const out = makeCleanup(req as ReqLike).purge('orchestration'); res.json({ success: true, ...out }); }
     catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
   app.delete('/api/cleanup/conversations', (req, res) => {
-    try { const out = makeCleanup(req as UserRequest).purge('conversations'); res.json({ success: true, ...out }); }
+    try { const out = makeCleanup(req as ReqLike).purge('conversations'); res.json({ success: true, ...out }); }
     catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
   app.delete('/api/cleanup/workspace-items', (req, res) => {
-    try { const out = makeCleanup(req as UserRequest).purge('workspaceItems'); res.json({ success: true, ...out }); }
+    try { const out = makeCleanup(req as ReqLike).purge('workspaceItems'); res.json({ success: true, ...out }); }
     catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
   app.delete('/api/cleanup/provider-events', (req, res) => {
-    try { const out = makeCleanup(req as UserRequest).purge('providerEvents'); res.json({ success: true, ...out }); }
+    try { const out = makeCleanup(req as ReqLike).purge('providerEvents'); res.json({ success: true, ...out }); }
     catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
   app.delete('/api/cleanup/traces', (req, res) => {
-    try { const out = makeCleanup(req as UserRequest).purge('traces'); res.json({ success: true, ...out }); }
+    try { const out = makeCleanup(req as ReqLike).purge('traces'); res.json({ success: true, ...out }); }
     catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
 }
+

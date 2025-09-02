@@ -1,9 +1,9 @@
 import express from 'express';
-import { requireUserContext, UserRequest } from '../middleware/user-context';
+import { requireUserContext } from '../middleware/user-context';
 import { errorHandler } from '../services/error-handler';
 import { securityAudit } from '../services/security-audit';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
 
 export interface SettingsRoutesDeps {}
 
@@ -20,8 +20,8 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
   }
 
   // GET /api/settings (per-user)
-  app.get('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res: express.Response) => {
-    const ureq = requireReq(req);
+  app.get('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const ureq = requireReq(req as any as ReqLike);
     const uid = requireUid(ureq);
     
     securityAudit.logDataAccess(uid, {
@@ -43,8 +43,8 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
   }));
 
   // PUT /api/settings (per-user)
-  app.put('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: UserRequest, res: express.Response) => {
-    const ureq = requireReq(req);
+  app.put('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const ureq = requireReq(req as any as ReqLike);
     const uid = requireUid(ureq);
     
     // Input validation

@@ -3,12 +3,12 @@ import { Agent } from '../../shared/types';
 import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
 // persistence is handled by injected deps.setAgents
 
-import { UserRequest } from '../middleware/user-context';
+import { ReqLike } from '../utils/repo-access';
 import logger from '../services/logger';
 
 export interface AgentsRoutesDeps {
-  getAgents: (req?: UserRequest) => Agent[];
-  setAgents: (req: UserRequest, next: Agent[]) => void;
+  getAgents: (req?: ReqLike) => Agent[];
+  setAgents: (req: ReqLike, next: Agent[]) => void;
 }
 
 export default function registerAgentsRoutes(app: express.Express, deps: AgentsRoutesDeps) {
@@ -24,7 +24,7 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
   // GET /api/agents
   app.get('/api/agents', (req, res) => {
     logger.info('GET /api/agents');
-    res.json(deps.getAgents(req as UserRequest));
+    res.json(deps.getAgents(req as ReqLike));
   });
 
   // POST /api/agents
@@ -34,8 +34,8 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
       return res.status(400).json({ error: 'apiConfigId is required for Agent' });
     }
     const clean: Agent = { ...agent, enabledToolCalls: sanitizeEnabled((agent as any).enabledToolCalls) };
-    const next = [...deps.getAgents(req as UserRequest), clean];
-    deps.setAgents(req as UserRequest, next);
+    const next = [...deps.getAgents(req as ReqLike), clean];
+    deps.setAgents(req as ReqLike, next);
     logger.info('POST /api/agents: added agent', { id: agent.id });
     res.json({ success: true });
   });
@@ -43,7 +43,7 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
   // PUT /api/agents/:id
   app.put('/api/agents/:id', (req, res) => {
     const id = req.params.id;
-    const current = deps.getAgents(req as UserRequest);
+    const current = deps.getAgents(req as ReqLike);
     const idx = current.findIndex(a => a.id === id);
     if (idx === -1) {
       logger.warn('PUT /api/agents/:id not found', { id });
@@ -55,7 +55,7 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     const clean: Agent = { ...req.body, enabledToolCalls: sanitizeEnabled((req.body as any).enabledToolCalls) };
     const next = current.slice();
     next[idx] = clean;
-    deps.setAgents(req as UserRequest, next);
+    deps.setAgents(req as ReqLike, next);
     logger.info('PUT /api/agents/:id updated', { id });
     res.json({ success: true });
   });
@@ -63,12 +63,13 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
   // DELETE /api/agents/:id
   app.delete('/api/agents/:id', (req, res) => {
     const id = req.params.id;
-    const current = deps.getAgents(req as UserRequest);
+    const current = deps.getAgents(req as ReqLike);
     const before = current.length;
     const next = current.filter(a => a.id !== id);
-    deps.setAgents(req as UserRequest, next);
+    deps.setAgents(req as ReqLike, next);
     const after = next.length;
     logger.info('DELETE /api/agents/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 }
+

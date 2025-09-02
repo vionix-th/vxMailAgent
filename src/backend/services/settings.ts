@@ -1,6 +1,5 @@
-import { UserRequest } from '../middleware/user-context';
 import logger from './logger';
-import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
 
 import type { ApiConfig } from '../../shared/types';
 
@@ -15,7 +14,7 @@ export interface Settings {
 }
 
 /** Load settings from the per-user repository (single settings object). */
-export function loadSettings(req?: UserRequest): Settings {
+export function loadSettings(req?: ReqLike): Settings {
   try {
     const ureq = requireReq(req);
     const all = repoGetAll<Settings>(ureq, 'settings');
@@ -34,7 +33,7 @@ export function loadSettings(req?: UserRequest): Settings {
 }
 
 /** Save settings to the per-user repository. */
-export function saveSettings(settings: Settings, req: UserRequest): void {
+export function saveSettings(settings: Settings, req: ReqLike): void {
   const ureq = requireReq(req);
   try {
     repoSetAll<Settings>(ureq, 'settings', [settings]);
