@@ -25,7 +25,7 @@ const TopBar: React.FC = () => {
     );
 
   return (
-    <AppBar position="fixed" color="default" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, borderRadius: 0, overflow: 'visible' }}>
+    <AppBar position="fixed" color="inherit" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, borderRadius: 0, overflow: 'visible' }}>
       <Toolbar variant="dense">
         <Typography variant="h6" noWrap component="div">
           {t('appTitle')}

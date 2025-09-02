@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, TextField, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Snackbar, Alert, Checkbox, FormControlLabel
 } from '@mui/material';
@@ -7,6 +7,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { useTranslation } from 'react-i18next';
+import { useCrudResource } from './hooks/useCrudResource';
+import { randomId } from './utils/randomId';
 
 export type FilterField = 'from' | 'to' | 'cc' | 'bcc' | 'subject' | 'body' | 'date';
 
@@ -31,23 +33,12 @@ const emptyFilter: Filter = {
   duplicateAllowed: false,
 };
 
-function randomId() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
 export default function Filters() {
-  const [filters, setFilters] = useState<Filter[]>([]);
-  const [directors, setDirectors] = useState<Director[]>([]);
+  const { items: filters, create, update, remove, refresh, error, success, setError, setSuccess } = useCrudResource<Filter>('/api/filters');
+  const { items: directors } = useCrudResource<Director>('/api/directors');
   const [editing, setEditing] = useState<Filter | null>(null);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const { t } = useTranslation('common');
-
-  useEffect(() => {
-    fetch('/api/filters').then(r => r.json()).then(setFilters).catch(() => setError(t('filters.errors.failedLoadFilters')));
-    fetch('/api/directors').then(r => r.json()).then(setDirectors).catch(() => setError(t('filters.errors.failedLoadDirectors')));
-  }, []);
 
   const handleEdit = (filter: Filter) => {
     setEditing(filter);
@@ -55,14 +46,10 @@ export default function Filters() {
   };
 
   const handleDelete = (id: string) => {
-    fetch(`/api/filters/${id}`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(() => { setFilters(filters.filter(f => f.id !== id)); setSuccess(t('filters.messages.deleted')); })
-      .catch(() => setError(t('filters.errors.failedDelete')));
+    void remove(id, { successMessage: t('filters.messages.deleted'), errorMessage: t('filters.errors.failedDelete') });
   };
 
   const persistReorder = (ordered: Filter[]) => {
-    setFilters(ordered);
     fetch('/api/filters/reorder', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -70,6 +57,7 @@ export default function Filters() {
     })
       .then(r => {
         if (!r.ok) throw new Error('Failed');
+        void refresh();
         setSuccess(t('filters.messages.orderUpdated'));
       })
       .catch(() => setError(t('filters.errors.failedOrder')));
@@ -91,27 +79,17 @@ export default function Filters() {
     persistReorder(next);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editing) return;
-    if (!editing.regex || !editing.directorId) {
-      setError(t('filters.errors.missingRegexDirector'));
-      return;
+    if (!editing.regex || !editing.directorId) { setError(t('filters.errors.missingRegexDirector')); return; }
+    const exists = filters.find(f => f.id === editing.id);
+    const res = exists
+      ? await update(editing.id, editing, { successMessage: t('filters.messages.updated'), errorMessage: t('filters.errors.failedSave') })
+      : await create(editing, { successMessage: t('filters.messages.added'), errorMessage: t('filters.errors.failedSave') });
+    if (res) {
+      setOpen(false);
+      setEditing(null);
     }
-    const method = filters.find(f => f.id === editing.id) ? 'PUT' : 'POST';
-    const url = method === 'POST' ? '/api/filters' : `/api/filters/${editing.id}`;
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editing),
-    })
-      .then(r => r.json())
-      .then(() => {
-        setOpen(false);
-        setEditing(null);
-        fetch('/api/filters').then(r => r.json()).then(setFilters);
-        setSuccess(method === 'POST' ? t('filters.messages.added') : t('filters.messages.updated'));
-      })
-      .catch(() => setError(t('filters.errors.failedSave')));
   };
 
   return (

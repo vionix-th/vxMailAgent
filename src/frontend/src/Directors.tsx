@@ -12,6 +12,9 @@ import { OPTIONAL_TOOL_NAMES, CORE_TOOL_NAMES } from '../../shared/tools';
 import { AnimatePresence, motion } from 'framer-motion';
 import ChatPlayground from './ChatPlayground';
 import AgentsPanel from './Agents';
+import { useCrudResource } from './hooks/useCrudResource';
+import { randomId } from './utils/randomId';
+import { Prompt } from '../../shared/types';
 
 interface Director {
   id: string;
@@ -22,10 +25,6 @@ interface Director {
   enabledToolCalls?: string[];
 }
 
-interface Prompt {
-  id: string;
-  name: string;
-}
 interface Agent {
   id: string;
   name: string;
@@ -42,8 +41,6 @@ const emptyDirector: Director = {
   promptId: '',
   apiConfigId: '',
 };
-
-function randomId() { return Math.random().toString(36).slice(2, 10); }
 
 export default function Directors() {
   const { t } = useTranslation('common');
@@ -63,13 +60,11 @@ export default function Directors() {
     setPlaygroundConfig({ apiConfigId: director.apiConfigId || '', initialMessages: prompt?.messages || [], title: `${t('directors.test.title')}: ${director.name}` });
     setPlaygroundOpen(true);
   };
-  const [directors, setDirectors] = useState<Director[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const { items: directors, create, update, remove, error, success, setError, setSuccess } = useCrudResource<Director>('/api/directors');
+  const { items: agents } = useCrudResource<Agent>('/api/agents');
   const [editing, setEditing] = useState<Director | null>(null);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const { items: prompts } = useCrudResource<Prompt>('/api/prompts');
   const [apiConfigs, setApiConfigs] = useState<{ id: string; name: string }[]>([]);
   const [tab, setTab] = useState(0);
 
@@ -80,44 +75,22 @@ export default function Directors() {
       .catch(() => setApiConfigs([]));
   }, []);
 
-  useEffect(() => {
-    fetch('/api/directors').then(r => r.json()).then(setDirectors).catch(() => setError(t('directors.errors.failedLoadDirectors')));
-    fetch('/api/agents').then(r => r.json()).then(setAgents).catch(() => setError(t('directors.errors.failedLoadAgents')));
-    fetch('/api/prompts').then(r => r.json()).then(setPrompts).catch(() => setError(t('directors.errors.failedLoadPrompts')));
-  }, []);
-
   const handleEdit = (director: Director) => { setEditing(director); setTab(0); setOpen(true); };
   const handleDelete = (id: string) => {
-    fetch(`/api/directors/${id}`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(() => { setDirectors(directors.filter(d => d.id !== id)); setSuccess(t('directors.messages.deleted')); })
-      .catch(() => setError(t('directors.errors.failedDelete')));
+    void remove(id, { successMessage: t('directors.messages.deleted'), errorMessage: t('directors.errors.failedDelete') });
   };
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editing) return;
-    if (!editing.name) {
-      setError(t('directors.errors.nameRequired'));
-      return;
+    if (!editing.name) { setError(t('directors.errors.nameRequired')); return; }
+    if (!editing.apiConfigId) { setError(t('directors.errors.apiConfigRequired')); return; }
+    const exists = directors.find(d => d.id === editing.id);
+    const res = exists
+      ? await update(editing.id, editing, { successMessage: t('directors.messages.updated'), errorMessage: t('directors.errors.failedSave') })
+      : await create(editing, { successMessage: t('directors.messages.added'), errorMessage: t('directors.errors.failedSave') });
+    if (res) {
+      setOpen(false);
+      setEditing(null);
     }
-    if (!editing.apiConfigId) {
-      setError(t('directors.errors.apiConfigRequired'));
-      return;
-    }
-    const method = directors.find(d => d.id === editing.id) ? 'PUT' : 'POST';
-    const url = method === 'POST' ? '/api/directors' : `/api/directors/${editing.id}`;
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(method === 'POST' ? { ...editing, id: randomId() } : editing),
-    })
-      .then(r => r.json())
-      .then(() => {
-        setOpen(false);
-        setEditing(null);
-        fetch('/api/directors').then(r => r.json()).then(setDirectors);
-        setSuccess(method === 'POST' ? t('directors.messages.added') : t('directors.messages.updated'));
-      })
-      .catch(() => setError(t('directors.errors.failedSave')));
   };
 
   // Agent assignment logic

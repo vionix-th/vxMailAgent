@@ -276,7 +276,7 @@ export default function Memory() {
                 <TableCell>{(() => {
                   // Provenance: {scope, owner}
                   const prov = (entry as any).provenance;
-                  if (!prov) return <Chip label={t('memory.table.unknown')} size="small" color="default"/>;
+                  if (!prov) return <Chip label={t('memory.table.unknown')} size="small" variant="outlined"/>;
                   let ownerLabel = prov.owner as string;
                   const agent = agents.find(a => a.id === prov.owner);
                   if (agent) ownerLabel = t('memory.owner.agent', { name: agent.name });

@@ -447,7 +447,16 @@ export default function Conversations() {
                   <TableRow key={a.id}>
                     <TableCell><Chip size="small" label={getItemKind(a)} /></TableCell>
                     <TableCell>
-                      <Typography variant="caption" color="text.secondary">{a.provenance?.by}{a.provenance?.agentId ? `:${a.provenance.agentId}` : ''}{a.provenance?.tool ? `/${a.provenance.tool}` : ''}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {(() => {
+                          const ctx = a.context as any;
+                          if (!ctx) return '';
+                          const by = ctx.createdBy || '';
+                          const agent = ctx.agentId ? `:${ctx.agentId}` : '';
+                          const tool = ctx.tool ? `/${ctx.tool}` : '';
+                          return `${by}${agent}${tool}`;
+                        })()}
+                      </Typography>
                     </TableCell>
                     <TableCell>{(a.tags || []).map((tTag, i) => <Chip key={i} size="small" label={tTag} sx={{ mr: 0.5 }} />)}</TableCell>
                     <TableCell>

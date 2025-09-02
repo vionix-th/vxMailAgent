@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Box, Button, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Snackbar, Alert, Tabs, Tab
 } from '@mui/material';
@@ -11,6 +11,8 @@ import { Prompt, PromptMessage } from '../../shared/types';
 import TemplateEditDialog, { TemplateItem } from './TemplateEditDialog';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCookieState } from './hooks/useCookieState';
+import { useCrudResource } from './hooks/useCrudResource';
+import { randomId } from './utils/randomId';
 
 const emptyPrompt: Prompt = {
   id: '',
@@ -20,14 +22,11 @@ const emptyPrompt: Prompt = {
   ]
 };
 
-function randomId() { return Math.random().toString(36).slice(2, 10); }
-
 export default function Prompts() {
   const { t } = useTranslation('common');
   const [tab, setTab] = useCookieState<number>('vx_ui.prompts.tab', 0, { maxAge: 60 * 60 * 24 * 365 });
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
-  const [templates, setTemplates] = useState<TemplateItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { items: prompts, create: createPrompt, update: updatePrompt, remove: removePrompt, error: promptsError, success: promptsSuccess, setError: setPromptsError, setSuccess: setPromptsSuccess } = useCrudResource<Prompt>('/api/prompts');
+  const { items: templates, create: createTpl, update: updateTpl, remove: removeTpl, error: templatesError, success: templatesSuccess, setError: setTemplatesError, setSuccess: setTemplatesSuccess } = useCrudResource<TemplateItem>('/api/prompt-templates');
   const [editing, setEditing] = useState<Prompt | null>(null);
   const [tplEditing, setTplEditing] = useState<TemplateItem | null>(null);
   // For message editing UI
@@ -58,74 +57,49 @@ export default function Prompts() {
 
   const [open, setOpen] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch('/api/prompts').then(r => r.json()).then(setPrompts).catch(() => setError(t('prompts.errors.failedLoadPrompts')));
-    fetch('/api/prompt-templates').then(r => r.json()).then(setTemplates).catch(() => setError(t('templates.errors.failedLoadTemplates')));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handleEdit = (prompt: Prompt) => { setEditing(prompt); setOpen(true); };
   const handleDelete = (id: string) => {
-    fetch(`/api/prompts/${id}`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(() => { setPrompts(prompts.filter(p => p.id !== id)); setSuccess(t('prompts.messages.deleted')); })
-      .catch(() => setError(t('prompts.errors.failedDelete')));
+    void removePrompt(id, { successMessage: t('prompts.messages.deleted'), errorMessage: t('prompts.errors.failedDelete') });
   };
   const handleSave = () => {
     if (!editing) return;
     if (!editing.name || !editing.messages.length || editing.messages.some(m => !m.content)) {
-      setError(t('prompts.errors.nameAndMessageRequired'));
+      setPromptsError(t('prompts.errors.nameAndMessageRequired'));
       return;
     }
-    const method = prompts.find(p => p.id === editing.id) ? 'PUT' : 'POST';
-    const url = method === 'POST' ? '/api/prompts' : `/api/prompts/${editing.id}`;
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(method === 'POST' ? { ...editing, id: randomId() } : editing),
-    })
-      .then(r => r.json())
-      .then(() => {
+    const exists = prompts.find(p => p.id === editing.id);
+    const action = exists
+      ? updatePrompt(editing.id, editing, { successMessage: t('prompts.messages.updated'), errorMessage: t('prompts.errors.failedSave') })
+      : createPrompt(editing, { successMessage: t('prompts.messages.added'), errorMessage: t('prompts.errors.failedSave') });
+    action.then(res => {
+      if (res) {
         setOpen(false);
         setEditing(null);
-        fetch('/api/prompts').then(r => r.json()).then(setPrompts);
-        setSuccess(method === 'POST' ? t('prompts.messages.added') : t('prompts.messages.updated'));
-      })
-      .catch(() => setError(t('prompts.errors.failedSave')));
+      }
+    });
   };
 
   const handleTplEdit = (tpl: TemplateItem) => { setTplEditing(tpl); setTplOpen(true); };
   const handleTplDelete = (id: string) => {
-    fetch(`/api/prompt-templates/${id}`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(() => { setTemplates(templates.filter(t => t.id !== id)); setSuccess(t('templates.messages.deleted')); })
-      .catch(() => setError(t('templates.errors.failedDelete')));
+    void removeTpl(id, { successMessage: t('templates.messages.deleted'), errorMessage: t('templates.errors.failedDelete') });
   };
   const handleTplSave = () => {
     if (!tplEditing) return;
     if (!tplEditing.id || !tplEditing.name || !Array.isArray(tplEditing.messages) || tplEditing.messages.some(m => !m.content)) {
-      setError(t('templates.errors.idNameMessageRequired'));
+      setTemplatesError(t('templates.errors.idNameMessageRequired'));
       return;
     }
     const exists = templates.find(t => t.id === tplEditing.id);
-    const method = exists ? 'PUT' : 'POST';
-    const url = exists ? `/api/prompt-templates/${tplEditing.id}` : '/api/prompt-templates';
-    const payload = exists ? tplEditing : { ...tplEditing };
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-      .then(r => r.json())
-      .then(() => {
+    const action = exists
+      ? updateTpl(tplEditing.id, tplEditing, { successMessage: t('templates.messages.updated'), errorMessage: t('templates.errors.failedSave') })
+      : createTpl(tplEditing, { successMessage: t('templates.messages.added'), errorMessage: t('templates.errors.failedSave') });
+    action.then(res => {
+      if (res) {
         setTplOpen(false);
         setTplEditing(null);
-        fetch('/api/prompt-templates').then(r => r.json()).then(setTemplates);
-        setSuccess(exists ? t('templates.messages.updated') : t('templates.messages.added'));
-      })
-      .catch(() => setError(t('templates.errors.failedSave')));
+      }
+    });
   };
 
   return (
@@ -225,7 +199,7 @@ export default function Prompts() {
         onChange={p => setEditing(p)}
         onClose={() => { setOpen(false); setEditing(null); }}
         onSave={handleSave}
-        error={error}
+        error={promptsError}
         templates={templates}
       />
       <TemplateEditDialog
@@ -234,13 +208,19 @@ export default function Prompts() {
         onChange={t => setTplEditing(t)}
         onClose={() => { setTplOpen(false); setTplEditing(null); }}
         onSave={handleTplSave}
-        error={error}
+        error={templatesError}
       />
-      <Snackbar open={!!error} autoHideDuration={6000} onClose={() => setError(null)}>
-        <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>
+      <Snackbar open={!!promptsError} autoHideDuration={6000} onClose={() => setPromptsError(null)}>
+        <Alert severity="error" onClose={() => setPromptsError(null)}>{promptsError}</Alert>
       </Snackbar>
-      <Snackbar open={!!success} autoHideDuration={4000} onClose={() => setSuccess(null)}>
-        <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>
+      <Snackbar open={!!promptsSuccess} autoHideDuration={4000} onClose={() => setPromptsSuccess(null)}>
+        <Alert severity="success" onClose={() => setPromptsSuccess(null)}>{promptsSuccess}</Alert>
+      </Snackbar>
+      <Snackbar open={!!templatesError} autoHideDuration={6000} onClose={() => setTemplatesError(null)}>
+        <Alert severity="error" onClose={() => setTemplatesError(null)}>{templatesError}</Alert>
+      </Snackbar>
+      <Snackbar open={!!templatesSuccess} autoHideDuration={4000} onClose={() => setTemplatesSuccess(null)}>
+        <Alert severity="success" onClose={() => setTemplatesSuccess(null)}>{templatesSuccess}</Alert>
       </Snackbar>
     </Paper>
   );

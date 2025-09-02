@@ -9,10 +9,12 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ChatPlayground from './ChatPlayground';
 
-import { Agent } from '../../shared/types';
+import { Agent, Prompt } from '../../shared/types';
 import { OPTIONAL_TOOL_NAMES, CORE_TOOL_NAMES } from '../../shared/tools';
+import { useCrudResource } from './hooks/useCrudResource';
+import { randomId } from './utils/randomId';
 
-interface Prompt { id: string; name: string; }
+
 
 const emptyAgent: Agent = {
   id: '',
@@ -21,8 +23,6 @@ const emptyAgent: Agent = {
   promptId: '',
   apiConfigId: '',
 };
-
-function randomId() { return Math.random().toString(36).slice(2, 10); }
 
 export default function Agents() {
   const { t } = useTranslation('common');
@@ -42,12 +42,10 @@ export default function Agents() {
     setPlaygroundConfig({ apiConfigId: agent.apiConfigId || '', initialMessages: prompt?.messages || [], title: `${t('agents.test.title')}: ${agent.name}` });
     setPlaygroundOpen(true);
   };
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const { items: agents, create, update, remove, error, success, setError, setSuccess } = useCrudResource<Agent>('/api/agents');
+  const { items: prompts } = useCrudResource<Prompt>('/api/prompts');
   const [editing, setEditing] = useState<Agent | null>(null);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [apiConfigs, setApiConfigs] = useState<{ id: string; name: string }[]>([]);
   const [tab, setTab] = useState(0);
 
@@ -58,43 +56,22 @@ export default function Agents() {
       .catch(() => setApiConfigs([]));
   }, []);
 
-  useEffect(() => {
-    fetch('/api/agents').then(r => r.json()).then(setAgents).catch(() => setError(t('agents.errors.failedLoadAgents')));
-    fetch('/api/prompts').then(r => r.json()).then(setPrompts).catch(() => setError(t('agents.errors.failedLoadPrompts')));
-  }, []);
-
   const handleEdit = (agent: Agent) => { setEditing(agent); setTab(0); setOpen(true); };
   const handleDelete = (id: string) => {
-    fetch(`/api/agents/${id}`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(() => { setAgents(agents.filter(a => a.id !== id)); setSuccess(t('agents.messages.deleted')); })
-      .catch(() => setError(t('agents.errors.failedDelete')));
+    void remove(id, { successMessage: t('agents.messages.deleted'), errorMessage: t('agents.errors.failedDelete') });
   };
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editing) return;
-    if (!editing.name) {
-      setError(t('agents.errors.nameRequired'));
-      return;
+    if (!editing.name) { setError(t('agents.errors.nameRequired')); return; }
+    if (!editing.apiConfigId) { setError(t('agents.errors.apiConfigRequired')); return; }
+    const exists = agents.find(a => a.id === editing.id);
+    const res = exists
+      ? await update(editing.id, editing, { successMessage: t('agents.messages.updated'), errorMessage: t('agents.errors.failedSave') })
+      : await create(editing, { successMessage: t('agents.messages.added'), errorMessage: t('agents.errors.failedSave') });
+    if (res) {
+      setOpen(false);
+      setEditing(null);
     }
-    if (!editing.apiConfigId) {
-      setError(t('agents.errors.apiConfigRequired'));
-      return;
-    }
-    const method = agents.find(a => a.id === editing.id) ? 'PUT' : 'POST';
-    const url = method === 'POST' ? '/api/agents' : `/api/agents/${editing.id}`;
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(method === 'POST' ? { ...editing, id: randomId() } : editing),
-    })
-      .then(r => r.json())
-      .then(() => {
-        setOpen(false);
-        setEditing(null);
-        fetch('/api/agents').then(r => r.json()).then(setAgents);
-        setSuccess(method === 'POST' ? t('agents.messages.added') : t('agents.messages.updated'));
-      })
-      .catch(() => setError(t('agents.errors.failedSave')));
   };
 
   return (

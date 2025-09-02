@@ -4,6 +4,8 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import { useCrudResource } from './hooks/useCrudResource';
+import { randomId } from './utils/randomId';
 
 interface Imprint {
   id: string;
@@ -17,25 +19,16 @@ const emptyImprint: Imprint = {
   content: '',
 };
 
-function randomId() { return Math.random().toString(36).slice(2, 10); }
-
 export default function Imprints() {
-  const [imprints, setImprints] = useState<Imprint[]>([]);
+  const { items: imprints, create, update, remove, error, success, setError, setSuccess } = useCrudResource<Imprint>('/api/imprints');
   const [editing, setEditing] = useState<Imprint | null>(null);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch('/api/imprints').then(r => r.json()).then(setImprints).catch(() => setError('Failed to load imprints'));
-  }, []);
+  useEffect(() => {}, []);
 
   const handleEdit = (imprint: Imprint) => { setEditing(imprint); setOpen(true); };
   const handleDelete = (id: string) => {
-    fetch(`/api/imprints/${id}`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(() => { setImprints(imprints.filter(i => i.id !== id)); setSuccess('Imprint deleted'); })
-      .catch(() => setError('Failed to delete imprint'));
+    void remove(id, { successMessage: 'Imprint deleted', errorMessage: 'Failed to delete imprint' });
   };
   const handleSave = () => {
     if (!editing) return;
@@ -43,21 +36,16 @@ export default function Imprints() {
       setError('Name and Content are required');
       return;
     }
-    const method = imprints.find(i => i.id === editing.id) ? 'PUT' : 'POST';
-    const url = method === 'POST' ? '/api/imprints' : `/api/imprints/${editing.id}`;
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(method === 'POST' ? { ...editing, id: randomId() } : editing),
-    })
-      .then(r => r.json())
-      .then(() => {
+    const exists = imprints.find(i => i.id === editing.id);
+    const action = exists
+      ? update(editing.id, editing, { successMessage: 'Imprint updated', errorMessage: 'Failed to save imprint' })
+      : create(editing, { successMessage: 'Imprint added', errorMessage: 'Failed to save imprint' });
+    action.then(res => {
+      if (res) {
         setOpen(false);
         setEditing(null);
-        fetch('/api/imprints').then(r => r.json()).then(setImprints);
-        setSuccess(method === 'POST' ? 'Imprint added' : 'Imprint updated');
-      })
-      .catch(() => setError('Failed to save imprint'));
+      }
+    });
   };
 
   return (

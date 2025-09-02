@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   Box, Typography, Paper, Stack, IconButton, Tooltip, Chip, Alert, Divider,
-  TreeView, TreeItem, Accordion, AccordionSummary, AccordionDetails, Tabs, Tab,
   Button, Card, CardContent
 } from '@mui/material';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -20,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { getUnifiedDiagnostics, getUnifiedDiagnosticsNode, DiagnosticNode, UnifiedDiagnosticsResponse } from './utils/api';
 
 const getNodeIcon = (type: string, status?: string) => {
-  const color = status === 'error' ? 'error' : status === 'success' ? 'success' : 'default';
+  const color = status === 'error' ? 'error' : status === 'success' ? 'success' : 'inherit';
   
   switch (type) {
     case 'fetchCycle': return <AccountTreeIcon color={color} />;
