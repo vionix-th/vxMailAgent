@@ -3,6 +3,27 @@ import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS,
 import { newId } from '../utils/id';
 import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
 import { ReqLike, requireReq, requireUserRepo } from '../utils/repo-access';
+import { logger } from './logger';
+
+// Lightweight async queue to serialize background log persistence
+let logQueue: Promise<void> = Promise.resolve();
+
+function enqueue(task: () => Promise<void>, desc: string): void {
+  logQueue = logQueue
+    .then(task)
+    .catch((error) => {
+      logger.error(`[logging] ${desc} failed`, { error });
+    });
+}
+
+// Exposed for tests to ensure queued tasks have completed
+export async function flushLogQueue(): Promise<void> {
+  try {
+    await logQueue;
+  } catch {
+    // swallowed - already logged in enqueue
+  }
+}
 
 // Resolve per-user repositories - user context required
 function getOrchRepo(req?: ReqLike): OrchestrationLogRepository {
@@ -24,14 +45,18 @@ function getTracesRepo(req?: ReqLike): TracesRepository {
 export function logOrch(e: OrchestrationDiagnosticEntry, req?: ReqLike): void {
   const repo = getOrchRepo(req);
   // best-effort persistence; do not block callers
-  repo.getAll().then((list) => { list.push(e); return repo.setAll(list); }).catch(() => {});
+  enqueue(async () => {
+    const list = await repo.getAll();
+    list.push(e);
+    await repo.setAll(list);
+  }, 'logOrch');
 }
 
 /** Persist a provider request/response diagnostic entry. */
 export function logProviderEvent(e: ProviderEvent, req?: ReqLike): void {
   const repo = getProviderRepo(req);
   // best-effort persistence
-  repo.append(e).catch(() => {});
+  enqueue(() => repo.append(e), 'logProviderEvent');
 }
 
 /** Retrieve all orchestration diagnostic entries. */
@@ -44,7 +69,7 @@ export function getOrchestrationLog(req?: ReqLike): Promise<OrchestrationDiagnos
 export function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: ReqLike): void {
   const repo = getOrchRepo(req);
   // best-effort persistence
-  repo.setAll(next).catch(() => {});
+  enqueue(() => repo.setAll(next), 'setOrchestrationLog');
 }
 
 // ---------- Structured tracing ----------
@@ -95,7 +120,7 @@ export function beginTrace(seed?: Partial<Trace>, req?: ReqLike): string {
     spans: [],
   };
   const repo = getTracesRepo(req);
-  if (TRACE_PERSIST && repo) repo.append(t).catch(() => {});
+  if (TRACE_PERSIST && repo) enqueue(() => repo.append(t), 'beginTrace');
   return id;
 }
 
@@ -103,11 +128,11 @@ export function beginTrace(seed?: Partial<Trace>, req?: ReqLike): string {
 export function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: ReqLike): void {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
-  repo.update(id, (t) => {
+  enqueue(() => repo.update(id, (t) => {
     t.endedAt = new Date().toISOString();
     if (status) t.status = status;
     if (error) t.error = error;
-  }).catch(() => {});
+  }), 'endTrace');
 }
 
 /**
@@ -118,7 +143,7 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
   if (!TRACE_PERSIST || !repo) return '';
   const sid = span.id || newId();
   const now = new Date().toISOString();
-  repo.update(traceId, (t) => {
+  enqueue(() => repo.update(traceId, (t) => {
     if (t.spans.length >= TRACE_MAX_SPANS) return;
     const s: Span = {
       id: sid,
@@ -137,7 +162,7 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
       annotations: span.annotations,
     };
     t.spans.push(s);
-  }).catch(() => {});
+  }), 'beginSpan');
   return sid;
 }
 
@@ -147,7 +172,7 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
 export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: ReqLike): void {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
-  repo.update(traceId, (t) => {
+  enqueue(() => repo.update(traceId, (t) => {
     const s = t.spans.find(x => x.id === spanId);
     if (!s) return;
     const end = new Date().toISOString();
@@ -158,18 +183,18 @@ export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok'
     if (input?.status) s.status = input.status;
     if (input?.error) s.error = input.error;
     if (TRACE_VERBOSE && input?.response !== undefined) s.response = redact(input.response);
-  }).catch(() => {});
+  }), 'endSpan');
 }
 
 /** Merge additional annotations into an existing span. */
 export function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: ReqLike): void {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
-  repo.update(traceId, (t) => {
+  enqueue(() => repo.update(traceId, (t) => {
     const s = t.spans.find(x => x.id === spanId);
     if (!s) return;
     s.annotations = Object.assign({}, s.annotations || {}, annotations);
-  }).catch(() => {});
+  }), 'annotateSpan');
 }
 
 /** Retrieve all traces available to the request. */

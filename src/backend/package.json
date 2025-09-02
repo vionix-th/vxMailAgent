@@ -8,7 +8,8 @@
     "generate-testdata": "npx ts-node generate-testdata.ts",
     "dev": "ts-node index.ts",
     "start": "node dist/backend/index.js",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --test -r ts-node/register **/*.test.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^3.7.0",
