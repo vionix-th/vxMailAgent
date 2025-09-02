@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import Login from './Login';
 import AuthGate from './AuthGate';
-import OAuthCallback from './OAuthCallback';
 import './index.css';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
@@ -19,7 +18,6 @@ const Root: React.FC = () => {
     <ThemeProvider theme={muiTheme}>
       <BrowserRouter>
         <Routes>
-          <Route path="/oauth/callback" element={<OAuthCallback />} />
           <Route path="/login" element={<Login />} />
           <Route path="/*" element={<AuthGate><App /></AuthGate>} />
         </Routes>

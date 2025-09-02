@@ -31,31 +31,29 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 ## Environment Variables (Backend)
 
 - `VX_MAILAGENT_KEY` — required for encryption: 64‑char hex key to encrypt `data/` at rest. If missing/invalid, data is written in plaintext (dev‑only).
-- `OPENAI_API_KEY` (required): OpenAI API key for orchestration.
 - Google OAuth2 (Provider accounts: Gmail/Calendar/Tasks)
   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-  - `GOOGLE_REDIRECT_URI` → set to `http://localhost:3000/oauth/callback` (frontend receives code)
+  - `GOOGLE_REDIRECT_URI` → set to `http://localhost:3001/api/accounts/oauth/google/callback` (backend callback)
 - Google OAuth2 (App Login: OIDC session)
   - `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`
   - `GOOGLE_LOGIN_REDIRECT_URI` → set to `http://localhost:3001/api/auth/google/callback` in local dev (backend receives code)
 - Outlook OAuth2:
   - `OUTLOOK_CLIENT_ID`, `OUTLOOK_CLIENT_SECRET`
-  - `OUTLOOK_REDIRECT_URI` → set to `http://localhost:3000/oauth/callback`
+  - `OUTLOOK_REDIRECT_URI` → set to `http://localhost:3001/api/accounts/oauth/outlook/callback` (backend callback)
 - OAuth state signing:
-  - `JWT_SECRET` — required; used to sign short‑lived OAuth state tokens for `/api/accounts/oauth/*` flows.
+  - `JWT_SECRET` — used to sign login session tokens and short‑lived OAuth state tokens for `/api/accounts/oauth/*` flows.
+  - `JWT_EXPIRES_IN_SEC` — session token TTL (default 86400 seconds).
 - Optional:
   - `PORT` → backend port (default `3001`)
-  - `VX_MAILAGENT_DATA_DIR` → override `data/` path (absolute or relative to process cwd)
-  - Multi-user isolation and limits (see `src/backend/config.ts`):
-    - `USER_REGISTRY_TTL_MINUTES` (default 60)
-    - `USER_REGISTRY_MAX_ENTRIES` (default 1000)
-    - `USER_MAX_FILE_SIZE_MB` (default 50)
-    - `USER_MAX_CONVERSATIONS` (default 10000)
-    - `USER_MAX_LOGS_PER_TYPE` (default 10000)
-    - `FETCHER_MANAGER_TTL_MINUTES` (default 60)
-    - `FETCHER_MANAGER_MAX_FETCHERS` (default 100)
-    - `FETCHER_TTL_DAYS` — TTL for fetcher logs
-    - `ORCHESTRATION_TTL_DAYS` — TTL for orchestration logs (default 7)
+  - `VX_MAILAGENT_DATA_DIR` → override `data/` path (absolute or relative to process cwd). See resolution in `src/backend/utils/paths.ts`.
+  - `CORS_ORIGIN` → allowed frontend origin for CORS (default `*`)
+  - Logging: `LOG_LEVEL` (default `debug` in dev, `info` in prod), `NODE_ENV`
+  - Diagnostics/Tracing: `TRACE_PERSIST`, `TRACE_VERBOSE`, `TRACE_MAX_PAYLOAD`, `TRACE_MAX_SPANS`, `TRACE_MAX_TRACES`, `TRACE_TTL_DAYS`, `TRACE_REDACT_FIELDS`
+  - Retention: `PROVIDER_MAX_EVENTS`, `PROVIDER_TTL_DAYS`, `FETCHER_TTL_DAYS`, `ORCHESTRATION_TTL_DAYS`
+  - Timeouts (ms): `OPENAI_REQUEST_TIMEOUT_MS`, `GRAPH_REQUEST_TIMEOUT_MS`, `PROVIDER_REQUEST_TIMEOUT_MS`, `CONVERSATION_STEP_TIMEOUT_MS`, `TOOL_EXEC_TIMEOUT_MS`
+  - Multi‑user limits: `USER_REGISTRY_TTL_MINUTES`, `USER_REGISTRY_MAX_ENTRIES`, `USER_MAX_FILE_SIZE_MB`, `USER_MAX_CONVERSATIONS`, `USER_MAX_LOGS_PER_TYPE`, `FETCHER_MANAGER_TTL_MINUTES`, `FETCHER_MANAGER_MAX_FETCHERS`
+
+Note: OpenAI API keys are configured per user in Settings and stored securely. There is no required global `OPENAI_API_KEY` environment variable in production use.
 
 Use `src/backend/.env.example` as a template.
 

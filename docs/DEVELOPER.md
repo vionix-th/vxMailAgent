@@ -20,6 +20,68 @@
 - If missing/invalid, the backend still starts in PLAINTEXT mode and logs a warning. See `src/backend/config.ts::warnIfInsecure()` and `src/backend/persistence.ts`.
 - Tracing/provider events retention settings are in `src/backend/config.ts` (e.g., `TRACE_MAX_TRACES`, `PROVIDER_TTL_DAYS`).
 
+## Environment Variables (authoritative)
+
+Source of truth: `src/backend/config.ts`, `src/backend/services/logger.ts`, and `src/backend/utils/paths.ts`.
+
+- **Core**
+  - `VX_MAILAGENT_KEY` (default: empty) — 64-char hex. Enables AES-256-GCM at rest. If missing/invalid, backend runs in PLAINTEXT and logs a warning via `warnIfInsecure()`.
+  - `PORT` (default: 3001) — backend port.
+  - `CORS_ORIGIN` (default: `*`) — allowed origin for CORS.
+  - `VX_MAILAGENT_DATA_DIR` — optional override for `data/` root. If unset, `resolveDataDir()` probes common locations under repo root. See `src/backend/utils/paths.ts`.
+
+- **OAuth: Google (Provider: Gmail/Calendar/Tasks)**
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (default: empty). Local dev redirect: `http://localhost:3001/api/accounts/oauth/google/callback` (backend callback).
+
+- **OAuth: Google (Login: OIDC session)**
+  - `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`, `GOOGLE_LOGIN_REDIRECT_URI` (default: empty). Local dev redirect should be `http://localhost:3001/api/auth/google/callback` (backend handles code).
+
+- **OAuth: Outlook**
+  - `OUTLOOK_CLIENT_ID`, `OUTLOOK_CLIENT_SECRET`, `OUTLOOK_REDIRECT_URI` (default: empty). Local dev redirect: `http://localhost:3001/api/accounts/oauth/outlook/callback` (backend callback).
+
+- **Auth / Sessions (JWT)**
+  - `JWT_SECRET` (default: `dev-insecure-jwt`) — signs login session tokens and short-lived OAuth state tokens.
+  - `JWT_EXPIRES_IN_SEC` (default: `86400`) — session TTL in seconds.
+
+- **Logging** (pino)
+  - `NODE_ENV` — `production` → JSON logs, else pretty dev logs.
+  - `LOG_LEVEL` — default `info` in production, `debug` in development. See `src/backend/services/logger.ts`.
+
+- **Diagnostics / Tracing**
+  - `TRACE_PERSIST` (default: `true` when unset) — persist traces to disk.
+  - `TRACE_VERBOSE` (default: `false`) — include redacted payload excerpts.
+  - `TRACE_MAX_PAYLOAD` (default: `32768`) — bytes per payload.
+  - `TRACE_MAX_SPANS` (default: `1000`) — cap spans per trace.
+  - `TRACE_MAX_TRACES` (default: `1000`) — retention cap.
+  - `TRACE_TTL_DAYS` (default: `7`) — retention TTL.
+  - `TRACE_REDACT_FIELDS` (default: `authorization,api_key,access_token,refresh_token,set-cookie,cookie`) — comma-separated, case-insensitive.
+
+- **Retention (logs & events)**
+  - `PROVIDER_MAX_EVENTS` (default: `5000`)
+  - `PROVIDER_TTL_DAYS` (default: `7`)
+  - `FETCHER_TTL_DAYS` (default: `7`)
+  - `ORCHESTRATION_TTL_DAYS` (default: `7`)
+
+- **Timeouts (ms)**
+  - `OPENAI_REQUEST_TIMEOUT_MS` (default: `30000`)
+  - `GRAPH_REQUEST_TIMEOUT_MS` (default: `15000`)
+  - `PROVIDER_REQUEST_TIMEOUT_MS` (default: `30000`)
+  - `CONVERSATION_STEP_TIMEOUT_MS` (default: `45000`)
+  - `TOOL_EXEC_TIMEOUT_MS` (default: `30000`)
+
+- **Multi-user isolation & limits**
+  - `USER_REGISTRY_TTL_MINUTES` (default: `60`)
+  - `USER_REGISTRY_MAX_ENTRIES` (default: `1000`)
+  - `USER_MAX_FILE_SIZE_MB` (default: `50`)
+  - `USER_MAX_CONVERSATIONS` (default: `10000`)
+  - `USER_MAX_LOGS_PER_TYPE` (default: `10000`)
+  - `FETCHER_MANAGER_TTL_MINUTES` (default: `60`)
+  - `FETCHER_MANAGER_MAX_FETCHERS` (default: `100`)
+
+Notes:
+- OpenAI API keys are managed per user in Settings and stored per-user; there is no global `OPENAI_API_KEY` for production use.
+- All variables are read at process start. Restart the backend after changes.
+
 ## User Isolation & Data Access
 
 ### Security Model
