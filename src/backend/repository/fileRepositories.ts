@@ -39,15 +39,73 @@ export abstract class FileRepoBase {
   }
 }
 
-/** Repository backed by an encrypted JSON file with security. */
-export class FileJsonRepository<T> extends FileRepoBase implements Repository<T> {
+/**
+ * Generic pruning base that encapsulates TTL and max-items logic.
+ * - Keeps logging and security via FileRepoBase.
+ * - Timestamp extraction is configurable per repository.
+ */
+export abstract class PrunableFileRepo<T> extends FileRepoBase {
   constructor(
     filePath: string,
     containerPath?: string,
-    private maxItems?: number,
-    uid?: string
+    uid?: string,
+    private pruneOptions?: {
+      ttlMs?: number | (() => number);
+      maxItems?: number | (() => number);
+      getTimestamp?: (item: T) => string | number | Date | undefined;
+    }
   ) {
     super(filePath, containerPath, uid);
+  }
+
+  protected pruneList(list: T[]): T[] {
+    try {
+      let next = list;
+
+      // TTL pruning
+      const ttlVal = this.pruneOptions?.ttlMs;
+      const ttlMs = typeof ttlVal === 'function' ? ttlVal() : ttlVal;
+      if (ttlMs && ttlMs > 0) {
+        const now = Date.now();
+        const getTs = this.pruneOptions?.getTimestamp;
+        if (getTs) {
+          next = next.filter((item) => {
+            const raw = getTs(item);
+            let ts: number | undefined;
+            if (raw instanceof Date) ts = raw.getTime();
+            else if (typeof raw === 'number') ts = raw;
+            else if (typeof raw === 'string') {
+              const parsed = Date.parse(raw);
+              ts = isNaN(parsed) ? undefined : parsed;
+            }
+            return ts === undefined ? true : (now - ts) <= ttlMs;
+          });
+        }
+      }
+
+      // Max items capping (keep most recent by list order)
+      const maxVal = this.pruneOptions?.maxItems;
+      const maxItems = typeof maxVal === 'function' ? maxVal() : maxVal;
+      if (maxItems && maxItems > 0 && next.length > maxItems) {
+        next = next.slice(Math.max(0, next.length - maxItems));
+      }
+
+      return next;
+    } catch {
+      return list;
+    }
+  }
+}
+
+/** Repository backed by an encrypted JSON file with security. */
+export class FileJsonRepository<T> extends PrunableFileRepo<T> implements Repository<T> {
+  constructor(
+    filePath: string,
+    containerPath?: string,
+    maxItems?: number,
+    uid?: string
+  ) {
+    super(filePath, containerPath, uid, { maxItems });
   }
   
   async getAll(): Promise<T[]> {
@@ -75,12 +133,7 @@ export class FileJsonRepository<T> extends FileRepoBase implements Repository<T>
   }
   
   async setAll(next: T[]): Promise<void> {
-    let items = next;
-    
-    // Apply size limits if configured
-    if (this.maxItems && items.length > this.maxItems) {
-      items = items.slice(-this.maxItems); // Keep most recent
-    }
+    const items = this.pruneList(next);
     
     try {
       await persistence.encryptAndPersist(items, this.filePath, this.containerPath);
@@ -114,40 +167,23 @@ export interface FetcherLogRepository extends Repository<FetcherLogEntry> {
 }
 
 /** Fetcher log repository with TTL + cap pruning. */
-export class FileFetcherLogRepository extends FileRepoBase implements FetcherLogRepository {
+export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> implements FetcherLogRepository {
   constructor(
     filePath: string = dataPath('fetcher.json'),
     containerPath?: string,
     uid?: string
   ) {
-    super(filePath, containerPath, uid);
-  }
-
-  private prune(list: FetcherLogEntry[]): FetcherLogEntry[] {
-    try {
-      const ttlMs = Math.max(0, FETCHER_TTL_DAYS) * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      let next = list;
-      if (ttlMs > 0) {
-        next = next.filter(e => {
-          const ts = Date.parse(e.timestamp || '');
-          return isNaN(ts) ? true : (now - ts) <= ttlMs;
-        });
-      }
-      const maxItems = USER_MAX_LOGS_PER_TYPE;
-      if (maxItems > 0 && next.length > maxItems) {
-        next = next.slice(Math.max(0, next.length - maxItems));
-      }
-      return next;
-    } catch {
-      return list;
-    }
+    super(filePath, containerPath, uid, {
+      ttlMs: () => Math.max(0, FETCHER_TTL_DAYS) * 24 * 60 * 60 * 1000,
+      maxItems: () => USER_MAX_LOGS_PER_TYPE,
+      getTimestamp: (e) => e.timestamp,
+    });
   }
 
   async getAll(): Promise<FetcherLogEntry[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.prune(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as FetcherLogEntry[]);
+        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as FetcherLogEntry[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -163,7 +199,7 @@ export class FileFetcherLogRepository extends FileRepoBase implements FetcherLog
   }
 
   async setAll(next: FetcherLogEntry[]): Promise<void> {
-    const pruned = this.prune(next);
+    const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
@@ -189,40 +225,23 @@ export interface OrchestrationLogRepository extends Repository<OrchestrationDiag
 }
 
 /** Orchestration diagnostics repository with TTL + cap pruning. */
-export class FileOrchestrationLogRepository extends FileRepoBase implements OrchestrationLogRepository {
+export class FileOrchestrationLogRepository extends PrunableFileRepo<OrchestrationDiagnosticEntry> implements OrchestrationLogRepository {
   constructor(
     filePath: string = dataPath('orchestration.json'),
     containerPath?: string,
     uid?: string
   ) {
-    super(filePath, containerPath, uid);
-  }
-
-  private prune(list: OrchestrationDiagnosticEntry[]): OrchestrationDiagnosticEntry[] {
-    try {
-      const ttlMs = Math.max(0, ORCHESTRATION_TTL_DAYS) * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      let next = list;
-      if (ttlMs > 0) {
-        next = next.filter(e => {
-          const ts = Date.parse(e.timestamp || '');
-          return isNaN(ts) ? true : (now - ts) <= ttlMs;
-        });
-      }
-      const maxItems = USER_MAX_LOGS_PER_TYPE;
-      if (maxItems > 0 && next.length > maxItems) {
-        next = next.slice(Math.max(0, next.length - maxItems));
-      }
-      return next;
-    } catch {
-      return list;
-    }
+    super(filePath, containerPath, uid, {
+      ttlMs: () => Math.max(0, ORCHESTRATION_TTL_DAYS) * 24 * 60 * 60 * 1000,
+      maxItems: () => USER_MAX_LOGS_PER_TYPE,
+      getTimestamp: (e) => e.timestamp,
+    });
   }
 
   async getAll(): Promise<OrchestrationDiagnosticEntry[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.prune(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationDiagnosticEntry[]);
+        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationDiagnosticEntry[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -238,7 +257,7 @@ export class FileOrchestrationLogRepository extends FileRepoBase implements Orch
   }
 
   async setAll(next: OrchestrationDiagnosticEntry[]): Promise<void> {
-    const pruned = this.prune(next);
+    const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
@@ -264,44 +283,24 @@ export interface ProviderEventsRepository extends Repository<ProviderEvent> {
 }
 
 /** Provider events repository persisted to disk with per-user support. */
-export class FileProviderEventsRepository extends FileRepoBase implements ProviderEventsRepository {
+export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent> implements ProviderEventsRepository {
   constructor(
     filePath: string = dataPath('provider-events.json'), 
     containerPath?: string,
-    private isPerUser: boolean = true,
+    isPerUser: boolean = true,
     uid?: string
   ) {
-    super(filePath, containerPath, uid);
-  }
-  
-  private prune(list: ProviderEvent[]): ProviderEvent[] {
-    try {
-      const ttlMs = Math.max(0, PROVIDER_TTL_DAYS) * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      let next = list;
-      
-      if (ttlMs > 0) {
-        next = next.filter(e => {
-          const ts = Date.parse(e.timestamp || '');
-          return isNaN(ts) ? true : (now - ts) <= ttlMs;
-        });
-      }
-      
-      const maxEvents = this.isPerUser ? USER_MAX_LOGS_PER_TYPE : PROVIDER_MAX_EVENTS;
-      if (maxEvents > 0 && next.length > maxEvents) {
-        next = next.slice(Math.max(0, next.length - maxEvents));
-      }
-      
-      return next;
-    } catch {
-      return list;
-    }
+    super(filePath, containerPath, uid, {
+      ttlMs: () => Math.max(0, PROVIDER_TTL_DAYS) * 24 * 60 * 60 * 1000,
+      maxItems: () => (isPerUser ? USER_MAX_LOGS_PER_TYPE : PROVIDER_MAX_EVENTS),
+      getTimestamp: (e) => e.timestamp,
+    });
   }
   
   async getAll(): Promise<ProviderEvent[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.prune(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[]);
+        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -317,7 +316,7 @@ export class FileProviderEventsRepository extends FileRepoBase implements Provid
   }
 
   async setAll(next: ProviderEvent[]): Promise<void> {
-    const pruned = this.prune(next);
+    const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
@@ -344,44 +343,24 @@ export interface TracesRepository extends Repository<Trace> {
 }
 
 /** Trace repository persisted to disk with per-user support. */
-export class FileTracesRepository extends FileRepoBase implements TracesRepository {
+export class FileTracesRepository extends PrunableFileRepo<Trace> implements TracesRepository {
   constructor(
     filePath: string = dataPath('traces.json'), 
     containerPath?: string,
-    private isPerUser: boolean = true,
+    isPerUser: boolean = true,
     uid?: string
   ) {
-    super(filePath, containerPath, uid);
-  }
-  
-  private prune(list: Trace[]): Trace[] {
-    try {
-      const ttlMs = Math.max(0, TRACE_TTL_DAYS) * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      let next = list;
-      
-      if (ttlMs > 0) {
-        next = next.filter(t => {
-          const ts = Date.parse(t.createdAt || '');
-          return isNaN(ts) ? true : (now - ts) <= ttlMs;
-        });
-      }
-      
-      const maxTraces = this.isPerUser ? USER_MAX_LOGS_PER_TYPE : TRACE_MAX_TRACES;
-      if (maxTraces > 0 && next.length > maxTraces) {
-        next = next.slice(Math.max(0, next.length - maxTraces));
-      }
-      
-      return next;
-    } catch {
-      return list;
-    }
+    super(filePath, containerPath, uid, {
+      ttlMs: () => Math.max(0, TRACE_TTL_DAYS) * 24 * 60 * 60 * 1000,
+      maxItems: () => (isPerUser ? USER_MAX_LOGS_PER_TYPE : TRACE_MAX_TRACES),
+      getTimestamp: (t) => t.createdAt,
+    });
   }
   
   async getAll(): Promise<Trace[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.prune(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[]);
+        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -397,7 +376,7 @@ export class FileTracesRepository extends FileRepoBase implements TracesReposito
   }
 
   async setAll(next: Trace[]): Promise<void> {
-    const pruned = this.prune(next);
+    const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
