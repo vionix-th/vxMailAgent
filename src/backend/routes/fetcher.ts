@@ -63,16 +63,7 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     }
   });
 
-  // Purge all fetcher logs for current user
-  app.delete('/api/fetcher/logs/purge', (req, res) => {
-    try {
-      const prev = deps.getFetcherLog(req as any as ReqLike);
-      deps.setFetcherLog(req as any as ReqLike, []);
-      res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} fetcher logs` });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
+  // Note: Full purge moved to cleanup routes (/api/cleanup/fetcher-logs)
 
   app.delete('/api/fetcher/logs/:id', (req, res) => {
     try {

@@ -22,14 +22,15 @@ export default function registerCleanupRoutes(app: express.Express) {
         repoGetAll<any>(ureq, 'fetcherLog'),
         repoGetAll<any>(ureq, 'workspaceItems'),
       ]);
-      res.json({
+      const stats = {
+        fetcherLogs: fetcherLog.length,
+        orchestrationLogs: orchestrationLog.length,
         conversations: conversations.length,
-        orchestrationLog: orchestrationLog.length,
+        workspaceItems: workspaceItems.length,
         providerEvents: providerEvents.length,
         traces: traces.length,
-        fetcherLog: fetcherLog.length,
-        workspaceItems: workspaceItems.length,
-      });
+      };
+      res.json({ ...stats, total: stats.fetcherLogs + stats.orchestrationLogs + stats.conversations + stats.workspaceItems + stats.providerEvents + stats.traces });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });
     }
@@ -62,9 +63,17 @@ export default function registerCleanupRoutes(app: express.Express) {
         repoSetAll<any>(ureq, 'fetcherLog', []),
         repoSetAll<any>(ureq, 'workspaceItems', []),
       ]);
+      const deleted = {
+        fetcherLogs: fetcherLog.length,
+        orchestrationLogs: orchestrationLog.length,
+        conversations: conversations.length,
+        workspaceItems: workspaceItems.length,
+        providerEvents: providerEvents.length,
+        traces: traces.length,
+      };
       res.json({
         success: true,
-        deleted: conversations.length + orchestrationLog.length + providerEvents.length + traces.length + fetcherLog.length + workspaceItems.length,
+        deleted: { ...deleted, total: deleted.fetcherLogs + deleted.orchestrationLogs + deleted.conversations + deleted.workspaceItems + deleted.providerEvents + deleted.traces },
         message: 'Purged all user data and logs',
       });
     } catch (e: any) {

@@ -400,11 +400,16 @@ POST   /api/fetcher/run
 GET    /api/fetcher/logs
 DELETE /api/fetcher/logs/:id
 DELETE /api/fetcher/logs     # bulk; body { ids: string[] }
-DELETE /api/fetcher/logs/purge
 ```
 - Control email fetching
 - View and manage fetch logs
 - Background processing control
+
+Note: Full purge of fetcher logs is via the canonical cleanup endpoint:
+
+```
+DELETE /api/cleanup/fetcher-logs
+```
 
 ### Workspaces
 ```

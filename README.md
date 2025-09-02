@@ -145,13 +145,14 @@ Frontend (`src/frontend`)
   - `GET /api/memory`, `POST /api/memory`, `PUT /api/memory/:id`, `DELETE /api/memory/:id`, `DELETE /api/memory` (bulk)
 - **Fetcher**
   - `GET /api/fetcher/status`, `POST /api/fetcher/start`, `POST /api/fetcher/stop`, `POST /api/fetcher/fetch`, `POST /api/fetcher/run`
-  - Logs: `GET /api/fetcher/logs`, `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (bulk), `DELETE /api/fetcher/logs/purge`
+  - Logs: `GET /api/fetcher/logs`, `DELETE /api/fetcher/logs/:id`, `DELETE /api/fetcher/logs` (bulk)
 - **Diagnostics**
   - Runtime: `GET /api/diagnostics/runtime`
   - Orchestration diagnostics: `GET /api/orchestration/diagnostics`, `DELETE /api/orchestration/diagnostics/:id`, `DELETE /api/orchestration/diagnostics` (bulk)
   - Unified tree: `GET /api/diagnostics/unified`, `GET /api/diagnostics/unified/:nodeId`
 - **Cleanup (admin)**
   - `GET /api/cleanup/stats`, `DELETE /api/cleanup/all`, plus category deletes under `/api/cleanup/*`
+  - For fetcher logs full purge, use: `DELETE /api/cleanup/fetcher-logs` (canonical)
 
 See `docs/DEVELOPER.md` for details.
 
