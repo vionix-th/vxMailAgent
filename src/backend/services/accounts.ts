@@ -3,8 +3,7 @@ import logger from './logger';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt, verifyJwt } from '../utils/jwt';
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo, ensureValidGoogleAccessToken } from '../oauth/google';
-import { getOutlookAuthUrl, getOutlookTokens, getOutlookUserInfo, ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth-outlook';
-import { computeExpiryISO } from '../oauth/common';
+import { buildOutlookAuthUrl, exchangeOutlookCode, getOutlookUserInfo, ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outlook';
 import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
 import type { ReqLike } from '../interfaces';
 import type { Account } from '../../shared/types';
@@ -81,10 +80,8 @@ export function initiateGoogleAccountOAuth(rawState: string): string {
 
 export async function initiateOutlookAccountOAuth(rawState: string): Promise<string> {
   const signedState = signJwt({ p: 'outlook.account', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-  return await getOutlookAuthUrl(
-    OUTLOOK_CLIENT_ID!,
-    OUTLOOK_CLIENT_SECRET!,
-    OUTLOOK_REDIRECT_URI!,
+  return buildOutlookAuthUrl(
+    { clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! },
     signedState
   );
 }
@@ -115,11 +112,11 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
 export async function handleOutlookAccountCallback(code: string, stateToken: string, req: ReqLike): Promise<Account> {
   const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
   if (!payload || payload.p !== 'outlook.account') throw new Error('Invalid or expired state');
-  const tokenResponse = await getOutlookTokens(OUTLOOK_CLIENT_ID!, OUTLOOK_CLIENT_SECRET!, OUTLOOK_REDIRECT_URI!, code);
+  const tokens = await exchangeOutlookCode({ clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! }, code);
   let email = '';
-  if (tokenResponse?.id_token) {
+  if (tokens?.raw?.id_token) {
     try {
-      const parts = String(tokenResponse.id_token).split('.');
+      const parts = String(tokens.raw.id_token).split('.');
       if (parts.length >= 2) {
         const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
         email = payload.preferred_username || payload.email || '';
@@ -127,22 +124,21 @@ export async function handleOutlookAccountCallback(code: string, stateToken: str
     } catch {}
   }
   if (!email) {
-    const accessToken = tokenResponse?.access_token || '';
+    const accessToken = tokens.accessToken || '';
     if (!accessToken) throw new Error('Outlook profile missing email address');
     const me = await getOutlookUserInfo(accessToken);
     email = (me && (me.mail || (Array.isArray(me.otherMails) && me.otherMails[0]) || me.userPrincipalName)) || '';
   }
   if (!email) throw new Error('Outlook profile missing email address');
-  const expiryIso = computeExpiryISO(typeof tokenResponse?.expires_in === 'number' ? tokenResponse.expires_in : undefined);
   const account: Account = {
     id: email,
     provider: 'outlook',
     email,
     signature: '',
     tokens: {
-      accessToken: tokenResponse?.access_token || '',
-      refreshToken: tokenResponse?.refresh_token || '',
-      expiry: expiryIso,
+      accessToken: tokens.accessToken || '',
+      refreshToken: tokens.refreshToken || '',
+      expiry: tokens.expiryISO,
     },
   } as any;
   await upsertAccount(req, account);
@@ -198,15 +194,14 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
     const result = await ensureValidOutlookAccessToken(
       account,
       OUTLOOK_CLIENT_ID!,
-      OUTLOOK_CLIENT_SECRET!
+      OUTLOOK_CLIENT_SECRET!,
+      OUTLOOK_REDIRECT_URI!
     );
     if (result.error) {
       if (String(result.error).toLowerCase().includes('missing refresh token')) {
         const state = `reauth:${id}`;
-        const url = await getOutlookAuthUrl(
-          OUTLOOK_CLIENT_ID!,
-          OUTLOOK_CLIENT_SECRET!,
-          OUTLOOK_REDIRECT_URI!,
+        const url = buildOutlookAuthUrl(
+          { clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! },
           state
         );
         return { ok: false, error: 'missing_refresh_token', authorizeUrl: url };
@@ -242,16 +237,15 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
   const result = await ensureValidOutlookAccessToken(
     account,
     OUTLOOK_CLIENT_ID!,
-    OUTLOOK_CLIENT_SECRET!
+    OUTLOOK_CLIENT_SECRET!,
+    OUTLOOK_REDIRECT_URI!
   );
   if (result.error) {
     if (String(result.error).toLowerCase().includes('missing refresh token')) {
       const rawState = `reauth:${id}`;
       const signedState = signJwt({ p: 'outlook', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-      const url = await getOutlookAuthUrl(
-        OUTLOOK_CLIENT_ID!,
-        OUTLOOK_CLIENT_SECRET!,
-        OUTLOOK_REDIRECT_URI!,
+      const url = buildOutlookAuthUrl(
+        { clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! },
         signedState
       );
       return { ok: false, error: 'missing_refresh_token', authorizeUrl: url };
