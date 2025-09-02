@@ -1,6 +1,6 @@
 import express from 'express';
 import { Director } from '../../shared/types';
-import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
+import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
 import { ReqLike } from '../utils/repo-access';
 // persistence is handled by injected deps.setDirectors
 import logger from '../services/logger';
@@ -11,15 +11,6 @@ export interface DirectorsRoutesDeps {
 }
 
 export default function registerDirectorsRoutes(app: express.Express, deps: DirectorsRoutesDeps) {
-  const sanitizeEnabled = (v: any): string[] | undefined => {
-    if (!Array.isArray(v)) return undefined;
-    const out: string[] = [];
-    for (const x of v) {
-      if (typeof x !== 'string') continue;
-      if ((OPTIONAL_TOOL_NAMES as readonly string[]).includes(x)) { out.push(x); continue; }
-    }
-    return out.length ? out : [];
-  };
   // GET /api/directors
   app.get('/api/directors', async (req, res) => {
     logger.info('GET /api/directors');

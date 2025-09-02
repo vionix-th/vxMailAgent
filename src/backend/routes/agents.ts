@@ -1,6 +1,6 @@
 import express from 'express';
 import { Agent } from '../../shared/types';
-import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
+import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
 // persistence is handled by injected deps.setAgents
 
 import { ReqLike } from '../utils/repo-access';
@@ -12,15 +12,6 @@ export interface AgentsRoutesDeps {
 }
 
 export default function registerAgentsRoutes(app: express.Express, deps: AgentsRoutesDeps) {
-  const sanitizeEnabled = (v: any): string[] | undefined => {
-    if (!Array.isArray(v)) return undefined;
-    const out: string[] = [];
-    for (const x of v) {
-      if (typeof x !== 'string') continue;
-      if ((OPTIONAL_TOOL_NAMES as readonly string[]).includes(x)) { out.push(x); continue; }
-    }
-    return out.length ? out : [];
-  };
   // GET /api/agents
   app.get('/api/agents', async (req, res) => {
     logger.info('GET /api/agents');
@@ -73,4 +64,3 @@ export default function registerAgentsRoutes(app: express.Express, deps: AgentsR
     res.json({ success: true });
   });
 }
-
