@@ -15,9 +15,9 @@ export function getUsersRepo(): Repository<User> {
 }
 
 /** Insert or update a user record. */
-export function upsertUser(next: User): User {
+export async function upsertUser(next: User): Promise<User> {
   const repo = getUsersRepo();
-  const all = repo.getAll();
+  const all = await repo.getAll();
   const idx = all.findIndex(u => u.id === next.id);
   if (idx >= 0) {
     const cur = all[idx];
@@ -25,18 +25,20 @@ export function upsertUser(next: User): User {
   } else {
     all.push(next);
   }
-  repo.setAll(all);
+  await repo.setAll(all);
   return next;
 }
 
 /** Find a user by identifier. */
-export function findUserById(id: string): User | undefined {
+export async function findUserById(id: string): Promise<User | undefined> {
   const repo = getUsersRepo();
-  return repo.getAll().find(u => u.id === id);
+  const all = await repo.getAll();
+  return all.find(u => u.id === id);
 }
 
 /** Find a user by email address (case-insensitive). */
-export function findUserByEmail(email: string): User | undefined {
+export async function findUserByEmail(email: string): Promise<User | undefined> {
   const repo = getUsersRepo();
-  return repo.getAll().find(u => u.email.toLowerCase() === email.toLowerCase());
+  const all = await repo.getAll();
+  return all.find(u => u.email.toLowerCase() === email.toLowerCase());
 }

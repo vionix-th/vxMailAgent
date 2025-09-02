@@ -55,7 +55,7 @@ export class RepoBundleRegistry {
    * @param uid - User ID (must be pre-validated)
    * @returns Repository bundle for the user
    */
-  getBundle(uid: string): RepoBundle {
+  async getBundle(uid: string): Promise<RepoBundle> {
     let bundle = this.bundles.get(uid);
     
     if (bundle) {
@@ -87,7 +87,7 @@ export class RepoBundleRegistry {
     for (const f of filesToInit) {
       try {
         if (!fs.existsSync(f)) {
-          persistence.encryptAndPersist([], f, paths.root);
+          await persistence.encryptAndPersist([], f, paths.root);
         }
       } catch (e) {
         logger.warn('[REGISTRY] Failed to pre-create user file', { file: f, error: e });
@@ -229,6 +229,6 @@ export const repoBundleRegistry = new RepoBundleRegistry();
  * @param uid - User ID (must be pre-validated)
  * @returns Repository bundle
  */
-export function getUserRepoBundle(uid: string): RepoBundle {
+export function getUserRepoBundle(uid: string): Promise<RepoBundle> {
   return repoBundleRegistry.getBundle(uid);
 }

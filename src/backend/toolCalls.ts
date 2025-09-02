@@ -124,7 +124,7 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       const scopes = ['local', 'shared', 'global'];
       let found: MemoryEntry[] = [];
 
-      const all = (memoryRepo.getAll() || []) as MemoryEntry[];
+      const all = (await memoryRepo.getAll() || []) as MemoryEntry[];
       for (const scope of (payload.scope ? [payload.scope, ...scopes.filter(s => s !== payload.scope)] : scopes)) {
         let filtered = all.filter((e: MemoryEntry) => e.scope === scope);
         if (payload.owner) filtered = filtered.filter((e: MemoryEntry) => e.owner === payload.owner);
@@ -176,9 +176,9 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       if (!entry) {
         return { kind: 'memory', success: false, result: { ok: false, errors, received: sanitize(payload) }, error: 'Invalid memory add payload' };
       }
-      const current = memoryRepo.getAll();
+      const current = await memoryRepo.getAll();
       const next = [...current, entry];
-      memoryRepo.setAll(next);
+      await memoryRepo.setAll(next);
       return { kind: 'memory', success: true, result: { added: true, entry }, error: undefined };
     } else if (payload.action === 'edit') {
       // Require an entry with id; merge provided fields
@@ -186,7 +186,7 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       if (!received || typeof received !== 'object' || !received.id) {
         return { kind: 'memory', success: false, result: { ok: false, errors: ['Missing entry.id'], received: sanitize(payload) }, error: 'Invalid memory edit payload' };
       }
-      const list = memoryRepo.getAll();
+      const list = await memoryRepo.getAll();
       const idx = list.findIndex((e: MemoryEntry) => e.id === received.id);
       if (idx === -1) {
         return { kind: 'memory', success: false, result: { ok: false, errors: ['Memory entry not found'], received: sanitize(payload) }, error: 'Memory entry not found' };
@@ -194,7 +194,7 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       const updated = { ...list[idx], ...received, updated: new Date().toISOString() } as MemoryEntry;
       const next = list.slice();
       next[idx] = updated;
-      memoryRepo.setAll(next);
+      await memoryRepo.setAll(next);
       return { kind: 'memory', success: true, result: { edited: true, entry: updated }, error: undefined };
     }
     return { kind: 'memory', success: false, result: null, error: 'Invalid memory action' };
@@ -226,21 +226,21 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
         // Required context from orchestration
         context: payload.context,
       };
-      const current = workspaceRepo.getAll();
-      workspaceRepo.setAll([...current, item]);
+      const current = await workspaceRepo.getAll();
+      await workspaceRepo.setAll([...current, item]);
       return { kind: 'workspace', success: true, result: { added: true, item }, error: undefined };
     } else if (payload.action === 'list') {
-      const items = workspaceRepo.getAll();
+      const items = await workspaceRepo.getAll();
       return { kind: 'workspace', success: true, result: items, error: undefined };
     } else if (payload.action === 'get') {
-      const items = workspaceRepo.getAll();
+      const items = await workspaceRepo.getAll();
       const item = items.find((i: WorkspaceItem) => i.id === payload.id);
       if (!item) {
         return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
       }
       return { kind: 'workspace', success: true, result: item, error: undefined };
     } else if (payload.action === 'update') {
-      const items = workspaceRepo.getAll();
+      const items = await workspaceRepo.getAll();
       const idx = items.findIndex((i: WorkspaceItem) => i.id === payload.id);
       if (idx === -1) {
         return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
@@ -248,15 +248,15 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
       const updated = { ...items[idx], ...payload.patch, updated: new Date().toISOString(), revision: (items[idx].revision || 0) + 1 };
       const next = items.slice();
       next[idx] = updated;
-      workspaceRepo.setAll(next);
+      await workspaceRepo.setAll(next);
       return { kind: 'workspace', success: true, result: { updated: true, item: updated }, error: undefined };
     } else if (payload.action === 'remove') {
-      const items = workspaceRepo.getAll();
+      const items = await workspaceRepo.getAll();
       const filtered = items.filter((i: WorkspaceItem) => i.id !== payload.id);
       if (filtered.length === items.length) {
         return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
       }
-      workspaceRepo.setAll(filtered);
+      await workspaceRepo.setAll(filtered);
       return { kind: 'workspace', success: true, result: { removed: true }, error: undefined };
     }
     return { kind: 'workspace', success: false, result: null, error: 'Invalid workspace action' };

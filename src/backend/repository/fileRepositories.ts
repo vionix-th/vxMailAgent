@@ -50,10 +50,10 @@ export class FileJsonRepository<T> extends FileRepoBase implements Repository<T>
     super(filePath, containerPath, uid);
   }
   
-  getAll(): T[] {
+  async getAll(): Promise<T[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = persistence.loadAndDecrypt(this.filePath, this.containerPath) as T[];
+        const data = await persistence.loadAndDecrypt(this.filePath, this.containerPath) as T[];
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -74,7 +74,7 @@ export class FileJsonRepository<T> extends FileRepoBase implements Repository<T>
     }
   }
   
-  setAll(next: T[]): void {
+  async setAll(next: T[]): Promise<void> {
     let items = next;
     
     // Apply size limits if configured
@@ -83,12 +83,12 @@ export class FileJsonRepository<T> extends FileRepoBase implements Repository<T>
     }
     
     try {
-      persistence.encryptAndPersist(items, this.filePath, this.containerPath);
-      
+      await persistence.encryptAndPersist(items, this.filePath, this.containerPath);
+
       // Log successful write operation
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
       this.logFileOperation('write', true, undefined, fileStats?.size);
-      
+
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('write', false, error.message);
@@ -110,7 +110,7 @@ export class FileJsonRepository<T> extends FileRepoBase implements Repository<T>
 
 /** Repository interface for fetcher logs. */
 export interface FetcherLogRepository extends Repository<FetcherLogEntry> {
-  append(e: FetcherLogEntry): void;
+  append(e: FetcherLogEntry): Promise<void>;
 }
 
 /** Fetcher log repository with TTL + cap pruning. */
@@ -144,10 +144,10 @@ export class FileFetcherLogRepository extends FileRepoBase implements FetcherLog
     }
   }
 
-  getAll(): FetcherLogEntry[] {
+  async getAll(): Promise<FetcherLogEntry[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as FetcherLogEntry[]);
+        const data = this.prune(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as FetcherLogEntry[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -162,10 +162,10 @@ export class FileFetcherLogRepository extends FileRepoBase implements FetcherLog
     }
   }
 
-  setAll(next: FetcherLogEntry[]): void {
+  async setAll(next: FetcherLogEntry[]): Promise<void> {
     const pruned = this.prune(next);
     try {
-      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
+      await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
       this.logFileOperation('write', true, undefined, fileStats?.size);
     } catch (e) {
@@ -176,16 +176,16 @@ export class FileFetcherLogRepository extends FileRepoBase implements FetcherLog
     }
   }
 
-  append(e: FetcherLogEntry): void {
-    const list = this.getAll();
+  async append(e: FetcherLogEntry): Promise<void> {
+    const list = await this.getAll();
     list.push(e);
-    this.setAll(list);
+    await this.setAll(list);
   }
 }
 
 /** Repository interface for orchestration diagnostics log. */
 export interface OrchestrationLogRepository extends Repository<OrchestrationDiagnosticEntry> {
-  append(e: OrchestrationDiagnosticEntry): void;
+  append(e: OrchestrationDiagnosticEntry): Promise<void>;
 }
 
 /** Orchestration diagnostics repository with TTL + cap pruning. */
@@ -219,10 +219,10 @@ export class FileOrchestrationLogRepository extends FileRepoBase implements Orch
     }
   }
 
-  getAll(): OrchestrationDiagnosticEntry[] {
+  async getAll(): Promise<OrchestrationDiagnosticEntry[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationDiagnosticEntry[]);
+        const data = this.prune(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationDiagnosticEntry[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -237,10 +237,10 @@ export class FileOrchestrationLogRepository extends FileRepoBase implements Orch
     }
   }
 
-  setAll(next: OrchestrationDiagnosticEntry[]): void {
+  async setAll(next: OrchestrationDiagnosticEntry[]): Promise<void> {
     const pruned = this.prune(next);
     try {
-      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
+      await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
       this.logFileOperation('write', true, undefined, fileStats?.size);
     } catch (e) {
@@ -251,16 +251,16 @@ export class FileOrchestrationLogRepository extends FileRepoBase implements Orch
     }
   }
 
-  append(e: OrchestrationDiagnosticEntry): void {
-    const list = this.getAll();
+  async append(e: OrchestrationDiagnosticEntry): Promise<void> {
+    const list = await this.getAll();
     list.push(e);
-    this.setAll(list);
+    await this.setAll(list);
   }
 }
 
 /** Repository interface for provider events. */
 export interface ProviderEventsRepository extends Repository<ProviderEvent> {
-  append(ev: ProviderEvent): void;
+  append(ev: ProviderEvent): Promise<void>;
 }
 
 /** Provider events repository persisted to disk with per-user support. */
@@ -298,10 +298,10 @@ export class FileProviderEventsRepository extends FileRepoBase implements Provid
     }
   }
   
-  getAll(): ProviderEvent[] {
+  async getAll(): Promise<ProviderEvent[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[]);
+        const data = this.prune(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -315,11 +315,11 @@ export class FileProviderEventsRepository extends FileRepoBase implements Provid
       return [];
     }
   }
-  
-  setAll(next: ProviderEvent[]): void {
+
+  async setAll(next: ProviderEvent[]): Promise<void> {
     const pruned = this.prune(next);
-    try { 
-      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
+    try {
+      await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
       this.logFileOperation('write', true, undefined, fileStats?.size);
     } catch (e) {
@@ -329,18 +329,18 @@ export class FileProviderEventsRepository extends FileRepoBase implements Provid
       throw error;
     }
   }
-  
-  append(ev: ProviderEvent): void {
-    const list = this.getAll();
+
+  async append(ev: ProviderEvent): Promise<void> {
+    const list = await this.getAll();
     list.push(ev);
-    this.setAll(list);
+    await this.setAll(list);
   }
 }
 
 /** Repository interface for traces. */
 export interface TracesRepository extends Repository<Trace> {
-  append(t: Trace): void;
-  update(id: string, updater: (t: Trace) => Trace | void): void;
+  append(t: Trace): Promise<void>;
+  update(id: string, updater: (t: Trace) => Trace | void): Promise<void>;
 }
 
 /** Trace repository persisted to disk with per-user support. */
@@ -378,10 +378,10 @@ export class FileTracesRepository extends FileRepoBase implements TracesReposito
     }
   }
   
-  getAll(): Trace[] {
+  async getAll(): Promise<Trace[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.prune(persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[]);
+        const data = this.prune(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -395,11 +395,11 @@ export class FileTracesRepository extends FileRepoBase implements TracesReposito
       return [];
     }
   }
-  
-  setAll(next: Trace[]): void {
+
+  async setAll(next: Trace[]): Promise<void> {
     const pruned = this.prune(next);
-    try { 
-      persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
+    try {
+      await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
       this.logFileOperation('write', true, undefined, fileStats?.size);
     } catch (e) {
@@ -409,21 +409,21 @@ export class FileTracesRepository extends FileRepoBase implements TracesReposito
       throw error;
     }
   }
-  
-  append(t: Trace): void {
-    const list = this.getAll();
+
+  async append(t: Trace): Promise<void> {
+    const list = await this.getAll();
     list.push(t);
-    this.setAll(list);
+    await this.setAll(list);
   }
-  
-  update(id: string, updater: (t: Trace) => Trace | void): void {
-    const list = this.getAll();
+
+  async update(id: string, updater: (t: Trace) => Trace | void): Promise<void> {
+    const list = await this.getAll();
     const idx = list.findIndex(x => x.id === id);
     if (idx >= 0) {
       const cur = list[idx];
       const result = updater(cur);
       if (result) list[idx] = result;
-      this.setAll(list);
+      await this.setAll(list);
     }
   }
 }

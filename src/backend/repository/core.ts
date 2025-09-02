@@ -3,7 +3,7 @@
  */
 export interface Repository<T> {
   /** Retrieve all records from storage. */
-  getAll(): T[];
+  getAll(): Promise<T[]>;
   /** Replace the entire collection in storage. */
-  setAll(next: T[]): void;
+  setAll(next: T[]): Promise<void>;
 }

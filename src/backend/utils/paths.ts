@@ -4,20 +4,38 @@ import fs from 'fs';
 // Global path helpers using DATA_DIR are intentionally omitted to avoid
 // circular dependencies and to enforce per-user isolation only.
 
-/** Resolve base data directory without importing persistence to avoid cycles. */
-function baseDataDir(): string {
+/**
+ * Resolve the data directory for persistent storage. Uses
+ * `VX_MAILAGENT_DATA_DIR` when set, otherwise probes common locations for
+ * both source and compiled runtimes.
+ */
+export function resolveDataDir(): string {
   const envDir = process.env.VX_MAILAGENT_DATA_DIR;
   if (envDir && envDir.trim()) return path.resolve(envDir);
-  // Fallbacks similar to persistence.ts but minimal to avoid import cycle
-  // Prefer repo-level data relative to cwd when running via ts-node
-  return path.resolve(process.cwd(), 'data');
+  const candidates = [
+    // ts-node runtime (src/backend -> ../../data => repo/data)
+    path.resolve(__dirname, '../../data'),
+    // compiled runtime (dist/backend -> ../../../../data => repo/data)
+    path.resolve(__dirname, '../../../../data'),
+    // when launched with cwd at src/backend
+    path.resolve(process.cwd(), '../../data'),
+    // when launched with cwd at repo root
+    path.resolve(process.cwd(), 'data'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).isDirectory()) return p;
+    } catch {}
+  }
+  // Fallback to the ts-node default
+  return candidates[0];
 }
 
 /** Resolves a file path within the persistent data directory. */
-export const dataPath = (name: string) => path.join(baseDataDir(), name);
+export const dataPath = (name: string) => path.join(resolveDataDir(), name);
 
 // Export DATA_DIR derived locally to satisfy scripts that import it
-export const DATA_DIR = baseDataDir();
+export const DATA_DIR = resolveDataDir();
 
 // UID validation: allow either simple ids or provider-prefixed ids with a single colon.
 // Each segment limited to safe characters and reasonable length.
@@ -47,14 +65,8 @@ export function userRoot(uid: string): string {
   if (!validateUid(uid)) {
     throw new Error(`Invalid uid: ${uid}`);
   }
-  
-  // The base data directory is resolved in persistence.ts. To avoid a
-  // circular import, we resolve it here dynamically at runtime using the
-  // same environment variable with a defensive fallback to process.cwd().
-  const envDir = process.env.VX_MAILAGENT_DATA_DIR;
-  const baseDir = envDir && envDir.trim()
-    ? path.resolve(envDir)
-    : path.resolve(process.cwd(), 'data');
+
+  const baseDir = resolveDataDir();
   // Sanitize uid for filesystem path safety (e.g., replace ':' to remain cross-platform safe)
   const fsUid = uid.replace(/:/g, '_');
   const userDir = path.join(baseDir, 'users', fsUid);
