@@ -63,7 +63,7 @@ export default function registerAuthSessionRoutes(app: express.Express) {
         createdAt: nowIso,
         lastLoginAt: nowIso,
       };
-      const saved = upsertUser(user);
+      const saved = await upsertUser(user);
       const token = signJwt({ uid: saved.id, email: saved.email, name: saved.name, picture: saved.picture }, JWT_SECRET, { expiresInSec: JWT_EXPIRES_IN_SEC });
       const secure = (process.env.NODE_ENV || 'development') === 'production';
       res.setHeader('Set-Cookie', cookieSerialize('vx.session', token, { maxAgeSec: JWT_EXPIRES_IN_SEC, httpOnly: true, sameSite: 'Lax', secure, path: '/' }));

@@ -3,20 +3,20 @@ import { requireReq, requireUserRepo, repoGetAll, repoSetAll, ReqLike } from './
 import { RepoBundle } from './repository/registry';
 
 export interface LiveRepos {
-  getPrompts(req?: ReqLike): Prompt[];
-  setPrompts(req: ReqLike, next: Prompt[]): void;
-  getAgents(req?: ReqLike): Agent[];
-  setAgents(req: ReqLike, next: Agent[]): void;
-  getDirectors(req?: ReqLike): Director[];
-  setDirectors(req: ReqLike, next: Director[]): void;
-  getFilters(req?: ReqLike): Filter[];
-  setFilters(req: ReqLike, next: Filter[]): void;
-  getImprints(req?: ReqLike): Imprint[];
-  setImprints(req: ReqLike, next: Imprint[]): void;
-  getOrchestrationLog(req?: ReqLike): OrchestrationDiagnosticEntry[];
-  getConversations(req?: ReqLike): ConversationThread[];
-  setConversations(req: ReqLike, next: ConversationThread[]): void;
-  getSettings(req?: ReqLike): any;
+  getPrompts(req?: ReqLike): Promise<Prompt[]>;
+  setPrompts(req: ReqLike, next: Prompt[]): Promise<void>;
+  getAgents(req?: ReqLike): Promise<Agent[]>;
+  setAgents(req: ReqLike, next: Agent[]): Promise<void>;
+  getDirectors(req?: ReqLike): Promise<Director[]>;
+  setDirectors(req: ReqLike, next: Director[]): Promise<void>;
+  getFilters(req?: ReqLike): Promise<Filter[]>;
+  setFilters(req: ReqLike, next: Filter[]): Promise<void>;
+  getImprints(req?: ReqLike): Promise<Imprint[]>;
+  setImprints(req: ReqLike, next: Imprint[]): Promise<void>;
+  getOrchestrationLog(req?: ReqLike): Promise<OrchestrationDiagnosticEntry[]>;
+  getConversations(req?: ReqLike): Promise<ConversationThread[]>;
+  setConversations(req: ReqLike, next: ConversationThread[]): Promise<void>;
+  getSettings(req?: ReqLike): Promise<any>;
   getProviderRepo(req?: ReqLike): any;
   getTracesRepo(req?: ReqLike): any;
 }
@@ -39,11 +39,13 @@ export function createLiveRepos(): LiveRepos {
     getOrchestrationLog: get<OrchestrationDiagnosticEntry>('orchestrationLog'),
     getConversations: get<ConversationThread>('conversations'),
     setConversations: set<ConversationThread>('conversations'),
-    getSettings: (req?: ReqLike) => {
+    getSettings: async (req?: ReqLike) => {
       const r = requireReq(req);
-      return repoGetAll<any>(r, 'settings')[0] || {};
+      const arr = await repoGetAll<any>(r, 'settings');
+      return arr[0] || {};
     },
     getProviderRepo: (req?: ReqLike) => requireUserRepo(requireReq(req), 'providerEvents'),
     getTracesRepo: (req?: ReqLike) => requireUserRepo(requireReq(req), 'traces'),
   };
 }
+

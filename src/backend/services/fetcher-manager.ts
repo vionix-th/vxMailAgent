@@ -8,19 +8,19 @@ import logger from './logger';
  */
 export interface UserFetcherDeps {
   uid: string;
-  getSettings: () => any;
-  getFilters: () => any[];
-  getDirectors: () => any[];
-  getAgents: () => any[];
-  getPrompts: () => any[];
-  getConversations: () => any[];
-  setConversations: (next: any[]) => void;
-  getAccounts: () => any[];
-  setAccounts: (accounts: any[]) => void;
+  getSettings: () => Promise<any>;
+  getFilters: () => Promise<any[]>;
+  getDirectors: () => Promise<any[]>;
+  getAgents: () => Promise<any[]>;
+  getPrompts: () => Promise<any[]>;
+  getConversations: () => Promise<any[]>;
+  setConversations: (next: any[]) => Promise<void>;
+  getAccounts: () => Promise<any[]>;
+  setAccounts: (accounts: any[]) => Promise<void>;
   logOrch: (e: any) => void;
   logProviderEvent: (e: any) => void;
-  getFetcherLog: () => any[];
-  setFetcherLog: (next: any[]) => void;
+  getFetcherLog: () => Promise<any[]>;
+  setFetcherLog: (next: any[]) => Promise<void>;
   getToolHandler: () => (name: string, params: any) => Promise<any>;
   // Provides a mock per-user request used by logging/tracing
   getUserReq: () => ReqLike;
@@ -38,7 +38,7 @@ export class FetcherManager {
   private fetchers = new Map<string, FetcherEntry>();
   private cleanupTimer: NodeJS.Timeout | null = null;
 
-  constructor(private createUserFetcher: (uid: string) => UserFetcherDeps) {
+  constructor(private createUserFetcher: (req: ReqLike) => UserFetcherDeps) {
     this.startCleanupTimer();
   }
 
@@ -53,7 +53,7 @@ export class FetcherManager {
       if (this.fetchers.size >= FETCHER_MANAGER_MAX_FETCHERS) {
         this.evictOldest();
       }
-      const userDeps = this.createUserFetcher(uid);
+      const userDeps = this.createUserFetcher(ureq);
       // Convert user deps to standard fetcher deps
       const fetcherDeps: FetcherDeps = {
         getSettings: userDeps.getSettings,

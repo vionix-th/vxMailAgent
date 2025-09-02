@@ -27,16 +27,16 @@ function seedTemplates(): TemplateItem[] {
   ];
 }
 
-function loadTemplates(req?: ReqLike): TemplateItem[] {
+async function loadTemplates(req?: ReqLike): Promise<TemplateItem[]> {
   try {
     const ureq = requireReq(req);
-    let arr = repoGetAll<TemplateItem>(ureq, 'templates');
+    let arr = await repoGetAll<TemplateItem>(ureq, 'templates');
     if (!Array.isArray(arr)) arr = [];
 
     // Seed if empty
     if (arr.length === 0) {
       const seeded = seedTemplates();
-      repoSetAll<TemplateItem>(ureq, 'templates', seeded);
+      await repoSetAll<TemplateItem>(ureq, 'templates', seeded);
       logger.info('Seeded prompt templates', { uid: requireUid(ureq) });
       return seeded;
     }
@@ -46,7 +46,7 @@ function loadTemplates(req?: ReqLike): TemplateItem[] {
     if (!hasOptimizer) {
       const seeded = seedTemplates();
       const next = [seeded[0], ...arr];
-      repoSetAll<TemplateItem>(ureq, 'templates', next);
+      await repoSetAll<TemplateItem>(ureq, 'templates', next);
       return next;
     }
     return arr as TemplateItem[];
@@ -56,60 +56,61 @@ function loadTemplates(req?: ReqLike): TemplateItem[] {
     try {
       const ureq = requireReq(req);
       const seeded = seedTemplates();
-      repoSetAll<TemplateItem>(ureq, 'templates', seeded);
+      await repoSetAll<TemplateItem>(ureq, 'templates', seeded);
       return seeded;
     } catch {}
     return [];
   }
 }
 
-function saveTemplates(req: ReqLike, items: TemplateItem[]) {
+async function saveTemplates(req: ReqLike, items: TemplateItem[]) {
   const ureq = requireReq(req);
-  repoSetAll<TemplateItem>(ureq, 'templates', items);
+  await repoSetAll<TemplateItem>(ureq, 'templates', items);
 }
 
 export default function registerTemplatesRoutes(app: express.Express) {
   // List templates
-  app.get('/api/prompt-templates', requireUserContext as any, (req, res) => {
+  app.get('/api/prompt-templates', requireUserContext as any, async (req, res) => {
     const ureq = requireReq(req as ReqLike);
     logger.info('GET /api/prompt-templates', { uid: requireUid(ureq) });
-    res.json(loadTemplates(ureq));
+    res.json(await loadTemplates(ureq));
   });
 
   // Create
-  app.post('/api/prompt-templates', requireUserContext as any, (req, res) => {
+  app.post('/api/prompt-templates', requireUserContext as any, async (req, res) => {
     const item: TemplateItem = req.body;
     if (!item || !item.id || !item.name || !Array.isArray(item.messages)) {
       return res.status(400).json({ error: 'Invalid template' });
     }
-    const current = loadTemplates(req as ReqLike);
+    const current = await loadTemplates(req as ReqLike);
     if (current.some(t => t.id === item.id)) return res.status(400).json({ error: 'Duplicate id' });
     const next = [...current, item];
-    saveTemplates(req as ReqLike, next);
+    await saveTemplates(req as ReqLike, next);
     res.json({ success: true });
   });
 
   // Update
-  app.put('/api/prompt-templates/:id', requireUserContext as any, (req, res) => {
+  app.put('/api/prompt-templates/:id', requireUserContext as any, async (req, res) => {
     const id = req.params.id;
-    const current = loadTemplates(req as ReqLike);
+    const current = await loadTemplates(req as ReqLike);
     const idx = current.findIndex(t => t.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     current[idx] = req.body;
-    saveTemplates(req as ReqLike, current);
+    await saveTemplates(req as ReqLike, current);
     res.json({ success: true });
   });
 
   // Delete
-  app.delete('/api/prompt-templates/:id', requireUserContext as any, (req, res) => {
+  app.delete('/api/prompt-templates/:id', requireUserContext as any, async (req, res) => {
     const id = req.params.id;
     if (id === 'prompt_optimizer') {
       return res.status(400).json({ error: 'prompt_optimizer is required and cannot be deleted' });
     }
-    const current = loadTemplates(req as ReqLike);
+    const current = await loadTemplates(req as ReqLike);
     const next = current.filter(t => t.id !== id);
-    saveTemplates(req as ReqLike, next);
+    await saveTemplates(req as ReqLike, next);
     res.json({ success: true });
   });
 }
+
 

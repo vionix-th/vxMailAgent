@@ -11,19 +11,19 @@ import logger from './logger';
 
 /** Dependencies required by the fetcher service. */
 export interface FetcherDeps {
-  getSettings: () => any;
-  getFilters: () => Filter[];
-  getDirectors: () => Director[];
-  getAgents: () => Agent[];
-  getPrompts: () => Prompt[];
-  getConversations: () => ConversationThread[];
-  setConversations: (next: ConversationThread[]) => void;
-  getAccounts: () => Account[];
-  setAccounts: (accounts: Account[]) => void;
+  getSettings: () => Promise<any>;
+  getFilters: () => Promise<Filter[]>;
+  getDirectors: () => Promise<Director[]>;
+  getAgents: () => Promise<Agent[]>;
+  getPrompts: () => Promise<Prompt[]>;
+  getConversations: () => Promise<ConversationThread[]>;
+  setConversations: (next: ConversationThread[]) => Promise<void>;
+  getAccounts: () => Promise<Account[]>;
+  setAccounts: (accounts: Account[]) => Promise<void>;
   logOrch: (e: OrchestrationDiagnosticEntry) => void;
   logProviderEvent: (e: ProviderEvent) => void;
-  getFetcherLog: () => FetcherLogEntry[];
-  setFetcherLog: (next: FetcherLogEntry[]) => void;
+  getFetcherLog: () => Promise<FetcherLogEntry[]>;
+  setFetcherLog: (next: FetcherLogEntry[]) => Promise<void>;
   getToolHandler: () => (name: string, params: any) => Promise<any>;
   // Provides the per-user request context for tracing/logging repositories
   getUserReq: () => ReqLike;
@@ -71,7 +71,10 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
   }
 
   try {
-    fetcherLog = pruneFetcher(deps.getFetcherLog().map(e => ({ ...e, id: e.id || newId() })));
+    void deps.getFetcherLog()
+      .then(list => pruneFetcher((list || []).map(e => ({ ...e, id: e.id || newId() }))))
+      .then(list => { fetcherLog = list; })
+      .catch(e => { logger.error('Failed to initialize fetcherLog', { err: e }); });
   } catch (e) {
     logger.error('Failed to initialize fetcherLog', { err: e });
   }
@@ -98,15 +101,15 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
     fetcherNextRun = null;
     logFetch({ timestamp: fetchStart, level: 'info', event: 'cycle_start', message: 'Starting fetch cycle' });
 
-    const settings = deps.getSettings();
-    const filters = deps.getFilters();
-    const directors = deps.getDirectors();
-    const agents = deps.getAgents();
-    let conversations = deps.getConversations();
+    const settings = await deps.getSettings();
+    const filters = await deps.getFilters();
+    const directors = await deps.getDirectors();
+    const agents = await deps.getAgents();
+    let conversations = await deps.getConversations();
 
     let accounts: Account[] = [];
     try {
-      accounts = deps.getAccounts();
+      accounts = await deps.getAccounts();
       logFetch({ timestamp: new Date().toISOString(), level: 'debug', event: 'accounts_loaded', message: `Loaded ${accounts.length} accounts from store`, count: accounts.length });
     } catch (e) {
       logFetch({ timestamp: new Date().toISOString(), level: 'error', event: 'accounts_load_error', message: 'Error loading accounts', detail: String(e) });
@@ -138,12 +141,12 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
             account.tokens.accessToken = refreshResult.accessToken;
             account.tokens.expiry = refreshResult.expiry;
             account.tokens.refreshToken = refreshResult.refreshToken;
-            const accountsAll = deps.getAccounts();
+            const accountsAll = await deps.getAccounts();
             const idx = accountsAll.findIndex((a: any) => a.id === account.id);
             if (idx !== -1) {
               const updatedAccounts = [...accountsAll];
               updatedAccounts[idx] = { ...updatedAccounts[idx], tokens: { ...account.tokens } };
-              deps.setAccounts(updatedAccounts);
+              await deps.setAccounts(updatedAccounts);
               logFetch({ timestamp: new Date().toISOString(), level: 'info', provider: account.provider, accountId: account.id, event: 'oauth_refreshed', message: 'Refreshed and persisted new access token' });
             }
           }
@@ -186,7 +189,8 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
               const director = directors.find(d => d.id === directorId);
               if (!director) continue;
               const emailEnvelope = { id: msgId, subject, from, date, snippet, bodyPlain: bodies.bodyPlain, bodyHtml: bodies.bodyHtml, attachments: [] as any[] };
-              const directorPrompt = deps.getPrompts().find(p => p.id === director.promptId);
+              const prompts = await deps.getPrompts();
+              const directorPrompt = prompts.find(p => p.id === director.promptId);
               const dirThreadId = newId();
               const nowIso = new Date().toISOString();
               const dirThread: ConversationThread = {
@@ -205,8 +209,8 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                 workspaceItems: [],
                 finalized: false,
               } as ConversationThread;
-              conversations = [...deps.getConversations(), dirThread];
-              deps.setConversations(conversations);
+              conversations = [...(await deps.getConversations()), dirThread];
+              await deps.setConversations(conversations);
               const sConvCreate = beginSpan(traceId, { type: 'conversation_update', name: 'create_director_thread', emailId: msgId, directorId: director.id }, deps.getUserReq());
               endSpan(traceId, sConvCreate, { status: 'ok' }, deps.getUserReq());
 
@@ -216,7 +220,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                 if (i !== -1) {
                   const updated = { ...conversations[i], status: 'failed', endedAt: new Date().toISOString(), errors: ['Missing director apiConfig or prompt'] } as any;
                   conversations = [...conversations.slice(0, i), updated, ...conversations.slice(i + 1)];
-                  deps.setConversations(conversations);
+                  await deps.setConversations(conversations);
                 }
                 try {
                   const sFail = beginSpan(traceId, { type: 'conversation_update', name: 'director_thread_fail', emailId: msgId, directorId: director.id }, deps.getUserReq());
@@ -234,19 +238,19 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                 if (di0 !== -1) {
                   const updated = { ...conversations[di0], messages: [...(conversations[di0].messages || []), emailContextMsg] } as any;
                   conversations = [...conversations.slice(0, di0), updated, ...conversations.slice(di0 + 1)];
-                  deps.setConversations(conversations);
+                  await deps.setConversations(conversations);
                 }
               }
 
               deps.logOrch({ timestamp: new Date().toISOString(), director: director.id, directorName: director.name, agent: '', agentName: '', emailSummary: subject || snippet || msgId, accountId: account.id, email: emailEnvelope as any, result: null, detail: { action: 'director_start' }, fetchCycleId: fetchStart, dirThreadId, phase: 'director' });
 
               const dirIdx = conversations.findIndex(c => c.id === dirThreadId);
-              const appendDirTool = (msg: any) => {
+              const appendDirTool = async (msg: any) => {
                 dirMsgs.push(msg);
                 if (dirIdx !== -1) {
                   const updated = { ...conversations[dirIdx], messages: [...(conversations[dirIdx].messages || []), msg] } as any;
                   conversations = [...conversations.slice(0, dirIdx), updated, ...conversations.slice(dirIdx + 1)];
-                  deps.setConversations(conversations);
+                  await deps.setConversations(conversations);
                 }
               };
 
@@ -293,7 +297,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                   const assistantWithCtx = { ...(step.assistantMessage as any), context: { ...(step.assistantMessage as any)?.context, traceId, spanId: sLlm } };
                   const updated = { ...conversations[dirIdx], provider: 'openai', messages: [...(conversations[dirIdx].messages || []), assistantWithCtx] } as any;
                   conversations = [...conversations.slice(0, dirIdx), updated, ...conversations.slice(dirIdx + 1)];
-                  deps.setConversations(conversations);
+                  await deps.setConversations(conversations);
                 }
                 try {
                   const now = new Date().toISOString();
@@ -333,7 +337,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                       director,
                       agent,
                       emailEnvelope,
-                      deps.getPrompts(),
+                      await deps.getPrompts(),
                       settings.apiConfigs,
                       new Date().toISOString(),
                       () => newId(),
@@ -341,14 +345,14 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                       deps.getUserReq(),
                     );
                     if ('error' in ensured) {
-                      appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: ensured.error, reason: ensured.reason }) });
+                      await appendDirTool({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: ensured.error, reason: ensured.reason }) });
                       conversations = ensured.conversations;
-                      deps.setConversations(conversations);
+                      await deps.setConversations(conversations);
                       endSpan(traceId, sTool, { status: 'error', error: ensured.error }, deps.getUserReq());
                       continue;
                     }
                     conversations = ensured.conversations;
-                    deps.setConversations(conversations);
+                    await deps.setConversations(conversations);
                     const agentThread = ensured.agentThread;
                     const isNew = ensured.isNew;
 
@@ -368,9 +372,9 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                         conversations,
                         agentApi,
                         TOOL_DESCRIPTORS,
-                        (next: ConversationThread[]) => {
+                        async (next: ConversationThread[]) => {
                           conversations = next;
-                          deps.setConversations(next);
+                          await deps.setConversations(next);
                         },
                         deps.getToolHandler(),
                         traceId,
@@ -419,7 +423,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                   try { sFinalize = beginSpan(traceId, { type: 'conversation_update', name: 'finalize_director_thread', emailId: msgId, directorId: director.id }, deps.getUserReq()); } catch {}
                   const updated = { ...conversations[di], status: 'completed', endedAt: new Date().toISOString(), finalized: true } as any;
                   conversations = [...conversations.slice(0, di), updated, ...conversations.slice(di + 1)];
-                  deps.setConversations(conversations);
+                  await deps.setConversations(conversations);
                   try { if (sFinalize) endSpan(traceId, sFinalize, { status: 'ok' }, deps.getUserReq()); } catch {}
 
                   const childAgents = conversations
@@ -433,7 +437,7 @@ export function initFetcher(deps: FetcherDeps): FetcherService {
                         ? ({ ...c, status: 'completed', endedAt: now, finalized: true } as any)
                         : c
                     ));
-                    deps.setConversations(conversations);
+                    await deps.setConversations(conversations);
                     try { if (sCascade) endSpan(traceId, sCascade, { status: 'ok', response: { count: childAgents.length } }, deps.getUserReq()); } catch {}
                   }
                 }

@@ -8,74 +8,76 @@ export interface MemoryRoutesDeps {}
 
 export default function registerMemoryRoutes(app: express.Express, _deps: MemoryRoutesDeps) {
   // GET /api/memory
-  app.get('/api/memory', (req, res) => {
+  app.get('/api/memory', async (req, res) => {
     const { scope, query, owner, tag, q } = req.query as Record<string, string>;
     const ureq = requireReq(req as ReqLike);
-    let result = repoGetAll<MemoryEntry>(ureq, 'memory');
-    if (scope) result = result.filter(e => e.scope === scope);
-    if (owner) result = result.filter(e => e.owner === owner);
-    if (tag) result = result.filter(e => e.tags && e.tags.includes(tag as string));
+    let result = await repoGetAll<MemoryEntry>(ureq, 'memory');
+    if (scope) result = result.filter((e: MemoryEntry) => e.scope === scope);
+    if (owner) result = result.filter((e: MemoryEntry) => e.owner === owner);
+    if (tag) result = result.filter((e: MemoryEntry) => e.tags && e.tags.includes(tag as string));
     const queryStr = query || q;
-    if (queryStr) result = result.filter(e => e.content.toLowerCase().includes(queryStr.toLowerCase()));
+    if (queryStr) result = result.filter((e: MemoryEntry) => e.content.toLowerCase().includes(queryStr.toLowerCase()));
     res.json(result);
   });
 
   // POST /api/memory
-  app.post('/api/memory', (req, res) => {
+  app.post('/api/memory', async (req, res) => {
     const entry = req.body as MemoryEntry;
     entry.id = entry.id || newId();
     entry.created = entry.created || new Date().toISOString();
     entry.updated = new Date().toISOString();
     const ureq = requireReq(req as ReqLike);
-    const next = [...repoGetAll<MemoryEntry>(ureq, 'memory'), entry];
-    repoSetAll<MemoryEntry>(ureq, 'memory', next);
+    const cur = await repoGetAll<MemoryEntry>(ureq, 'memory');
+    const next = [...cur, entry];
+    await repoSetAll<MemoryEntry>(ureq, 'memory', next);
     logger.info('POST /api/memory: added', { id: entry.id });
     res.json({ success: true, entry });
   });
 
   // PUT /api/memory/:id
-  app.put('/api/memory/:id', (req, res) => {
+  app.put('/api/memory/:id', async (req, res) => {
     const id = req.params.id;
     const ureq = requireReq(req as ReqLike);
-    const current = repoGetAll<MemoryEntry>(ureq, 'memory');
-    const idx = current.findIndex(e => e.id === id);
+    const current = await repoGetAll<MemoryEntry>(ureq, 'memory');
+    const idx = current.findIndex((e: MemoryEntry) => e.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Memory entry not found' });
     const updated = { ...current[idx], ...req.body, id, updated: new Date().toISOString() } as MemoryEntry;
     const next = current.slice();
     next[idx] = updated;
-    repoSetAll<MemoryEntry>(ureq, 'memory', next);
+    await repoSetAll<MemoryEntry>(ureq, 'memory', next);
     logger.info('PUT /api/memory/:id updated', { id });
     res.json({ success: true, entry: updated });
   });
 
   // DELETE /api/memory/:id
-  app.delete('/api/memory/:id', (req, res) => {
+  app.delete('/api/memory/:id', async (req, res) => {
     const id = req.params.id;
     const ureq = requireReq(req as ReqLike);
-    const current = repoGetAll<MemoryEntry>(ureq, 'memory');
+    const current = await repoGetAll<MemoryEntry>(ureq, 'memory');
     const before = current.length;
-    const next = current.filter(e => e.id !== id);
-    repoSetAll<MemoryEntry>(ureq, 'memory', next);
+    const next = current.filter((e: MemoryEntry) => e.id !== id);
+    await repoSetAll<MemoryEntry>(ureq, 'memory', next);
     const after = next.length;
     logger.info('DELETE /api/memory/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
   });
 
   // DELETE /api/memory (batch)
-  app.delete('/api/memory', (req, res) => {
+  app.delete('/api/memory', async (req, res) => {
     const ids = (req.body?.ids || []) as string[];
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids array required' });
     }
     const ureq = requireReq(req as ReqLike);
-    const current = repoGetAll<MemoryEntry>(ureq, 'memory');
+    const current = await repoGetAll<MemoryEntry>(ureq, 'memory');
     const before = current.length;
     const setIds = new Set(ids);
-    const next = current.filter(e => !setIds.has(e.id));
-    repoSetAll<MemoryEntry>(ureq, 'memory', next);
+    const next = current.filter((e: MemoryEntry) => !setIds.has(e.id));
+    await repoSetAll<MemoryEntry>(ureq, 'memory', next);
     const after = next.length;
     logger.info('DELETE /api/memory batch deleted', { deleted: before - after });
     res.json({ success: true, deleted: before - after });
   });
 }
+
 

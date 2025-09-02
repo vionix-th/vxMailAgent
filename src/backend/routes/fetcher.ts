@@ -1,9 +1,8 @@
 import express from 'express';
 import { FetcherLogEntry } from '../../shared/types';
-import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import { saveSettings } from '../services/settings';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
+import { ReqLike } from '../utils/repo-access';
 
 /** Dependencies for fetcher routes. */
 export interface FetcherRoutesDeps {
@@ -18,25 +17,6 @@ export interface FetcherRoutesDeps {
 
 /** Register routes controlling the email fetcher. */
 export default function registerFetcherRoutes(app: express.Express, deps: FetcherRoutesDeps) {
-  function makeCleanup(req: ReqLike) {
-    const ureq = requireReq(req);
-    const hub: RepositoryHub = {
-      // Use per-user repositories consistently (mirrors routes/cleanup.ts)
-      getConversations: () => repoGetAll<any>(ureq, 'conversations'),
-      setConversations: (next: any[]) => repoSetAll<any>(ureq, 'conversations', next),
-      getOrchestrationLog: () => repoGetAll<any>(ureq, 'orchestrationLog'),
-      setOrchestrationLog: (next: any[]) => repoSetAll<any>(ureq, 'orchestrationLog', next),
-      getProviderEvents: () => repoGetAll<any>(ureq, 'providerEvents'),
-      setProviderEvents: (next: any[]) => repoSetAll<any>(ureq, 'providerEvents', next),
-      getTraces: () => repoGetAll<any>(ureq, 'traces'),
-      setTraces: (next: any[]) => repoSetAll<any>(ureq, 'traces', next),
-      getFetcherLog: () => repoGetAll<any>(ureq, 'fetcherLog'),
-      setFetcherLog: (next: any[]) => repoSetAll<any>(ureq, 'fetcherLog', next),
-      getWorkspaceItems: () => repoGetAll<any>(ureq, 'workspaceItems'),
-      setWorkspaceItems: (next: any[]) => repoSetAll<any>(ureq, 'workspaceItems', next),
-    };
-    return createCleanupService(hub);
-  }
   app.get('/api/fetcher/status', (req, res) => {
     const status = deps.getStatus(req as any as ReqLike);
     res.json(status);
@@ -86,9 +66,9 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
   // Purge all fetcher logs for current user
   app.delete('/api/fetcher/logs/purge', (req, res) => {
     try {
-      const cleanup = makeCleanup(req as any as ReqLike);
-      const out = cleanup.purge('fetcher');
-      res.json({ success: true, ...out });
+      const prev = deps.getFetcherLog(req as any as ReqLike);
+      deps.setFetcherLog(req as any as ReqLike, []);
+      res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} fetcher logs` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });
     }
@@ -97,8 +77,10 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
   app.delete('/api/fetcher/logs/:id', (req, res) => {
     try {
       const id = req.params.id;
-      const cleanup = makeCleanup(req as any as ReqLike);
-      const { deleted } = cleanup.removeFetcherLogsByIds([id]);
+      const cur = deps.getFetcherLog(req as any as ReqLike);
+      const next = cur.filter((e) => e.id !== id);
+      const deleted = cur.length - next.length;
+      deps.setFetcherLog(req as any as ReqLike, next);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} fetcher logs` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });
@@ -109,8 +91,11 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     try {
       const ids = Array.isArray(req.body.ids) ? (req.body.ids as string[]) : [];
       if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
-      const cleanup = makeCleanup(req as any as ReqLike);
-      const { deleted } = cleanup.removeFetcherLogsByIds(ids);
+      const cur = deps.getFetcherLog(req as any as ReqLike);
+      const idSet = new Set(ids);
+      const next = cur.filter((e) => !e.id || !idSet.has(e.id));
+      const deleted = cur.length - next.length;
+      deps.setFetcherLog(req as any as ReqLike, next);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} fetcher logs` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });

@@ -6,8 +6,8 @@ import { ReqLike } from '../utils/repo-access';
 import logger from '../services/logger';
 
 export interface DirectorsRoutesDeps {
-  getDirectors: (req?: ReqLike) => Director[];
-  setDirectors: (req: ReqLike, next: Director[]) => void;
+  getDirectors: (req?: ReqLike) => Promise<Director[]>;
+  setDirectors: (req: ReqLike, next: Director[]) => Promise<void> | void;
 }
 
 export default function registerDirectorsRoutes(app: express.Express, deps: DirectorsRoutesDeps) {
@@ -21,29 +21,30 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     return out.length ? out : [];
   };
   // GET /api/directors
-  app.get('/api/directors', (req, res) => {
+  app.get('/api/directors', async (req, res) => {
     logger.info('GET /api/directors');
-    const list = deps.getDirectors(req as ReqLike).map(d => ({ ...d, promptId: (d as any).promptId || '' }));
+    const list = (await deps.getDirectors(req as ReqLike)).map(d => ({ ...d, promptId: (d as any).promptId || '' }));
     res.json(list);
   });
 
   // POST /api/directors
-  app.post('/api/directors', (req, res) => {
+  app.post('/api/directors', async (req, res) => {
     const director: Director = req.body;
     if (!director.apiConfigId) {
       return res.status(400).json({ error: 'apiConfigId is required for Director' });
     }
     const clean: Director = { ...director, promptId: (director as any).promptId || '', enabledToolCalls: sanitizeEnabled((director as any).enabledToolCalls) } as Director;
-    const next = [...deps.getDirectors(req as ReqLike), clean];
-    deps.setDirectors(req as ReqLike, next);
+    const current = await deps.getDirectors(req as ReqLike);
+    const next = [...current, clean];
+    await deps.setDirectors(req as ReqLike, next);
     logger.info('POST /api/directors: added director', { id: director.id });
     res.json({ success: true });
   });
 
   // PUT /api/directors/:id
-  app.put('/api/directors/:id', (req, res) => {
+  app.put('/api/directors/:id', async (req, res) => {
     const id = req.params.id;
-    const current = deps.getDirectors(req as ReqLike);
+    const current = await deps.getDirectors(req as ReqLike);
     const idx = current.findIndex(d => d.id === id);
     if (idx === -1) {
       logger.warn('PUT /api/directors/:id not found', { id });
@@ -52,18 +53,18 @@ export default function registerDirectorsRoutes(app: express.Express, deps: Dire
     const clean: Director = { ...req.body, promptId: req.body.promptId || '', enabledToolCalls: sanitizeEnabled((req.body as any).enabledToolCalls) } as Director;
     const next = current.slice();
     next[idx] = clean;
-    deps.setDirectors(req as ReqLike, next);
+    await deps.setDirectors(req as ReqLike, next);
     logger.info('PUT /api/directors/:id updated', { id });
     res.json({ success: true });
   });
 
   // DELETE /api/directors/:id
-  app.delete('/api/directors/:id', (req, res) => {
+  app.delete('/api/directors/:id', async (req, res) => {
     const id = req.params.id;
-    const current = deps.getDirectors(req as ReqLike);
+    const current = await deps.getDirectors(req as ReqLike);
     const before = current.length;
     const next = current.filter(d => d.id !== id);
-    deps.setDirectors(req as ReqLike, next);
+    await deps.setDirectors(req as ReqLike, next);
     const after = next.length;
     logger.info('DELETE /api/directors/:id deleted', { id, deleted: before - after });
     res.json({ success: true });

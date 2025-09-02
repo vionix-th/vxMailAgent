@@ -3,10 +3,10 @@ import { OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, Trace 
 import { ReqLike } from '../utils/repo-access';
 
 export interface UnifiedDiagnosticsRoutesDeps {
-  getOrchestrationLog: (req?: ReqLike) => OrchestrationDiagnosticEntry[];
-  getConversations: (req?: ReqLike) => ConversationThread[];
-  getProviderEvents: (req?: ReqLike) => ProviderEvent[];
-  getTraces: (req?: ReqLike) => Trace[];
+  getOrchestrationLog: (req?: ReqLike) => Promise<OrchestrationDiagnosticEntry[]>;
+  getConversations: (req?: ReqLike) => Promise<ConversationThread[]>;
+  getProviderEvents: (req?: ReqLike) => Promise<ProviderEvent[]>;
+  getTraces: (req?: ReqLike) => Promise<Trace[]>;
 }
 
 // Unified diagnostic tree structure
@@ -276,12 +276,14 @@ function buildHierarchicalTree(
 
 export default function registerUnifiedDiagnosticsRoutes(app: express.Express, deps: UnifiedDiagnosticsRoutesDeps) {
   // GET unified hierarchical diagnostics tree
-  app.get('/api/diagnostics/unified', (req, res) => {
+  app.get('/api/diagnostics/unified', async (req, res) => {
     try {
-      const orchestrationEntries = deps.getOrchestrationLog(req as any as ReqLike);
-      const conversations = deps.getConversations(req as any as ReqLike);
-      const providerEvents = deps.getProviderEvents(req as any as ReqLike);
-      const traces = deps.getTraces(req as any as ReqLike);
+      const [orchestrationEntries, conversations, providerEvents, traces] = await Promise.all([
+        deps.getOrchestrationLog(req as any as ReqLike),
+        deps.getConversations(req as any as ReqLike),
+        deps.getProviderEvents(req as any as ReqLike),
+        deps.getTraces(req as any as ReqLike),
+      ]);
 
       const tree = buildHierarchicalTree(orchestrationEntries, conversations, providerEvents, traces);
 
@@ -308,7 +310,7 @@ export default function registerUnifiedDiagnosticsRoutes(app: express.Express, d
   });
 
   // GET detailed view for specific node
-  app.get('/api/diagnostics/unified/:nodeId', (req, res) => {
+  app.get('/api/diagnostics/unified/:nodeId', async (req, res) => {
     try {
       const nodeId = req.params.nodeId;
       const [nodeType, id] = nodeId.split('-', 2);
@@ -317,10 +319,10 @@ export default function registerUnifiedDiagnosticsRoutes(app: express.Express, d
 
       switch (nodeType) {
         case 'conv':
-          result = deps.getConversations(req as any as ReqLike).find(c => c.id === id);
+          result = (await deps.getConversations(req as any as ReqLike)).find(c => c.id === id);
           break;
         case 'event':
-          result = deps.getProviderEvents(req as any as ReqLike).find(e => e.id === id);
+          result = (await deps.getProviderEvents(req as any as ReqLike)).find(e => e.id === id);
           break;
         default:
           return res.status(400).json({ error: 'Invalid node type' });

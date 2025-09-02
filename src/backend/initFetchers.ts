@@ -6,67 +6,77 @@ import { LiveRepos } from './liveRepos';
 import logger from './services/logger';
 import { getUsersRepo } from './services/users';
 import { FetcherLogEntry } from '../shared/types';
+import { ReqLike, requireUid } from './utils/repo-access';
 
 /** Build a FetcherManager wired to per-user repo bundles and typed ReqLike contexts. */
 export function createFetcherManager(_repos: LiveRepos) {
-  const fetcherManager = new FetcherManager((uid: string) => {
-    const userBundle = repoBundleRegistry.getBundle(uid);
+  const fetcherManager = new FetcherManager((req: ReqLike) => {
+    const uid = requireUid(req);
+    const getBundle = async () => {
+      const existing = (req as any)?.userContext?.repos;
+      if (existing) return existing;
+      return await repoBundleRegistry.getBundle(uid);
+    };
     return {
       uid,
-      getSettings: () => userBundle.settings.getAll()[0] || {},
-      getFilters: () => userBundle.filters.getAll(),
-      getDirectors: () => userBundle.directors.getAll(),
-      getAgents: () => userBundle.agents.getAll(),
-      getPrompts: () => userBundle.prompts.getAll(),
-      getConversations: () => userBundle.conversations.getAll(),
-      setConversations: (next: any[]) => userBundle.conversations.setAll(next),
-      getAccounts: () => userBundle.accounts.getAll(),
-      setAccounts: (accounts: any[]) => userBundle.accounts.setAll(accounts),
-      logOrch: (e: any) => {
-        const req = { userContext: { uid, repos: userBundle } };
-        svcLogOrch(e, req);
+      getSettings: async () => {
+        const b = await getBundle();
+        const arr = await b.settings.getAll();
+        return arr[0] || {};
       },
-      logProviderEvent: (e: any) => {
-        const req = { userContext: { uid, repos: userBundle } };
-        svcLogProviderEvent(e, req);
-      },
-      getFetcherLog: () => userBundle.fetcherLog.getAll(),
-      setFetcherLog: (next: any[]) => userBundle.fetcherLog.setAll(next),
-      getToolHandler: () => createToolHandler(userBundle),
-      getUserReq: () => ({ userContext: { uid, repos: userBundle } }),
-    };
+      getFilters: async () => (await getBundle()).filters.getAll(),
+      getDirectors: async () => (await getBundle()).directors.getAll(),
+      getAgents: async () => (await getBundle()).agents.getAll(),
+      getPrompts: async () => (await getBundle()).prompts.getAll(),
+      getConversations: async () => (await getBundle()).conversations.getAll(),
+      setConversations: async (next: any[]) => { const b = await getBundle(); await b.conversations.setAll(next); },
+      getAccounts: async () => (await getBundle()).accounts.getAll(),
+      setAccounts: async (accounts: any[]) => { const b = await getBundle(); await b.accounts.setAll(accounts); },
+      logOrch: (e: any) => { void getBundle().then(b => svcLogOrch(e, { userContext: { uid, repos: b } })); },
+      logProviderEvent: (e: any) => { void getBundle().then(b => svcLogProviderEvent(e, { userContext: { uid, repos: b } })); },
+      getFetcherLog: async () => (await getBundle()).fetcherLog.getAll(),
+      setFetcherLog: async (next: any[]) => { const b = await getBundle(); await b.fetcherLog.setAll(next); },
+      getToolHandler: () => (name: string, params: any) => getBundle().then(b => createToolHandler(b)(name, params)),
+      getUserReq: () => (req && (req as any)?.userContext?.repos ? req : ({ userContext: { uid } } as any)),
+    } as any;
   });
   return fetcherManager;
 }
 
 /** Auto-start fetcher loops for users with fetcherAutoStart=true on server boot. */
 export function bootAutoStart(fetcherManager: FetcherManager) {
-  try {
-    const users = getUsersRepo().getAll();
-    for (const u of users) {
-      const uid = u.id;
-      const bundle = repoBundleRegistry.getBundle(uid);
-      const settings = bundle.settings.getAll()[0] || {};
-      if (settings.fetcherAutoStart) {
-        const req = { userContext: { uid, repos: bundle } } as const;
+  (async () => {
+    try {
+      const users = await getUsersRepo().getAll();
+      for (const u of users) {
+        const uid = (u as any).id;
         try {
-          fetcherManager.startFetcherLoop(req);
-          logger.info('Boot: started fetcher loop', { uid });
-          // Log to per-user fetcher log as well
-          const cur: FetcherLogEntry[] = fetcherManager.getFetcherLog(req) as any;
-          const entry: FetcherLogEntry = { timestamp: new Date().toISOString(), level: 'info', event: 'boot_autostart', message: 'Fetcher loop auto-started on server boot' } as any;
-          fetcherManager.setFetcherLog(req, [...cur, entry] as any);
+          const bundle = await repoBundleRegistry.getBundle(uid);
+          const settingsArr = await bundle.settings.getAll();
+          const settings = settingsArr[0] || {};
+          if (settings.fetcherAutoStart) {
+            const req = { userContext: { uid, repos: bundle } } as const;
+            try {
+              fetcherManager.startFetcherLoop(req);
+              logger.info('Boot: started fetcher loop', { uid });
+              const cur: FetcherLogEntry[] = fetcherManager.getFetcherLog(req) as any;
+              const entry: FetcherLogEntry = { timestamp: new Date().toISOString(), level: 'info', event: 'boot_autostart', message: 'Fetcher loop auto-started on server boot' } as any;
+              fetcherManager.setFetcherLog(req, [...cur, entry] as any);
+            } catch (e) {
+              logger.error('Boot: failed to start fetcher loop', { uid, err: e });
+              try {
+                const cur: FetcherLogEntry[] = fetcherManager.getFetcherLog(req) as any;
+                const entry: FetcherLogEntry = { timestamp: new Date().toISOString(), level: 'error', event: 'boot_autostart_failed', message: 'Failed to auto-start fetcher loop on server boot', detail: String((e as any)?.message || e) } as any;
+                fetcherManager.setFetcherLog(req, [...cur, entry] as any);
+              } catch {}
+            }
+          }
         } catch (e) {
-          logger.error('Boot: failed to start fetcher loop', { uid, err: e });
-          try {
-            const cur: FetcherLogEntry[] = fetcherManager.getFetcherLog(req) as any;
-            const entry: FetcherLogEntry = { timestamp: new Date().toISOString(), level: 'error', event: 'boot_autostart_failed', message: 'Failed to auto-start fetcher loop on server boot', detail: String((e as any)?.message || e) } as any;
-            fetcherManager.setFetcherLog(req, [...cur, entry] as any);
-          } catch {}
+          logger.error('Boot: error preparing user bundle', { uid, err: e });
         }
       }
+    } catch (e) {
+      logger.error('Boot: fetcher bootstrap failed', { err: e });
     }
-  } catch (e) {
-    logger.error('Boot: fetcher bootstrap failed', { err: e });
-  }
+  })();
 }

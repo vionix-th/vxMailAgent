@@ -1,39 +1,23 @@
 import express from 'express';
 import { OrchestrationDiagnosticEntry } from '../../shared/types';
-import { createCleanupService, RepositoryHub } from '../services/cleanup';
 import logger from '../services/logger';
+import { ReqLike } from '../utils/repo-access';
 
 export interface OrchestrationRoutesDeps {
-  getOrchestrationLog: () => OrchestrationDiagnosticEntry[];
-  setOrchestrationLog: (next: OrchestrationDiagnosticEntry[]) => void;
-  getSettings: () => any;
+  getOrchestrationLog: (req?: ReqLike) => Promise<OrchestrationDiagnosticEntry[]>;
+  setOrchestrationLog: (next: OrchestrationDiagnosticEntry[], req?: ReqLike) => Promise<void>;
+  getSettings: (req?: ReqLike) => Promise<any> | any;
 }
 
  
 
 export default function registerOrchestrationRoutes(app: express.Express, deps: OrchestrationRoutesDeps) {
-  const hub: RepositoryHub = {
-    getFetcherLog: () => [],
-    setFetcherLog: () => {},
-    getOrchestrationLog: () => deps.getOrchestrationLog() as any[],
-    setOrchestrationLog: (next: any[]) => deps.setOrchestrationLog(next as any),
-    getConversations: () => [],
-    setConversations: () => {},
-    getProviderEvents: () => [],
-    setProviderEvents: () => {},
-    getTraces: () => [],
-    setTraces: () => {},
-    getWorkspaceItems: () => [],
-    setWorkspaceItems: () => {},
-  };
-  const cleanup = createCleanupService(hub);
   // GET diagnostics: via repository with filters and pagination
   // /api/orchestration/diagnostics?director=&agent=&emailId=&phase=&since=&until=&limit=&offset=
-  app.get('/api/orchestration/diagnostics', (req, res) => {
-    let log: OrchestrationDiagnosticEntry[] = [];
-    try { log = deps.getOrchestrationLog() || []; } catch (e) { logger.error('getOrchestrationLog failed', { err: e }); }
-
+  app.get('/api/orchestration/diagnostics', async (req, res) => {
     try {
+      let log: OrchestrationDiagnosticEntry[] = [];
+      try { log = await deps.getOrchestrationLog(req as any as ReqLike) || []; } catch (e) { logger.error('getOrchestrationLog failed', { err: e }); }
       const q = req.query as Record<string, string>;
       const director = q.director?.trim();
       const agent = q.agent?.trim();
@@ -63,10 +47,13 @@ export default function registerOrchestrationRoutes(app: express.Express, deps: 
   });
 
   // DELETE single diagnostic by id (delegates to cleanup service)
-  app.delete('/api/orchestration/diagnostics/:id', (req, res) => {
+  app.delete('/api/orchestration/diagnostics/:id', async (req, res) => {
     try {
       const id = req.params.id;
-      const { deleted } = cleanup.removeOrchestrationByIds([id]);
+      const cur = await deps.getOrchestrationLog(req as any as ReqLike);
+      const next = cur.filter(e => e.id !== id);
+      const deleted = cur.length - next.length;
+      if (deleted > 0) await deps.setOrchestrationLog(next, req as any as ReqLike);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} orchestration logs` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });
@@ -74,14 +61,19 @@ export default function registerOrchestrationRoutes(app: express.Express, deps: 
   });
 
   // DELETE bulk diagnostics by ids (delegates to cleanup service)
-  app.delete('/api/orchestration/diagnostics', (req, res) => {
+  app.delete('/api/orchestration/diagnostics', async (req, res) => {
     try {
       const ids = Array.isArray(req.body.ids) ? (req.body.ids as string[]) : [];
       if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
-      const { deleted } = cleanup.removeOrchestrationByIds(ids);
+      const cur = await deps.getOrchestrationLog(req as any as ReqLike);
+      const set = new Set(ids);
+      const next = cur.filter(e => !e.id || !set.has(e.id));
+      const deleted = cur.length - next.length;
+      if (deleted > 0) await deps.setOrchestrationLog(next, req as any as ReqLike);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} orchestration logs` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });
     }
   });
 }
+
