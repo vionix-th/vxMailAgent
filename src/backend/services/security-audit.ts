@@ -1,4 +1,4 @@
-import fs from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import { dataPath } from '../utils/paths';
 import logger from './logger';
@@ -40,56 +40,83 @@ class SecurityAuditService {
   private logPath: string;
   private maxLogSize = 50 * 1024 * 1024; // 50MB
   private maxLogFiles = 10;
+  private logQueue: SecurityAuditEvent[] = [];
+  private flushIntervalMs = 1000;
+  private flushing = false;
 
   constructor() {
     this.logPath = dataPath('security-audit.log');
-    this.ensureLogDirectory();
+    setInterval(() => {
+      this.flush().catch((err) =>
+        logger.error('SECURITY-AUDIT flush failed', { err })
+      );
+    }, this.flushIntervalMs);
   }
 
-  private ensureLogDirectory(): void {
+  private async ensureLogDirectory(): Promise<void> {
     const dir = path.dirname(this.logPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      logger.error('SECURITY-AUDIT failed to ensure log directory', { err: error });
     }
   }
 
-  private rotateLogsIfNeeded(): void {
+  private async rotateLogsIfNeeded(): Promise<void> {
     try {
-      if (!fs.existsSync(this.logPath)) return;
-      
-      const stats = fs.statSync(this.logPath);
+      let stats;
+      try {
+        stats = await fs.stat(this.logPath);
+      } catch (err: any) {
+        if (err.code === 'ENOENT') return;
+        throw err;
+      }
+
       if (stats.size < this.maxLogSize) return;
 
-      // Rotate logs
       for (let i = this.maxLogFiles - 1; i > 0; i--) {
         const oldPath = `${this.logPath}.${i}`;
         const newPath = `${this.logPath}.${i + 1}`;
-        
-        if (fs.existsSync(oldPath)) {
-          if (i === this.maxLogFiles - 1) {
-            fs.unlinkSync(oldPath); // Delete oldest
-          } else {
-            fs.renameSync(oldPath, newPath);
-          }
+        try {
+          await fs.access(oldPath);
+        } catch {
+          continue;
+        }
+        if (i === this.maxLogFiles - 1) {
+          await fs.unlink(oldPath);
+        } else {
+          await fs.rename(oldPath, newPath);
         }
       }
-      
-      // Move current log to .1
-      fs.renameSync(this.logPath, `${this.logPath}.1`);
+
+      await fs.rename(this.logPath, `${this.logPath}.1`);
     } catch (error) {
       logger.error('SECURITY-AUDIT log rotation failed', { err: error });
     }
   }
 
-  private writeLogEntry(event: SecurityAuditEvent): void {
+  private async flush(): Promise<void> {
+    if (this.flushing) return;
+    this.flushing = true;
+    let entries: SecurityAuditEvent[] = [];
     try {
-      this.rotateLogsIfNeeded();
-      
-      const logLine = JSON.stringify(event) + '\n';
-      fs.appendFileSync(this.logPath, logLine, { encoding: 'utf8', mode: 0o600 });
+      if (this.logQueue.length === 0) return;
+      entries = this.logQueue;
+      this.logQueue = [];
+      await this.ensureLogDirectory();
+      await this.rotateLogsIfNeeded();
+      const logLines = entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
+      await fs.appendFile(this.logPath, logLines, { encoding: 'utf8', mode: 0o600 });
     } catch (error) {
+      if (entries.length) this.logQueue.unshift(...entries);
       logger.error('SECURITY-AUDIT failed to write log entry', { err: error });
+    } finally {
+      this.flushing = false;
     }
+  }
+
+  private writeLogEntry(event: SecurityAuditEvent): void {
+    this.logQueue.push(event);
   }
 
   logFileOperation(uid: string | undefined, details: FileOperationDetails, req?: any): void {
