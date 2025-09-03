@@ -22,19 +22,27 @@ export default function registerFetcherRoutes(app: express.Express, deps: Fetche
     res.json(status);
   });
 
-  app.post('/api/fetcher/start', (req, res) => {
+  app.post('/api/fetcher/start', async (req, res) => {
     deps.startFetcherLoop(req as any as ReqLike);
     const settings = deps.getSettings(req as any as ReqLike);
     settings.fetcherAutoStart = true;
-    try { saveSettings(settings, req as any as ReqLike); } catch {}
+    try {
+      await saveSettings(settings, req as any as ReqLike);
+    } catch (e: any) {
+      return res.status(500).json({ error: String(e?.message || e) });
+    }
     res.json({ success: true, active: deps.getStatus(req as any as ReqLike).active });
   });
 
-  app.post('/api/fetcher/stop', (req, res) => {
+  app.post('/api/fetcher/stop', async (req, res) => {
     deps.stopFetcherLoop(req as any as ReqLike);
     const settings = deps.getSettings(req as any as ReqLike);
     settings.fetcherAutoStart = false;
-    try { saveSettings(settings, req as any as ReqLike); } catch {}
+    try {
+      await saveSettings(settings, req as any as ReqLike);
+    } catch (e: any) {
+      return res.status(500).json({ error: String(e?.message || e) });
+    }
     res.json({ success: true, active: deps.getStatus(req as any as ReqLike).active });
   });
 

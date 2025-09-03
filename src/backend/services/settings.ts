@@ -14,10 +14,10 @@ export interface Settings {
 }
 
 /** Load settings from the per-user repository (single settings object). */
-export function loadSettings(req?: ReqLike): Settings {
+export async function loadSettings(req?: ReqLike): Promise<Settings> {
   try {
     const ureq = requireReq(req);
-    const all = repoGetAll<Settings>(ureq, 'settings');
+    const all = await repoGetAll<Settings>(ureq, 'settings');
     const settings = (Array.isArray(all) && all[0]) ? all[0] : defaultSettings();
     // Normalize defaults
     if (!Array.isArray(settings.apiConfigs)) settings.apiConfigs = [] as ApiConfig[];
@@ -33,10 +33,10 @@ export function loadSettings(req?: ReqLike): Settings {
 }
 
 /** Save settings to the per-user repository. */
-export function saveSettings(settings: Settings, req: ReqLike): void {
+export async function saveSettings(settings: Settings, req: ReqLike): Promise<void> {
   const ureq = requireReq(req);
   try {
-    repoSetAll<Settings>(ureq, 'settings', [settings]);
+    await repoSetAll<Settings>(ureq, 'settings', [settings]);
     logger.debug('Saved settings', { uid: requireUid(ureq) });
   } catch (e) {
     logger.error('Failed to save settings', { err: e });
