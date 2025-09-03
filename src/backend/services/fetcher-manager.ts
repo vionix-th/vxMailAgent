@@ -1,4 +1,4 @@
-import { FetcherService, initFetcher } from './fetcher';
+import { initFetcher } from './fetcher';
 import { ReqLike, requireReq, requireUid } from '../utils/repo-access';
 import { FETCHER_MANAGER_TTL_MINUTES, FETCHER_MANAGER_MAX_FETCHERS } from '../config';
 import { LiveRepos } from '../liveRepos';
@@ -9,7 +9,7 @@ import logger from './logger';
  */
 
 interface FetcherEntry {
-  service: FetcherService;
+  service: ReturnType<typeof initFetcher>;
   lastAccessed: number;
 }
 
@@ -29,7 +29,7 @@ export class FetcherManager {
   /**
    * Get or create fetcher for user
    */
-  getFetcher(req: ReqLike): FetcherService {
+  getFetcher(req: ReqLike): ReturnType<typeof initFetcher> {
     const ureq = requireReq(req);
     const uid = requireUid(ureq);
     let entry = this.fetchers.get(uid);

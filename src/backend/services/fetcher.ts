@@ -5,21 +5,11 @@ import { FetcherLogEntry } from '../../shared/types';
 import { newId } from '../utils/id';
 import logger from './logger';
 
-/** Interface for the fetcher service. */
-export interface FetcherService {
-  getStatus: () => { active: boolean; running: boolean; lastRun: string | null; nextRun: string | null; accountStatus: Record<string, { lastRun: string | null; lastError: string | null }> };
-  startFetcherLoop: () => void;
-  stopFetcherLoop: () => void;
-  fetchEmails: () => Promise<void>;
-  getFetcherLog: () => Promise<FetcherLogEntry[]>;
-  setFetcherLog: (next: FetcherLogEntry[]) => Promise<void>;
-}
-
 /** Initialize the background fetcher with refactored modular architecture. */
 export function initFetcher(
   repos: LiveRepos,
   userReq: ReqLike
-): FetcherService {
+) {
   let fetcherActive = false;
   let fetcherInterval: NodeJS.Timeout | null = null;
   let fetcherLastRun: string | null = null;
