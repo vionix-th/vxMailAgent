@@ -21,10 +21,7 @@ export class FetcherManager {
   private cleanupTimer: NodeJS.Timeout | null = null;
 
   constructor(
-    private repos: LiveRepos,
-    private logOrch: (req: ReqLike, e: any) => void,
-    private logProviderEvent: (req: ReqLike, e: any) => void,
-    private getToolHandler: (req: ReqLike) => (name: string, params: any) => Promise<any>
+    private repos: LiveRepos
   ) {
     this.startCleanupTimer();
   }
@@ -40,12 +37,8 @@ export class FetcherManager {
       if (this.fetchers.size >= FETCHER_MANAGER_MAX_FETCHERS) {
         this.evictOldest();
       }
-      const logOrchFn = (e: any) => this.logOrch(ureq, e);
-      const logProviderEventFn = (e: any) => this.logProviderEvent(ureq, e);
-      const getToolHandlerFn = () => this.getToolHandler(ureq);
-      
       entry = { 
-        service: initFetcher(this.repos, ureq, logOrchFn, logProviderEventFn, getToolHandlerFn), 
+        service: initFetcher(this.repos, ureq), 
         lastAccessed: Date.now() 
       };
       this.fetchers.set(uid, entry);

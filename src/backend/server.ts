@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 
 import { requireAuth } from './middleware/auth';
-import { setOrchestrationLog as svcSetOrchestrationLog, logProviderEvent as svcLogProviderEvent, getTraces, logOrch as svcLogOrch } from './services/logging';
+import { setOrchestrationLog as svcSetOrchestrationLog, logProviderEvent as svcLogProviderEvent, getTraces } from './services/logging';
 import { newId } from './utils/id';
 import { ProviderEvent } from '../shared/types';
 
@@ -14,9 +14,8 @@ import { repoBundleRegistry } from './repository/registry';
 import registerHealthRoutes from './routes/health';
 // Cleanup routes kept (admin); health route is unauthenticated
 import { FetcherManager } from './services/fetcher-manager';
-import { createToolHandler } from './toolCalls';
 import { attachUserContext, UserRequest } from './middleware/user-context';
-import { ReqLike, requireUid } from './utils/repo-access';
+import { ReqLike } from './utils/repo-access';
 import logger from './services/logger';
 import { createLiveRepos } from './liveRepos';
 import registerRoutes from './routes';
@@ -57,15 +56,7 @@ export function createServer() {
   // System-level repositories: only users registry remains
   const usersRepo = createJsonRepository<User>(USERS_FILE);
   setUsersRepo(usersRepo);
-  const fetcherManager = new FetcherManager(
-    repos,
-    (req: ReqLike, e: any) => { void svcLogOrch(e, req); },
-    (req: ReqLike, e: any) => { void svcLogProviderEvent(e, req); },
-    (req: ReqLike) => (name: string, params: any) => {
-      const uid = requireUid(req);
-      return repoBundleRegistry.getBundle(uid).then(b => createToolHandler(b)(name, params));
-    }
-  );
+  const fetcherManager = new FetcherManager(repos);
 
   registerRoutes(app, repos, fetcherManager, {
     setOrchestrationLog: async (next: any[], req?: ReqLike) => { await svcSetOrchestrationLog(next, req); },
