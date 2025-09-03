@@ -149,43 +149,14 @@ Location: `src/backend/repository/registry.ts`
     - `FETCHER_MANAGER_TTL_MINUTES`, `FETCHER_MANAGER_MAX_FETCHERS`
     - Behavior is always per-user; no legacy global stores.
 
-#### 3. Repository Access Helpers (standard pattern)
-Location: `src/backend/utils/repo-access.ts`
+#### 3. LiveRepos Interface (Canonical Repository Access)
+Location: `src/backend/liveRepos.ts`
 
-- Exposed helpers to enforce user context and centralize repo access:
-  - `requireReq(req)` → returns `UserRequest` with guaranteed user context or throws.
-  - `requireUid(req)` → returns current user's UID (string).
-  - `requireRepos(req)` → returns the per-user `RepoBundle`.
-  - `requireUserRepo(req, key)` → returns a specific repo from `RepoBundle`.
-  - `repoGetAll(req, key)` / `repoSetAll(req, key, next)` → typed helpers for common CRUD patterns.
+The `LiveRepos` interface is the canonical source of truth for all repository access methods. All route modules and services use this interface directly, eliminating wrapper bloat and dependency interfaces.
 
-- Usage rules:
-  - Do not import `getUserContext` or `hasUserContext` in routes/services. These are internal to middleware and helpers.
-  - Always call `requireReq(req)` at the beginning of a handler before any repository or UID access.
-  - For logging/audit, prefer `requireUid(ureq)` to include the UID.
-  - For passing repositories to tool handlers, use `requireRepos(ureq)`.
-
-- Example (route):
-```ts
-app.get('/api/settings', requireUserContext as any, async (req: UserRequest, res) => {
-  const ureq = requireReq(req);
-  const uid = requireUid(ureq);
-  const all = repoGetAll<any>(ureq, 'settings');
-  const settings = Array.isArray(all) && all[0] || { /* defaults */ };
-  logger.info('GET /api/settings', { uid });
-  res.json(settings);
-});
-```
-
-- Example (service):
-```ts
-export function loadSettings(req: UserRequest) {
-  const ureq = requireReq(req);
-  const settings = repoGetAll<any>(ureq, 'settings')[0] || defaultSettings();
-  logger.debug('Loaded settings', { uid: requireUid(ureq) });
-  return settings;
-}
-```
+- **Direct Repository Access**: Routes accept `LiveRepos` directly instead of verbose wrapper objects
+- **Service Parameter Pattern**: Routes requiring additional services accept explicit `services` parameters with typed method signatures
+- **No Wrapper Interfaces**: All `*RoutesDeps` interfaces have been eliminated in favor of direct `LiveRepos` usage
 
 #### 4. Route Helpers: Generic CRUD
 Location: `src/backend/routes/helpers.ts`
@@ -193,7 +164,7 @@ Location: `src/backend/routes/helpers.ts`
 - `createCrudRoutes<T>(app, basePath, repoFns, options?, callbacks?)`
   - Purpose: Eliminate duplicate CRUD route code by centralizing list/get/create/update/delete logic.
   - Endpoints: `GET /`, `POST /`, `GET /:id`, `PUT /:id`, `DELETE /:id` under `basePath`. Optional `PUT /reorder`.
-  - `repoFns`: `{ getAll, setAll }` or resource-specific accessors injected per route module.
+  - `repoFns`: `{ getAll, setAll }` interface for repository access
   - `options`:
     - `enableReorder?: boolean` — adds `PUT /reorder` for ordered resources.
   - `callbacks` (all optional):
@@ -222,8 +193,8 @@ Location: `src/backend/routes/helpers.ts`
 - **Logging Service**: `src/backend/services/logging.ts`
   - All logging functions require user context parameter
   - No global repository fallbacks - throws error if user context missing
-- **Route Dependencies**: All route registrations pass user context to data access functions
-- **Fetcher Manager**: Per-user fetcher instances with isolated settings persistence
+- **Route Dependencies**: All route registrations pass `LiveRepos` and services directly to route handlers
+- **Fetcher Manager**: Per-user fetcher instances accepting `LiveRepos` and service functions directly
 
 ## Authentication & Session Management
 
@@ -632,8 +603,8 @@ Response shape:
 
 - Module: `src/backend/services/fetcher-manager.ts`
 - Manages per-user fetcher instances with lifecycle (start/stop/fetch/run).
-- Dependencies: `UserFetcherDeps` includes `settings` and repository accessors for user-isolated data access.
-- **SECURITY**: Account-related dependencies (`getAccounts`, `setAccounts`) have been removed - accounts are accessed through user-scoped repositories only.
+- **Architecture**: Constructor accepts `LiveRepos` directly along with explicit logging and tool handler service functions, eliminating wrapper factory functions.
+- **Dependencies**: No wrapper interfaces - uses `LiveRepos` and service functions directly for user-isolated data access.
 - Fetcher state is tracked in-memory; settings are persisted to the user's `settings.json` via user context.
 - Tracks last access time and evicts idle instances based on `FETCHER_MANAGER_TTL_MINUTES` with a cap of `FETCHER_MANAGER_MAX_FETCHERS`.
 - Orchestration integration: fetchers can trigger orchestration runs via the `runOrchestration` callback.

@@ -30,10 +30,11 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 
 ## Architecture Highlights
 
-- Backend CRUD helper: `src/backend/routes/helpers.ts`
+- **Clean Dependency Injection**: All route modules use `LiveRepos` interface directly, eliminating wrapper bloat and redundant dependency interfaces. Service functions passed explicitly where needed.
+- **Backend CRUD helper**: `src/backend/routes/helpers.ts`
   - Centralizes list/get/create/update/delete (+ optional reorder) to remove duplicated route code.
   - Used by `routes/agents.ts`, `routes/directors.ts`, `routes/filters.ts` (with reorder), and `routes/imprints.ts`.
-- Frontend shared editor: `src/frontend/src/components/MessageListEditor.tsx`
+- **Frontend shared editor**: `src/frontend/src/components/MessageListEditor.tsx`
   - Reusable component for editing prompt/template message arrays.
   - Adopted by `PromptEditDialog.tsx` and `TemplateEditDialog.tsx`.
 

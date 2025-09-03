@@ -197,7 +197,8 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 
 ## 5. Technical Design
 ### 5.1 Architecture
-- **Single Application**: A single Node.js application (TypeScript) with Express.js serves a React frontend (bundled via a tool like Vite or Webpack) and handles all logic: email fetching, filtering, orchestration, tool calls, and OpenAI API integration. Frontend communicates with backend via standard HTTP requests (e.g., `fetch` or `axios`), avoiding IPC or complex protocols (e.g., WebSocket, GraphQL).
+- **Single Application**: A single Node.js application (TypeScript) with Express.js serves a React frontend (bundled via Vite) and handles all logic: email fetching, filtering, orchestration, tool calls, and OpenAI API integration. Frontend communicates with backend via standard HTTP requests (e.g., `fetch`), avoiding IPC or complex protocols (e.g., WebSocket, GraphQL).
+- **Clean Dependency Injection**: All route modules use `LiveRepos` interface directly, eliminating wrapper bloat and redundant dependency interfaces. Service functions passed explicitly where needed.
 - **Route Helpers (CRUD)**: Shared helper constructs standard list/get/create/update/delete endpoints with optional reorder; used by `agents`, `directors`, `filters`, and `imprints` route modules.
 - **Backend**: Node.js with Express.js for routing, email processing, tool calls, and persistence.
 - **Frontend**: React with HTML/JavaScript/CSS, styled with Tailwind CSS for a professional look, using Material-UI (or similar) for components (modals, tables, buttons) to ensure developer/user-friendliness.
@@ -219,11 +220,15 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 
 ### Isolation Enforcement
 
+- **LiveRepos Interface**: Canonical source of truth for all repository access methods; eliminates wrapper bloat
+- **Direct Repository Access**: All route modules accept `LiveRepos` directly instead of verbose wrapper objects
+- **Service Parameter Pattern**: Routes requiring additional services accept explicit `services` parameters with typed method signatures
+- **No Wrapper Interfaces**: All `*RoutesDeps` interfaces eliminated in favor of direct `LiveRepos` usage
 - **Settings Service**: Requires user context for all operations; no global settings access
 - **Logging Service**: All logging functions require user context parameter; no global repositories
-- **Route Dependencies**: All routes pass user context to data access functions
+- **Route Dependencies**: All routes pass `LiveRepos` and services directly to route handlers
 - **Path Constants**: Only `USERS_FILE` constant exists; all other global file constants removed
-- **Fetcher Manager**: Per-user instances with isolated settings persistence
+- **Fetcher Manager**: Per-user instances accepting `LiveRepos` and service functions directly
 
 Data files are organized as:
 ```
