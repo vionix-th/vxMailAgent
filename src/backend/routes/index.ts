@@ -54,6 +54,8 @@ export default function registerRoutes(
   registerDiagnosticTracesRoutes(app, services);
   registerUnifiedDiagnosticsRoutes(app, repos, services);
   registerFetcherRoutes(app, fetcherManager, repos);
-  registerCleanupRoutes(app);
+  registerCleanupRoutes(app, repos, {
+    getFetcherManager: (req: ReqLike) => fetcherManager.getFetcher(req)
+  });
 }
 

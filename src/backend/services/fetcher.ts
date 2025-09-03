@@ -4,7 +4,7 @@ import { conversationEngine } from './engine';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { Account, ConversationThread, FetcherLogEntry, OrchestrationDiagnosticEntry, ProviderEvent } from '../../shared/types';
 import { evaluateFilters, selectDirectorTriggers, shouldFinalizeDirector, ensureAgentThread, runAgentConversation, logConversationStepDiagnostic } from './orchestration';
-import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, PROVIDER_REQUEST_TIMEOUT_MS, CONVERSATION_STEP_TIMEOUT_MS } from '../config';
+import { PROVIDER_REQUEST_TIMEOUT_MS, CONVERSATION_STEP_TIMEOUT_MS } from '../config';
 import { beginTrace, endTrace, beginSpan, endSpan } from './logging';
 import type { ReqLike } from '../interfaces';
 import { LiveRepos } from '../liveRepos';
@@ -16,8 +16,8 @@ export interface FetcherService {
   startFetcherLoop: () => void;
   stopFetcherLoop: () => void;
   fetchEmails: () => Promise<void>;
-  getFetcherLog: () => FetcherLogEntry[];
-  setFetcherLog: (next: FetcherLogEntry[]) => void;
+  getFetcherLog: () => Promise<FetcherLogEntry[]>;
+  setFetcherLog: (next: FetcherLogEntry[]) => Promise<void>;
 }
 
 /** Initialize the background fetcher. */
@@ -33,47 +33,20 @@ export function initFetcher(
   let fetcherLastRun: string | null = null;
   let fetcherNextRun: string | null = null;
   let fetcherRunning = false;
-  let fetcherLog: FetcherLogEntry[] = [];
   let fetcherAccountStatus: Record<string, { lastRun: string | null; lastError: string | null }> = {};
 
-  function pruneFetcher(list: FetcherLogEntry[]): FetcherLogEntry[] {
-    try {
-      const ttlMs = Math.max(0, FETCHER_TTL_DAYS) * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      let next = list;
-      if (ttlMs > 0) {
-        next = next.filter(e => {
-          const ts = Date.parse(e.timestamp || '');
-          return isNaN(ts) ? true : (now - ts) <= ttlMs;
-        });
-      }
-      const cap = Math.max(0, USER_MAX_LOGS_PER_TYPE);
-      if (cap > 0 && next.length > cap) {
-        next = next.slice(Math.max(0, next.length - cap));
-      }
-      return next;
-    } catch {
-      return list;
-    }
-  }
 
-  try {
-    void repos.getFetcherLog(userReq)
-      .then((list: FetcherLogEntry[]) => pruneFetcher(list.map((e: FetcherLogEntry) => ({ ...e, id: e.id || newId() }))))
-      .then((list: FetcherLogEntry[]) => { fetcherLog = list; })
-      .catch((e: any) => { logger.error('Failed to initialize fetcherLog', { err: e }); });
-  } catch (e) {
-    logger.error('Failed to initialize fetcherLog', { err: e });
-  }
-
-  function logFetch(entry: FetcherLogEntry) {
+  async function logFetch(entry: FetcherLogEntry) {
     try {
       const withId: FetcherLogEntry = { ...entry, id: entry.id || newId() };
-      fetcherLog.push(withId);
-      fetcherLog = pruneFetcher(fetcherLog);
-      repos.setFetcherLog(userReq, fetcherLog);
+      const current = await repos.getFetcherLog(userReq);
+      const updated = [...current, withId];
+      // Fire-and-forget async write - don't block email processing
+      void repos.setFetcherLog(userReq, updated).catch(e => 
+        logger.error('Failed to persist fetcherLog entry', { err: e })
+      );
     } catch (e) {
-      logger.error('Failed to persist fetcherLog entry', { err: e });
+      logger.error('Failed to create fetcherLog entry', { err: e });
     }
   }
 
@@ -471,17 +444,7 @@ export function initFetcher(
     startFetcherLoop,
     stopFetcherLoop,
     fetchEmails,
-    getFetcherLog: () => fetcherLog,
-    setFetcherLog: (next: FetcherLogEntry[]) => {
-      const before = fetcherLog.length;
-      fetcherLog = pruneFetcher(next.map(e => ({ ...e, id: e.id || newId() })));
-      try {
-        if (process.env.NODE_ENV !== 'production') {
-          logger.debug('FETCHER setFetcherLog', { before, after: fetcherLog.length });
-        }
-      } catch (e) {
-        logger.error('Failed after setFetcherLog', { err: e });
-      }
-    },
+    getFetcherLog: async () => repos.getFetcherLog(userReq),
+    setFetcherLog: async (next: FetcherLogEntry[]) => repos.setFetcherLog(userReq, next),
   };
 }

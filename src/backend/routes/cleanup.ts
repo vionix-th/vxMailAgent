@@ -1,25 +1,35 @@
 import express from 'express';
 import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
+import { LiveRepos } from '../liveRepos';
 
-export default function registerCleanupRoutes(app: express.Express) {
+export default function registerCleanupRoutes(
+  app: express.Express,
+  repos: LiveRepos,
+  services: {
+    getFetcherManager: (req: ReqLike) => { getFetcherLog: () => Promise<any[]>; setFetcherLog: (next: any[]) => Promise<void> } | null;
+  }
+) {
 
   // Stats for current user (used by frontend settings)
   app.get('/api/cleanup/stats', async (req, res) => {
     try {
       const ureq = requireReq(req as ReqLike);
+      
+      // Get fetcher log from active fetcher manager, not repository
+      const fetcherManager = services.getFetcherManager(ureq);
+      const fetcherLog = fetcherManager ? await fetcherManager.getFetcherLog() : [];
+      
       const [
         conversations,
         orchestrationLog,
         providerEvents,
         traces,
-        fetcherLog,
         workspaceItems,
       ] = await Promise.all([
-        repoGetAll<any>(ureq, 'conversations'),
-        repoGetAll<any>(ureq, 'orchestrationLog'),
+        repos.getConversations(ureq),
+        repos.getOrchestrationLog(ureq),
         repoGetAll<any>(ureq, 'providerEvents'),
         repoGetAll<any>(ureq, 'traces'),
-        repoGetAll<any>(ureq, 'fetcherLog'),
         repoGetAll<any>(ureq, 'workspaceItems'),
       ]);
       const stats = {
@@ -40,27 +50,35 @@ export default function registerCleanupRoutes(app: express.Express) {
   app.delete('/api/cleanup/all', async (req, res) => {
     try {
       const ureq = requireReq(req as ReqLike);
+      
+      // Get current counts before deletion
+      const fetcherManager = services.getFetcherManager(ureq);
+      const fetcherLog = fetcherManager ? await fetcherManager.getFetcherLog() : [];
+      
       const [
         conversations,
         orchestrationLog,
         providerEvents,
         traces,
-        fetcherLog,
         workspaceItems,
       ] = await Promise.all([
-        repoGetAll<any>(ureq, 'conversations'),
-        repoGetAll<any>(ureq, 'orchestrationLog'),
+        repos.getConversations(ureq),
+        repos.getOrchestrationLog(ureq),
         repoGetAll<any>(ureq, 'providerEvents'),
         repoGetAll<any>(ureq, 'traces'),
-        repoGetAll<any>(ureq, 'fetcherLog'),
         repoGetAll<any>(ureq, 'workspaceItems'),
       ]);
+      
+      // Clear fetcher log through manager
+      if (fetcherManager) {
+        await fetcherManager.setFetcherLog([]);
+      }
+      
       await Promise.all([
-        repoSetAll<any>(ureq, 'conversations', []),
+        repos.setConversations(ureq, []),
         repoSetAll<any>(ureq, 'orchestrationLog', []),
         repoSetAll<any>(ureq, 'providerEvents', []),
         repoSetAll<any>(ureq, 'traces', []),
-        repoSetAll<any>(ureq, 'fetcherLog', []),
         repoSetAll<any>(ureq, 'workspaceItems', []),
       ]);
       const deleted = {
@@ -85,15 +103,18 @@ export default function registerCleanupRoutes(app: express.Express) {
   app.delete('/api/cleanup/fetcher-logs', async (req, res) => {
     try {
       const ureq = requireReq(req as ReqLike);
-      const prev = await repoGetAll<any>(ureq, 'fetcherLog');
-      await repoSetAll<any>(ureq, 'fetcherLog', []);
+      const fetcherManager = services.getFetcherManager(ureq);
+      const prev = fetcherManager ? await fetcherManager.getFetcherLog() : [];
+      if (fetcherManager) {
+        await fetcherManager.setFetcherLog([]);
+      }
       res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} fetcher logs` });
     } catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });
   app.delete('/api/cleanup/orchestration-logs', async (req, res) => {
     try {
       const ureq = requireReq(req as ReqLike);
-      const prev = await repoGetAll<any>(ureq, 'orchestrationLog');
+      const prev = await repos.getOrchestrationLog(ureq);
       await repoSetAll<any>(ureq, 'orchestrationLog', []);
       res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} orchestration logs` });
     } catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
@@ -101,8 +122,8 @@ export default function registerCleanupRoutes(app: express.Express) {
   app.delete('/api/cleanup/conversations', async (req, res) => {
     try {
       const ureq = requireReq(req as ReqLike);
-      const prev = await repoGetAll<any>(ureq, 'conversations');
-      await repoSetAll<any>(ureq, 'conversations', []);
+      const prev = await repos.getConversations(ureq);
+      await repos.setConversations(ureq, []);
       res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} conversations` });
     } catch (e: any) { return res.status(500).json({ error: String(e?.message || e) }); }
   });

@@ -64,28 +64,28 @@ export default function registerFetcherRoutes(app: express.Express, fetcherManag
 
   // Note: Full purge moved to cleanup routes (/api/cleanup/fetcher-logs)
 
-  app.delete('/api/fetcher/logs/:id', (req, res) => {
+  app.delete('/api/fetcher/logs/:id', async (req, res) => {
     try {
       const id = req.params.id;
-      const cur = fetcherManager.getFetcherLog(req as any as ReqLike);
+      const cur = await fetcherManager.getFetcherLog(req as any as ReqLike);
       const next = cur.filter((e) => e.id !== id);
       const deleted = cur.length - next.length;
-      fetcherManager.setFetcherLog(req as any as ReqLike, next);
+      await fetcherManager.setFetcherLog(req as any as ReqLike, next);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} fetcher logs` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });
     }
   });
 
-  app.delete('/api/fetcher/logs', (req, res) => {
+  app.delete('/api/fetcher/logs', async (req, res) => {
     try {
       const ids = Array.isArray(req.body.ids) ? (req.body.ids as string[]) : [];
       if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
-      const cur = fetcherManager.getFetcherLog(req as any as ReqLike);
+      const cur = await fetcherManager.getFetcherLog(req as any as ReqLike);
       const idSet = new Set(ids);
-      const next = cur.filter((e) => !e.id || !idSet.has(e.id));
+      const next = cur.filter((e: any) => !e.id || !idSet.has(e.id));
       const deleted = cur.length - next.length;
-      fetcherManager.setFetcherLog(req as any as ReqLike, next);
+      await fetcherManager.setFetcherLog(req as any as ReqLike, next);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} fetcher logs` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });
