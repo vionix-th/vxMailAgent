@@ -52,9 +52,9 @@ export default function registerFetcherRoutes(app: express.Express, fetcherManag
     res.json({ success: true });
   });
 
-  app.get('/api/fetcher/logs', (req, res) => {
+  app.get('/api/fetcher/logs', async (req, res) => {
     try {
-      const log = fetcherManager.getFetcherLog(req as any as ReqLike);
+      const log = await fetcherManager.getFetcherLog(req as any as ReqLike);
       res.json(log);
     } catch (e) {
       logger.error('Failed to read fetcherLog', { err: e });

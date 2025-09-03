@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.js",
+    "test:ts": "node --loader ts-node/esm --test *.test.ts"
+  }
+}

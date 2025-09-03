@@ -2,8 +2,9 @@ import { ConversationThread, Agent, Director, Filter, Prompt } from '../../share
 import { LiveRepos } from '../liveRepos';
 import { UserRequest } from '../middleware/user-context';
 import { evaluateFilters, selectDirectorTriggers } from './orchestration';
+import { ConversationOrchestrator } from './conversation-orchestrator';
 import { newId } from '../utils/id';
-import { beginSpan, endSpan } from './logging';
+import { beginSpan, endSpan, logOrch, logProviderEvent } from './logging';
 
 export interface EmailEnvelope {
   id: string;
@@ -252,6 +253,39 @@ export class EmailProcessor {
       message: 'Created director conversation thread',
       directorId: director.id,
       threadId: dirThreadId
+    });
+
+    // Trigger orchestration for the newly created director thread
+    const orchestrator = new ConversationOrchestrator(
+      this.repos,
+      logProviderEvent,
+      logOrch,
+      userReq
+    );
+    
+    // Start orchestration asynchronously - don't block email processing
+    setImmediate(async () => {
+      try {
+        await orchestrator.runConversationStep({
+          thread: dirThread,
+          traceId,
+          agents: context.agents,
+          apiConfigs: context.apiConfigs,
+          prompts: context.prompts
+        }, userReq);
+      } catch (error: any) {
+        this.logFetch({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          provider: context.account.provider,
+          accountId: context.account.id,
+          event: 'orchestration_error',
+          message: 'Failed to start director orchestration',
+          directorId: director.id,
+          threadId: dirThreadId,
+          detail: error.message
+        });
+      }
     });
 
     return dirThreadId;
