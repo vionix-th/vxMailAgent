@@ -3,8 +3,8 @@ import { ReqLike } from '../utils/repo-access';
 import logger from '../services/logger';
 
 export interface CrudRepoFunctions<T> {
-  get: (req?: ReqLike) => Promise<T[]>;
-  set: (req: ReqLike, items: T[]) => Promise<void> | void;
+  getAll: (req?: ReqLike) => Promise<T[]>;
+  setAll: (req: ReqLike, items: T[]) => Promise<void> | void;
 }
 
 export interface CrudCallbacks<T> {
@@ -59,7 +59,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
   app.get(basePath, async (req, res) => {
     try {
       logger.info(`GET ${basePath}`);
-      let items = await repoFns.get(req as ReqLike);
+      let items = await repoFns.getAll(req as ReqLike);
       if (transformList) {
         items = transformList(items);
       }
@@ -87,9 +87,9 @@ export function createCrudRoutes<T extends Record<string, any>>(
         item = afterValidate(item, false);
       }
 
-      const current = await repoFns.get(req as ReqLike);
+      const current = await repoFns.getAll(req as ReqLike);
       const next = [...current, item];
-      await repoFns.set(req as ReqLike, next);
+      await repoFns.setAll(req as ReqLike, next);
       
       logger.info(`POST ${basePath}: added ${itemName}`, { id: item[idField] });
       res.json({ success: true });
@@ -109,7 +109,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
   app.put(`${basePath}/:id`, async (req, res) => {
     try {
       const id = req.params.id;
-      const current = await repoFns.get(req as ReqLike);
+      const current = await repoFns.getAll(req as ReqLike);
       const idx = current.findIndex(item => item[idField] === id);
       
       if (idx === -1) {
@@ -142,7 +142,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
 
       const next = current.slice();
       next[idx] = item;
-      await repoFns.set(req as ReqLike, next);
+      await repoFns.setAll(req as ReqLike, next);
       
       logger.info(`PUT ${basePath}/:id updated`, { id });
       res.json({ success: true });
@@ -162,10 +162,10 @@ export function createCrudRoutes<T extends Record<string, any>>(
   app.delete(`${basePath}/:id`, async (req, res) => {
     try {
       const id = req.params.id;
-      const current = await repoFns.get(req as ReqLike);
+      const current = await repoFns.getAll(req as ReqLike);
       const before = current.length;
       const next = current.filter(item => item[idField] !== id);
-      await repoFns.set(req as ReqLike, next);
+      await repoFns.setAll(req as ReqLike, next);
       const after = next.length;
       
       logger.info(`DELETE ${basePath}/:id deleted`, { id, deleted: before - after });
@@ -187,7 +187,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
           return res.status(400).json({ error: 'orderedIds is required and must be a non-empty array' });
         }
 
-        const current = await repoFns.get(req as ReqLike);
+        const current = await repoFns.getAll(req as ReqLike);
         const byId = new Map(current.map(item => [item[idField], item] as const));
         const reordered: T[] = [];
         
@@ -200,7 +200,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
           if (!orderedIds.includes(item[idField] as any)) reordered.push(item);
         }
         
-        await repoFns.set(req as ReqLike, reordered);
+        await repoFns.setAll(req as ReqLike, reordered);
         logger.info(`PUT ${basePath}/reorder: reordered ${itemName}s`, { count: reordered.length });
         res.json({ success: true });
       } catch (error) {

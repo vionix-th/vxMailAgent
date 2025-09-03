@@ -2,12 +2,7 @@ import express from 'express';
 import { OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, Trace } from '../../shared/types';
 import { ReqLike } from '../utils/repo-access';
 
-export interface UnifiedDiagnosticsRoutesDeps {
-  getOrchestrationLog: (req?: ReqLike) => Promise<OrchestrationDiagnosticEntry[]>;
-  getConversations: (req?: ReqLike) => Promise<ConversationThread[]>;
-  getProviderEvents: (req?: ReqLike) => Promise<ProviderEvent[]>;
-  getTraces: (req?: ReqLike) => Promise<Trace[]>;
-}
+import { LiveRepos } from '../liveRepos';
 
 // Unified diagnostic tree structure
 export interface DiagnosticNode {
@@ -274,15 +269,22 @@ function buildHierarchicalTree(
   return tree;
 }
 
-export default function registerUnifiedDiagnosticsRoutes(app: express.Express, deps: UnifiedDiagnosticsRoutesDeps) {
+export default function registerUnifiedDiagnosticsRoutes(
+  app: express.Express, 
+  repos: LiveRepos,
+  services: {
+    getTraces: (req?: ReqLike) => Promise<Trace[]>;
+    getProviderEvents: (req?: ReqLike) => Promise<ProviderEvent[]>;
+  }
+) {
   // GET unified hierarchical diagnostics tree
   app.get('/api/diagnostics/unified', async (req, res) => {
     try {
       const [orchestrationEntries, conversations, providerEvents, traces] = await Promise.all([
-        deps.getOrchestrationLog(req as any as ReqLike),
-        deps.getConversations(req as any as ReqLike),
-        deps.getProviderEvents(req as any as ReqLike),
-        deps.getTraces(req as any as ReqLike),
+        repos.getOrchestrationLog(req as any as ReqLike),
+        repos.getConversations(req as any as ReqLike),
+        services.getProviderEvents(req as any as ReqLike),
+        services.getTraces(req as any as ReqLike),
       ]);
 
       const tree = buildHierarchicalTree(orchestrationEntries, conversations, providerEvents, traces);
@@ -319,10 +321,10 @@ export default function registerUnifiedDiagnosticsRoutes(app: express.Express, d
 
       switch (nodeType) {
         case 'conv':
-          result = (await deps.getConversations(req as any as ReqLike)).find(c => c.id === id);
+          result = (await repos.getConversations(req as any as ReqLike)).find((c: any) => c.id === id);
           break;
         case 'event':
-          result = (await deps.getProviderEvents(req as any as ReqLike)).find(e => e.id === id);
+          result = (await services.getProviderEvents(req as any as ReqLike)).find((e: any) => e.id === id);
           break;
         default:
           return res.status(400).json({ error: 'Invalid node type' });

@@ -1,30 +1,12 @@
-import { FetcherService, FetcherDeps, initFetcher } from './fetcher';
+import { FetcherService, initFetcher } from './fetcher';
 import { ReqLike, requireReq, requireUid } from '../utils/repo-access';
 import { FETCHER_MANAGER_TTL_MINUTES, FETCHER_MANAGER_MAX_FETCHERS } from '../config';
+import { LiveRepos } from '../liveRepos';
 import logger from './logger';
 
 /**
  * Per-user fetcher dependencies that include user context
  */
-export interface UserFetcherDeps {
-  uid: string;
-  getSettings: () => Promise<any>;
-  getFilters: () => Promise<any[]>;
-  getDirectors: () => Promise<any[]>;
-  getAgents: () => Promise<any[]>;
-  getPrompts: () => Promise<any[]>;
-  getConversations: () => Promise<any[]>;
-  setConversations: (next: any[]) => Promise<void>;
-  getAccounts: () => Promise<any[]>;
-  setAccounts: (accounts: any[]) => Promise<void>;
-  logOrch: (e: any) => void;
-  logProviderEvent: (e: any) => void;
-  getFetcherLog: () => Promise<any[]>;
-  setFetcherLog: (next: any[]) => Promise<void>;
-  getToolHandler: () => (name: string, params: any) => Promise<any>;
-  // Provides a mock per-user request used by logging/tracing
-  getUserReq: () => ReqLike;
-}
 
 interface FetcherEntry {
   service: FetcherService;
@@ -38,7 +20,12 @@ export class FetcherManager {
   private fetchers = new Map<string, FetcherEntry>();
   private cleanupTimer: NodeJS.Timeout | null = null;
 
-  constructor(private createUserFetcher: (req: ReqLike) => UserFetcherDeps) {
+  constructor(
+    private repos: LiveRepos,
+    private logOrch: (req: ReqLike, e: any) => void,
+    private logProviderEvent: (req: ReqLike, e: any) => void,
+    private getToolHandler: (req: ReqLike) => (name: string, params: any) => Promise<any>
+  ) {
     this.startCleanupTimer();
   }
 
@@ -53,26 +40,14 @@ export class FetcherManager {
       if (this.fetchers.size >= FETCHER_MANAGER_MAX_FETCHERS) {
         this.evictOldest();
       }
-      const userDeps = this.createUserFetcher(ureq);
-      // Convert user deps to standard fetcher deps
-      const fetcherDeps: FetcherDeps = {
-        getSettings: userDeps.getSettings,
-        getFilters: userDeps.getFilters,
-        getDirectors: userDeps.getDirectors,
-        getAgents: userDeps.getAgents,
-        getPrompts: userDeps.getPrompts,
-        getConversations: userDeps.getConversations,
-        setConversations: userDeps.setConversations,
-        getAccounts: userDeps.getAccounts,
-        setAccounts: userDeps.setAccounts,
-        logOrch: userDeps.logOrch,
-        logProviderEvent: userDeps.logProviderEvent,
-        getFetcherLog: userDeps.getFetcherLog,
-        setFetcherLog: userDeps.setFetcherLog,
-        getToolHandler: userDeps.getToolHandler,
-        getUserReq: userDeps.getUserReq,
+      const logOrchFn = (e: any) => this.logOrch(ureq, e);
+      const logProviderEventFn = (e: any) => this.logProviderEvent(ureq, e);
+      const getToolHandlerFn = () => this.getToolHandler(ureq);
+      
+      entry = { 
+        service: initFetcher(this.repos, ureq, logOrchFn, logProviderEventFn, getToolHandlerFn), 
+        lastAccessed: Date.now() 
       };
-      entry = { service: initFetcher(fetcherDeps), lastAccessed: Date.now() };
       this.fetchers.set(uid, entry);
     } else {
       entry.lastAccessed = Date.now();

@@ -1,20 +1,14 @@
 import express from 'express';
-import { Imprint } from '../../shared/types';
-import { ReqLike } from '../utils/repo-access';
+import { LiveRepos } from '../liveRepos';
 import { createCrudRoutes } from './helpers';
 
-export interface ImprintsRoutesDeps {
-  getImprints: (req?: ReqLike) => Promise<Imprint[]>;
-  setImprints: (req: ReqLike, next: Imprint[]) => Promise<void> | void;
-}
-
-export default function registerImprintsRoutes(app: express.Express, deps: ImprintsRoutesDeps) {
+export default function registerImprintsRoutes(app: express.Express, repos: LiveRepos) {
   createCrudRoutes(
     app,
     '/api/imprints',
     {
-      get: deps.getImprints,
-      set: deps.setImprints
+      getAll: repos.getImprints,
+      setAll: repos.setImprints,
     },
     {
       itemName: 'Imprint',

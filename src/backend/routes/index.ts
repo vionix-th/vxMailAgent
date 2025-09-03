@@ -21,89 +21,39 @@ import registerUnifiedDiagnosticsRoutes from './unified-diagnostics';
 import registerCleanupRoutes from './cleanup';
 import { FetcherManager } from '../services/fetcher-manager';
 import { ProviderEvent } from '../../shared/types';
-import { setOrchestrationLog as svcSetOrchestrationLog, logProviderEvent as svcLogProviderEvent, getOrchestrationLog, getTraces } from '../services/logging';
-import { newId } from '../utils/id';
 import { LiveRepos } from '../liveRepos';
 
-export interface RouteDeps extends LiveRepos {
-  fetcherManager: FetcherManager;
-}
-
-export default function registerRoutes(app: express.Express, deps: RouteDeps) {
+export default function registerRoutes(
+  app: express.Express, 
+  repos: LiveRepos,
+  fetcherManager: FetcherManager,
+  services: {
+    setOrchestrationLog: (next: any[], req?: ReqLike) => Promise<void>;
+    logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>;
+    newId: () => string;
+    getTraces: (req?: ReqLike) => Promise<any[]>;
+    setTraces: (req: ReqLike, next: any[]) => Promise<void>;
+    getProviderEvents: (req?: ReqLike) => Promise<any[]>;
+  }
+) {
   registerAuthSessionRoutes(app);
-  registerTestRoutes(app, {
-    getPrompts: deps.getPrompts,
-    getDirectors: deps.getDirectors,
-    getAgents: deps.getAgents,
-  });
+  registerTestRoutes(app, repos);
   registerMemoryRoutes(app, {});
-  registerOrchestrationRoutes(app, {
-    getOrchestrationLog: deps.getOrchestrationLog,
-    setOrchestrationLog: async (next, req?: ReqLike) => { await svcSetOrchestrationLog(next, req); },
-    getSettings: deps.getSettings,
-  });
+  registerOrchestrationRoutes(app, repos, services);
   registerSettingsRoutes(app, {});
-  registerAgentsRoutes(app, {
-    getAgents: deps.getAgents,
-    setAgents: deps.setAgents,
-  });
-  registerFiltersRoutes(app, {
-    getFilters: deps.getFilters,
-    setFilters: deps.setFilters,
-  });
-  registerDirectorsRoutes(app, {
-    getDirectors: deps.getDirectors,
-    setDirectors: deps.setDirectors,
-  });
-  registerPromptsRoutes(app, {
-    getPrompts: deps.getPrompts,
-    setPrompts: deps.setPrompts,
-    getSettings: deps.getSettings,
-    getAgents: deps.getAgents,
-    getDirectors: deps.getDirectors,
-  });
+  registerAgentsRoutes(app, repos);
+  registerFiltersRoutes(app, repos);
+  registerDirectorsRoutes(app, repos);
+  registerPromptsRoutes(app, repos);
   registerTemplatesRoutes(app);
-  registerConversationsRoutes(app, {
-    getConversations: deps.getConversations,
-    setConversations: deps.setConversations,
-    getSettings: deps.getSettings,
-    logProviderEvent: async (e: ProviderEvent, req?: ReqLike) => { await svcLogProviderEvent(e, req); },
-    newId,
-    getDirectors: deps.getDirectors,
-    getAgents: deps.getAgents,
-  });
-  registerWorkspacesRoutes(app, {
-    getConversations: deps.getConversations,
-    setConversations: deps.setConversations,
-  });
-  registerImprintsRoutes(app, {
-    getImprints: deps.getImprints,
-    setImprints: deps.setImprints,
-  });
+  registerConversationsRoutes(app, repos, services);
+  registerWorkspacesRoutes(app, repos);
+  registerImprintsRoutes(app, repos);
   registerAccountsRoutes(app);
-  registerDiagnosticsRoutes(app, {
-    getOrchestrationLog: deps.getOrchestrationLog,
-    getConversations: deps.getConversations,
-  });
-  registerDiagnosticTracesRoutes(app, {
-    getTraces: async (req?: ReqLike) => await deps.getTracesRepo(req).getAll(),
-    setTraces: async (req: ReqLike, next) => { await deps.getTracesRepo(req).setAll(next); },
-  });
-  registerUnifiedDiagnosticsRoutes(app, {
-    getOrchestrationLog: async (req?: ReqLike) => await getOrchestrationLog(req),
-    getConversations: deps.getConversations,
-    getProviderEvents: async (req?: ReqLike) => await deps.getProviderRepo(req).getAll(),
-    getTraces: async (req?: ReqLike) => await getTraces(req),
-  });
-  registerFetcherRoutes(app, {
-    getStatus: (req: ReqLike) => deps.fetcherManager.getStatus(req),
-    startFetcherLoop: (req: ReqLike) => deps.fetcherManager.startFetcherLoop(req),
-    stopFetcherLoop: (req: ReqLike) => deps.fetcherManager.stopFetcherLoop(req),
-    fetchEmails: (req: ReqLike) => deps.fetcherManager.fetchEmails(req),
-    getSettings: (req: ReqLike) => deps.getSettings(req),
-    getFetcherLog: (req: ReqLike) => deps.fetcherManager.getFetcherLog(req),
-    setFetcherLog: (req: ReqLike, next) => deps.fetcherManager.setFetcherLog(req, next),
-  });
+  registerDiagnosticsRoutes(app, repos);
+  registerDiagnosticTracesRoutes(app, services);
+  registerUnifiedDiagnosticsRoutes(app, repos, services);
+  registerFetcherRoutes(app, fetcherManager, repos);
   registerCleanupRoutes(app);
 }
 

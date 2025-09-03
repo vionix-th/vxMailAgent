@@ -10,36 +10,15 @@ import { ReqLike, requireUid } from './utils/repo-access';
 
 /** Build a FetcherManager wired to per-user repo bundles and typed ReqLike contexts. */
 export function createFetcherManager(_repos: LiveRepos) {
-  const fetcherManager = new FetcherManager((req: ReqLike) => {
-    const uid = requireUid(req);
-    const getBundle = async () => {
-      const existing = (req as any)?.userContext?.repos;
-      if (existing) return existing;
-      return await repoBundleRegistry.getBundle(uid);
-    };
-    return {
-      uid,
-      getSettings: async () => {
-        const b = await getBundle();
-        const arr = await b.settings.getAll();
-        return arr[0] || {};
-      },
-      getFilters: async () => (await getBundle()).filters.getAll(),
-      getDirectors: async () => (await getBundle()).directors.getAll(),
-      getAgents: async () => (await getBundle()).agents.getAll(),
-      getPrompts: async () => (await getBundle()).prompts.getAll(),
-      getConversations: async () => (await getBundle()).conversations.getAll(),
-      setConversations: async (next: any[]) => { const b = await getBundle(); await b.conversations.setAll(next); },
-      getAccounts: async () => (await getBundle()).accounts.getAll(),
-      setAccounts: async (accounts: any[]) => { const b = await getBundle(); await b.accounts.setAll(accounts); },
-      logOrch: (e: any) => { void getBundle().then(b => svcLogOrch(e, { userContext: { uid, repos: b } })); },
-      logProviderEvent: (e: any) => { void getBundle().then(b => svcLogProviderEvent(e, { userContext: { uid, repos: b } })); },
-      getFetcherLog: async () => (await getBundle()).fetcherLog.getAll(),
-      setFetcherLog: async (next: any[]) => { const b = await getBundle(); await b.fetcherLog.setAll(next); },
-      getToolHandler: () => (name: string, params: any) => getBundle().then(b => createToolHandler(b)(name, params)),
-      getUserReq: () => (req && (req as any)?.userContext?.repos ? req : ({ userContext: { uid } } as any)),
-    } as any;
-  });
+  const fetcherManager = new FetcherManager(
+    _repos,
+    (req: ReqLike, e: any) => { void svcLogOrch(e, req); },
+    (req: ReqLike, e: any) => { void svcLogProviderEvent(e, req); },
+    (req: ReqLike) => (name: string, params: any) => {
+      const uid = requireUid(req);
+      return repoBundleRegistry.getBundle(uid).then(b => createToolHandler(b)(name, params));
+    }
+  );
   return fetcherManager;
 }
 

@@ -1,21 +1,16 @@
 import express from 'express';
 import { Agent } from '../../shared/types';
-import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
-import { ReqLike } from '../utils/repo-access';
+import { LiveRepos } from '../liveRepos';
 import { createCrudRoutes } from './helpers';
+import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
 
-export interface AgentsRoutesDeps {
-  getAgents: (req?: ReqLike) => Promise<Agent[]>;
-  setAgents: (req: ReqLike, next: Agent[]) => Promise<void> | void;
-}
-
-export default function registerAgentsRoutes(app: express.Express, deps: AgentsRoutesDeps) {
+export default function registerAgentsRoutes(app: express.Express, repos: LiveRepos) {
   createCrudRoutes(
     app,
     '/api/agents',
     {
-      get: deps.getAgents,
-      set: deps.setAgents
+      getAll: repos.getAgents,
+      setAll: repos.setAgents,
     },
     {
       itemName: 'Agent',

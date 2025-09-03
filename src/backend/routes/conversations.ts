@@ -1,30 +1,28 @@
 import express from 'express';
-import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent } from '../../shared/types';
+import { ConversationThread, PromptMessage, ProviderEvent } from '../../shared/types';
 import { conversationEngine } from '../services/engine';
 import { runAgentConversation } from '../services/orchestration';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { createToolHandler } from '../toolCalls';
 import logger from '../services/logger';
 import { requireReq, requireRepos } from '../utils/repo-access';
-import type { ReqLike } from '../interfaces';
+import type { ReqLike } from '../utils/repo-access';
+import { LiveRepos } from '../liveRepos';
 
-export interface ConversationsRoutesDeps {
-  getConversations: (req?: ReqLike) => Promise<ConversationThread[]>;
-  setConversations: (req: ReqLike, next: ConversationThread[]) => Promise<void> | void;
-  getSettings: (req?: ReqLike) => Promise<any>;
-  logProviderEvent: (ev: ProviderEvent, req?: ReqLike) => Promise<void> | void;
-  newId: () => string;
-  getDirectors: (req?: ReqLike) => Promise<Director[]>;
-  getAgents: (req?: ReqLike) => Promise<Agent[]>;
-}
-
-export default function registerConversationsRoutes(app: express.Express, deps: ConversationsRoutesDeps) {
+export default function registerConversationsRoutes(
+  app: express.Express, 
+  repos: LiveRepos,
+  services: {
+    logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>;
+    newId: () => string;
+  }
+) {
   // LIST conversations (canonical). Supports optional pagination only; no filters, no sorting.
   // GET /api/conversations?limit=&offset=
   app.get('/api/conversations', async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const list = await deps.getConversations(req as any as ReqLike) || [];
+      const list = await repos.getConversations(req as any as ReqLike) || [];
       const limit = Math.max(0, Math.min(1000, Number(q.limit) || 200));
       const offset = Math.max(0, Number(q.offset) || 0);
       const paged = list.slice(offset, offset + limit);
@@ -38,7 +36,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
   app.get('/api/conversations/:id', async (req, res) => {
     try {
       const id = req.params.id;
-      const list = await deps.getConversations(req as any as ReqLike);
+      const list = await repos.getConversations(req as any as ReqLike);
       const thread = list.find((c) => c.id === id);
       if (!thread) return res.status(404).json({ error: 'Conversation not found' });
       return res.json(thread);
@@ -52,7 +50,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     const directorId = String(req.query.directorId || '').trim();
     const emailId = String(req.query.emailId || '').trim();
     if (!directorId || !emailId) return res.status(400).json({ error: 'directorId and emailId are required' });
-    const threads = (await deps.getConversations(req as any as ReqLike)).filter(
+    const threads = (await repos.getConversations(req as any as ReqLike)).filter(
       (c) => c.kind === 'director' && c.directorId === directorId && (c.email as any)?.id === emailId
     );
     if (!threads.length) return res.status(404).json({ error: 'Conversation not found' });
@@ -66,7 +64,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     const id = req.params.id;
     const content = String(req.body?.content || '');
     if (!content.trim()) return res.status(400).json({ error: 'Message content is required' });
-    const conversations = await deps.getConversations(req as any as ReqLike);
+    const conversations = await repos.getConversations(req as any as ReqLike);
     const idx = conversations.findIndex((c) => c.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Conversation not found' });
     const t = conversations[idx];
@@ -82,7 +80,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     };
     const next = conversations.slice();
     next[idx] = updated;
-    await deps.setConversations(req as any as ReqLike, next);
+    await repos.setConversations(req as any as ReqLike, next);
     logger.info('POST /api/conversations/:id/messages appended user message', { id, length: content.length });
     return res.json({ success: true });
   });
@@ -91,7 +89,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
   app.post('/api/conversations/:id/assistant', async (req, res) => {
     try {
       const id = req.params.id;
-      const conversations = await deps.getConversations(req as any as ReqLike);
+      const conversations = await repos.getConversations(req as any as ReqLike);
       const idx = conversations.findIndex((c) => c.id === id);
       if (idx === -1) return res.status(404).json({ error: 'Conversation not found' });
       const t = conversations[idx];
@@ -99,7 +97,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
         return res.status(400).json({ error: 'Conversation is finalized' });
       }
 
-      const api = (await deps.getSettings(requireReq(req as any as ReqLike))).apiConfigs.find((c: any) => c.id === t.apiConfigId);
+      const api = (await repos.getSettings(requireReq(req as any as ReqLike))).apiConfigs.find((c: any) => c.id === t.apiConfigId);
       if (!api) return res.status(404).json({ error: 'API config not found' });
 
       // Use existing transcript as-is (OpenAI-aligned)
@@ -131,7 +129,7 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
             role: 'director',
             roleCaps: { canSpawnAgents: true },
             toolRegistry: TOOL_DESCRIPTORS,
-            context: { conversationId: id, agents: await deps.getAgents(req as any as ReqLike) || [] },
+            context: { conversationId: id, agents: await repos.getAgents(req as any as ReqLike) || [] },
           });
           result = {
             assistantMessage: engineOut.assistantMessage,
@@ -156,20 +154,20 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
           provider: 'openai',
         } as any;
         {
-          const cur = await deps.getConversations(req as any as ReqLike);
+          const cur = await repos.getConversations(req as any as ReqLike);
           const i2 = cur.findIndex((c) => c.id === id);
           if (i2 !== -1) {
             const next = cur.slice();
             next[i2] = updated;
-            await deps.setConversations(req as any as ReqLike, next);
+            await repos.setConversations(req as any as ReqLike, next);
           }
         }
         // Provider events (req-aware)
         try {
-          if (result.request) await deps.logProviderEvent({ id: deps.newId(), conversationId: id, provider: 'openai', type: 'request', timestamp: now, payload: result.request }, req as any as ReqLike);
+          if (result.request) await services.logProviderEvent({ id: services.newId(), conversationId: id, provider: 'openai', type: 'request', timestamp: now, payload: result.request }, req as any as ReqLike);
           const usage = (result.response && (result.response as any).usage) || undefined;
-          await deps.logProviderEvent({
-            id: deps.newId(),
+          await services.logProviderEvent({
+            id: services.newId(),
             conversationId: id,
             provider: 'openai',
             type: 'response',
@@ -186,13 +184,13 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
           const agentResult = await runAgentConversation(
             t,
             userContent, // Use the user's message content
-            await deps.getConversations(req as any as ReqLike),
+            await repos.getConversations(req as any as ReqLike),
             api,
             TOOL_DESCRIPTORS,
-            async (next: ConversationThread[]) => { await deps.setConversations(req as any as ReqLike, next); },
+            async (next: ConversationThread[]) => { await repos.setConversations(req as any as ReqLike, next); },
             createToolHandler(requireRepos(requireReq(req as any as ReqLike))),
             undefined, // No traceId in routes path
-            async (ev: ProviderEvent) => { await deps.logProviderEvent(ev, req as any as ReqLike); } // Req-aware provider logging
+            async (ev: ProviderEvent) => { await services.logProviderEvent(ev, req as any as ReqLike); } // Req-aware provider logging
           );
           
           if (agentResult.success) {
@@ -218,11 +216,11 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
     try {
       const id = req.params.id;
       const ureq = requireReq(req as any as ReqLike);
-      const list = await deps.getConversations(ureq);
+      const list = await repos.getConversations(ureq);
       const next = list.filter((c) => c.id !== id);
       const deleted = list.length - next.length;
       if (deleted === 0) return res.status(404).json({ error: 'Conversation not found' });
-      await deps.setConversations(ureq, next);
+      await repos.setConversations(ureq, next);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });
@@ -235,11 +233,11 @@ export default function registerConversationsRoutes(app: express.Express, deps: 
       const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];
       if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
       const ureq = requireReq(req as any as ReqLike);
-      const list = await deps.getConversations(ureq);
+      const list = await repos.getConversations(ureq);
       const set = new Set(ids);
       const next = list.filter((c) => !c.id || !set.has(c.id));
       const deleted = list.length - next.length;
-      await deps.setConversations(ureq, next);
+      await repos.setConversations(ureq, next);
       return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || e) });

@@ -2,7 +2,9 @@ import express from 'express';
 import cors from 'cors';
 
 import { requireAuth } from './middleware/auth';
-import { logOrch as svcLogOrch, logProviderEvent as svcLogProviderEvent } from './services/logging';
+import { setOrchestrationLog as svcSetOrchestrationLog, logProviderEvent as svcLogProviderEvent, getTraces, logOrch as svcLogOrch } from './services/logging';
+import { newId } from './utils/id';
+import { ProviderEvent } from '../shared/types';
 
 import { User, FetcherLogEntry } from '../shared/types';
 import { USERS_FILE } from './utils/paths';
@@ -14,7 +16,7 @@ import registerHealthRoutes from './routes/health';
 import { FetcherManager } from './services/fetcher-manager';
 import { createToolHandler } from './toolCalls';
 import { attachUserContext, UserRequest } from './middleware/user-context';
-import { ReqLike, requireReq, requireUid } from './utils/repo-access';
+import { ReqLike, requireUid } from './utils/repo-access';
 import logger from './services/logger';
 import { createLiveRepos } from './liveRepos';
 import registerRoutes from './routes';
@@ -55,48 +57,24 @@ export function createServer() {
   // System-level repositories: only users registry remains
   const usersRepo = createJsonRepository<User>(USERS_FILE);
   setUsersRepo(usersRepo);
-  const fetcherManager = new FetcherManager((reqLike: ReqLike) => {
-    const ureq = requireReq(reqLike);
-    const uid = requireUid(ureq);
-    // Access bundle lazily per call to avoid treating Promise<RepoBundle> synchronously
-    const getBundle = () => repoBundleRegistry.getBundle(uid);
+  const fetcherManager = new FetcherManager(
+    repos,
+    (req: ReqLike, e: any) => { void svcLogOrch(e, req); },
+    (req: ReqLike, e: any) => { void svcLogProviderEvent(e, req); },
+    (req: ReqLike) => (name: string, params: any) => {
+      const uid = requireUid(req);
+      return repoBundleRegistry.getBundle(uid).then(b => createToolHandler(b)(name, params));
+    }
+  );
 
-    return {
-      uid,
-      getSettings: () => getBundle().then(b => b.settings.getAll()).then(a => a[0] || {}),
-      getFilters: () => getBundle().then(b => b.filters.getAll()),
-      getDirectors: () => getBundle().then(b => b.directors.getAll()),
-      getAgents: () => getBundle().then(b => b.agents.getAll()),
-      getPrompts: () => getBundle().then(b => b.prompts.getAll()),
-      getConversations: () => getBundle().then(b => b.conversations.getAll()),
-      setConversations: (next: any[]) => getBundle().then(b => b.conversations.setAll(next)).then(() => {}),
-      getAccounts: () => getBundle().then(b => b.accounts.getAll()),
-      setAccounts: (accounts: any[]) => getBundle().then(b => b.accounts.setAll(accounts)).then(() => {}),
-      logOrch: (e: any) => {
-        // Best-effort logging with lazy bundle resolution
-        void getBundle().then(b => {
-          const mockReq = { userContext: { uid, repos: b } } as ReqLike;
-          svcLogOrch(e, mockReq);
-        });
-      },
-      logProviderEvent: (e: any) => {
-        void getBundle().then(b => {
-          const mockReq = { userContext: { uid, repos: b } } as ReqLike;
-          svcLogProviderEvent(e, mockReq);
-        });
-      },
-      getFetcherLog: () => getBundle().then(b => b.fetcherLog.getAll()),
-      setFetcherLog: (next: any[]) => getBundle().then(b => b.fetcherLog.setAll(next)).then(() => {}),
-      getToolHandler: () => getBundle().then(b => createToolHandler(b)),
-      getUserReq: () => {
-        // Prefer the provided request if it already has repos; fallback to uid-only (best-effort)
-        const hasRepos = !!(ureq as any)?.userContext?.repos;
-        return hasRepos ? (ureq as ReqLike) : ({ userContext: { uid } } as any);
-      },
-    } as any;
+  registerRoutes(app, repos, fetcherManager, {
+    setOrchestrationLog: async (next: any[], req?: ReqLike) => { await svcSetOrchestrationLog(next, req); },
+    logProviderEvent: async (e: ProviderEvent, req?: ReqLike) => { await svcLogProviderEvent(e, req); },
+    newId,
+    getTraces: async (req?: ReqLike) => await getTraces(req),
+    setTraces: async (req: ReqLike, next: any[]) => { await repos.getTracesRepo(req).setAll(next); },
+    getProviderEvents: async (req?: ReqLike) => await repos.getProviderRepo(req).getAll(),
   });
-
-  registerRoutes(app, { ...repos, fetcherManager });
   
   // Bootstrapping per-user fetchers on server startup for users who enabled auto-start
   (async () => {

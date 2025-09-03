@@ -20,8 +20,8 @@ async function startServer(repo: CrudRepoFunctions<Item>) {
 test('PUT returns 400 when body id mismatches path', async () => {
   let items: Item[] = [{ id: '1', name: 'one' }];
   const repo: CrudRepoFunctions<Item> = {
-    get: async () => items,
-    set: async (_req, next) => { items = next; }
+    getAll: async () => items,
+    setAll: async (_req: any, next: any) => { items = next; }
   };
   const { server, url } = await startServer(repo);
   try {
@@ -42,8 +42,8 @@ test('PUT returns 400 when body id mismatches path', async () => {
 test('PUT assigns path id when body id missing', async () => {
   let items: Item[] = [{ id: '1', name: 'one' }];
   const repo: CrudRepoFunctions<Item> = {
-    get: async () => items,
-    set: async (_req, next) => { items = next; }
+    getAll: async () => items,
+    setAll: async (_req: any, next: any) => { items = next; }
   };
   const { server, url } = await startServer(repo);
   try {

@@ -1,22 +1,17 @@
 import express from 'express';
 import { Filter } from '../../shared/types';
-import { ReqLike } from '../utils/repo-access';
+import { LiveRepos } from '../liveRepos';
 import { createCrudRoutes } from './helpers';
 
-export interface FiltersRoutesDeps {
-  getFilters: (req?: ReqLike) => Promise<Filter[]>;
-  setFilters: (req: ReqLike, next: Filter[]) => Promise<void> | void;
-}
+export default function registerFiltersRoutes(app: express.Express, repos: LiveRepos) {
+  const allowedFields = ['from', 'to', 'cc', 'bcc', 'subject', 'body', 'date'] as const;
 
-const allowedFields = ['from', 'to', 'cc', 'bcc', 'subject', 'body', 'date'] as const;
-
-export default function registerFiltersRoutes(app: express.Express, deps: FiltersRoutesDeps) {
   createCrudRoutes(
     app,
     '/api/filters',
     {
-      get: deps.getFilters,
-      set: deps.setFilters
+      getAll: repos.getFilters,
+      setAll: repos.setFilters,
     },
     {
       itemName: 'Filter',

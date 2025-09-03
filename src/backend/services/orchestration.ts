@@ -60,8 +60,28 @@ export function shouldFinalizeDirector(): boolean {
   return true;
 }
 
-export interface AgentSessionDeps {
+/** Enhanced logging for conversation step diagnostics */
+export function logConversationStepDiagnostic(
+  stepType: 'director_start' | 'director_llm' | 'director_tool' | 'director_finalize' | 'agent_start' | 'agent_llm' | 'agent_tool' | 'agent_finalize',
+  conversationId: string,
+  details: any,
+  logOrch?: (e: any) => void
+) {
+  if (!logOrch) return;
+  try {
+    logOrch({
+      timestamp: new Date().toISOString(),
+      type: 'conversation_step_diagnostic',
+      stepType,
+      conversationId,
+      details,
+      level: 'debug'
+    });
+  } catch (e) {
+    console.warn('Failed to log conversation step diagnostic:', e);
+  }
 }
+
 
 /**
  * Ensures an agent thread exists for the director conversation, creating or reusing one.

@@ -19,10 +19,17 @@ export interface LiveRepos {
   getSettings(req?: ReqLike): Promise<any>;
   getProviderRepo(req?: ReqLike): any;
   getTracesRepo(req?: ReqLike): any;
+  getAccounts(req?: ReqLike): Promise<any[]>;
+  setAccounts(req: ReqLike, next: any[]): Promise<void>;
+  getFetcherLog(req?: ReqLike): Promise<any[]>;
+  setFetcherLog(req: ReqLike, next: any[]): Promise<void>;
 }
 
 export function createLiveRepos(): LiveRepos {
-  const get = <T>(name: keyof RepoBundle) => (req?: ReqLike) => repoGetAll<T>(requireReq(req), name);
+  const get = <T>(name: keyof RepoBundle) => async (req?: ReqLike) => {
+    const arr = await repoGetAll<T>(requireReq(req), name);
+    return Array.isArray(arr) ? arr : [];
+  };
   const set = <T>(name: keyof RepoBundle) => (req: ReqLike, next: T[]) => repoSetAll<T>(requireReq(req), name, next);
 
   return {
@@ -42,10 +49,21 @@ export function createLiveRepos(): LiveRepos {
     getSettings: async (req?: ReqLike) => {
       const r = requireReq(req);
       const arr = await repoGetAll<any>(r, 'settings');
-      return arr[0] || {};
+      const s = (Array.isArray(arr) ? arr : [])[0] || {};
+      const apiConfigs = Array.isArray(s.apiConfigs) ? s.apiConfigs : [];
+      return { ...s, apiConfigs };
     },
     getProviderRepo: (req?: ReqLike) => requireUserRepo(requireReq(req), 'providerEvents'),
     getTracesRepo: (req?: ReqLike) => requireUserRepo(requireReq(req), 'traces'),
+    getAccounts: async (req?: ReqLike) => {
+      const arr = await repoGetAll<any>(requireReq(req), 'accounts');
+      return Array.isArray(arr) ? arr : [];
+    },
+    setAccounts: (req: ReqLike, next: any[]) => repoSetAll<any>(requireReq(req), 'accounts', next),
+    getFetcherLog: async (req?: ReqLike) => {
+      const arr = await repoGetAll<any>(requireReq(req), 'fetcherLog');
+      return Array.isArray(arr) ? arr : [];
+    },
+    setFetcherLog: (req: ReqLike, next: any[]) => repoSetAll<any>(requireReq(req), 'fetcherLog', next),
   };
 }
-
