@@ -24,11 +24,22 @@ export async function apiFetch<T = any>(url: string, options: FetchOptions = {})
 
   // Handle empty responses (common for DELETE operations)
   const contentType = res.headers.get('content-type') || '';
+  const contentLength = res.headers.get('content-length');
   const hasJsonContent = contentType.includes('application/json');
+  // If HTTP 204 No Content or explicit zero content length, return undefined
+  if (res.status === 204 || (contentLength !== null && Number(contentLength) === 0)) {
+    return undefined as unknown as T;
+  }
   
   // If explicitly expecting JSON or content-type indicates JSON
   if (expectJson === true || (expectJson !== false && hasJsonContent)) {
-    return res.json();
+    try {
+      return await res.json();
+    } catch (e: any) {
+      // Some servers may send empty body with JSON content-type; tolerate and return undefined
+      if (e instanceof SyntaxError) return undefined as unknown as T;
+      throw e;
+    }
   }
   
   // For non-JSON responses or empty bodies, return undefined
