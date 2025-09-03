@@ -39,19 +39,25 @@ export default function MessageListEditor({ messages, onChange, config }: Messag
     translationPrefix
   } = config;
 
-  const handleMsgChange = (idx: number, field: 'role' | 'content', value: string) => {
-    const newMessages = messages.map((m, i) => i === idx ? { ...m, [field]: value } : m);
+  React.useEffect(() => {
+    if (messages.some(m => !m.id)) {
+      onChange(messages.map(m => (m.id ? m : { ...m, id: crypto.randomUUID() })));
+    }
+  }, [messages, onChange]);
+
+  const handleMsgChange = (id: string, field: 'role' | 'content', value: string) => {
+    const newMessages = messages.map(m => m.id === id ? { ...m, [field]: value } : m);
     onChange(newMessages);
   };
 
   const handleMsgAdd = () => {
     if (maxMessages > 0 && messages.length >= maxMessages) return;
-    onChange([...messages, { role: defaultRole, content: '' }]);
+    onChange([...messages, { id: crypto.randomUUID(), role: defaultRole, content: '' }]);
   };
 
-  const handleMsgDelete = (idx: number) => {
+  const handleMsgDelete = (id: string) => {
     if (messages.length <= minMessages) return;
-    onChange(messages.filter((_, i) => i !== idx));
+    onChange(messages.filter(m => m.id !== id));
   };
 
   const handleMsgMove = (idx: number, dir: -1 | 1) => {
@@ -69,13 +75,13 @@ export default function MessageListEditor({ messages, onChange, config }: Messag
     <Stack spacing={2}>
       {messages.length > 0 ? (
         messages.map((msg, idx) => (
-          <Box key={idx} display="flex" alignItems="flex-start" gap={2}>
+          <Box key={msg.id} display="flex" alignItems="flex-start" gap={2}>
             <FormControl sx={{ minWidth: 120 }} size="small">
               <InputLabel>{t(`${translationPrefix}.form.role`)}</InputLabel>
               <Select
                 value={msg.role}
                 label={t(`${translationPrefix}.form.role`)}
-                onChange={e => handleMsgChange(idx, 'role', e.target.value as any)}
+                onChange={e => handleMsgChange(msg.id!, 'role', e.target.value as any)}
               >
                 <MenuItem value="system">system</MenuItem>
                 <MenuItem value="user">user</MenuItem>
@@ -89,10 +95,10 @@ export default function MessageListEditor({ messages, onChange, config }: Messag
                 multiline
                 minRows={2}
                 value={msg.content ?? ''}
-                onChange={e => handleMsgChange(idx, 'content', e.target.value)}
+                onChange={e => handleMsgChange(msg.id!, 'content', e.target.value)}
                 inputProps={{
                   style: { fontFamily: 'monospace' },
-                  name: showVariableInsert ? `message-content-${idx}` : undefined
+                  name: showVariableInsert ? `message-content-${msg.id}` : undefined
                 }}
               />
               {showVariableInsert && (
@@ -101,13 +107,13 @@ export default function MessageListEditor({ messages, onChange, config }: Messag
                   msg={msg}
                   onInsert={(variable: string) => {
                     const textarea = document.querySelector(
-                      `textarea[name='message-content-${idx}']`
+                      `textarea[name='message-content-${msg.id}']`
                     ) as HTMLTextAreaElement | null;
                     const base = msg.content ?? '';
                     let insertPos = textarea && textarea.selectionStart != null ? textarea.selectionStart : base.length;
                     const before = base.slice(0, insertPos);
                     const after = base.slice(insertPos);
-                    handleMsgChange(idx, 'content', before + variable + after);
+                    handleMsgChange(msg.id!, 'content', before + variable + after);
                     setTimeout(() => {
                       if (textarea) {
                         textarea.focus();
@@ -120,24 +126,24 @@ export default function MessageListEditor({ messages, onChange, config }: Messag
               )}
             </Box>
             <Stack direction="row" spacing={0.5} alignItems="center">
-              <IconButton 
-                onClick={() => handleMsgMove(idx, -1)} 
-                disabled={idx === 0} 
+              <IconButton
+                onClick={() => handleMsgMove(idx, -1)}
+                disabled={idx === 0}
                 size="small"
               >
                 <ArrowUpwardIcon />
               </IconButton>
-              <IconButton 
-                onClick={() => handleMsgMove(idx, 1)} 
-                disabled={idx === messages.length - 1} 
+              <IconButton
+                onClick={() => handleMsgMove(idx, 1)}
+                disabled={idx === messages.length - 1}
                 size="small"
               >
                 <ArrowDownwardIcon />
               </IconButton>
-              <IconButton 
-                onClick={() => handleMsgDelete(idx)} 
-                disabled={!canDelete} 
-                size="small" 
+              <IconButton
+                onClick={() => handleMsgDelete(msg.id!)}
+                disabled={!canDelete}
+                size="small"
                 color="error"
               >
                 <DeleteIcon />
@@ -150,10 +156,10 @@ export default function MessageListEditor({ messages, onChange, config }: Messag
           {t(`${translationPrefix}.emptyNoMessages`)}
         </Typography>
       )}
-      <Button 
-        startIcon={<AddIcon />} 
-        variant="outlined" 
-        onClick={handleMsgAdd} 
+      <Button
+        startIcon={<AddIcon />}
+        variant="outlined"
+        onClick={handleMsgAdd}
         disabled={!canAdd}
         sx={{ alignSelf: 'flex-start' }}
       >
