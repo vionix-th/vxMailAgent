@@ -118,11 +118,20 @@ export function createCrudRoutes<T extends Record<string, any>>(
       }
 
       let item: T = req.body;
-      
+
       if (beforeValidate) {
         item = beforeValidate(item, true);
       }
-      
+
+      // Ensure path ID matches or sets body ID before validation
+      const bodyId = item[idField];
+      if (bodyId == null) {
+        (item as any)[idField] = id;
+      } else if (bodyId !== id) {
+        logger.warn(`PUT ${basePath}/:id id mismatch`, { idParam: id, bodyId });
+        return res.status(400).json({ error: `${itemName} ID mismatch` });
+      }
+
       if (validate) {
         await validate(item, true);
       }
