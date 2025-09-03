@@ -151,6 +151,7 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 - Automated alerts
 - Incident response procedures
 - Implemented routes include health, prompts, prompt-templates, conversations, accounts, directors, agents, filters, memory, settings, fetcher, diagnostics, and workspaces. Some live tools (calendar/todo/filesystem/memory) described below are planned and may not be wired as HTTP APIs yet.
+- Route composition uses a generic CRUD routes helper for common resources to reduce duplication; resource-specific validation/transform/sanitization are provided via callbacks.
 
 Core Concept: For each routed email, a director AI orchestrates specialized agents via tool-calls and inter-agent messaging. All agents work in a shared Workspace for that email, where they add, list and remove items. The director decides next actions and completes the run; the Workspace is the deliverable.
 
@@ -197,6 +198,7 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 ## 5. Technical Design
 ### 5.1 Architecture
 - **Single Application**: A single Node.js application (TypeScript) with Express.js serves a React frontend (bundled via a tool like Vite or Webpack) and handles all logic: email fetching, filtering, orchestration, tool calls, and OpenAI API integration. Frontend communicates with backend via standard HTTP requests (e.g., `fetch` or `axios`), avoiding IPC or complex protocols (e.g., WebSocket, GraphQL).
+- **Route Helpers (CRUD)**: Shared helper constructs standard list/get/create/update/delete endpoints with optional reorder; used by `agents`, `directors`, `filters`, and `imprints` route modules.
 - **Backend**: Node.js with Express.js for routing, email processing, tool calls, and persistence.
 - **Frontend**: React with HTML/JavaScript/CSS, styled with Tailwind CSS for a professional look, using Material-UI (or similar) for components (modals, tables, buttons) to ensure developer/user-friendliness.
 - **Persistence**: Encrypted JSON files store configurations, filters, signatures, virtual root, and memories.
@@ -297,45 +299,6 @@ data/
   - Workspace view: MIME-aware rendering (known MIME types get tailored previews; unknown types fall back to download or raw view), add/update/remove, filter by type/tag/author, show provenance/revision, supersedes chains.
   - Diagnostics: log item add/update/remove with timestamps; surface storage/encryption state.
 
-#### 3.2.0c Orchestration Diagnostics Logging (Structured/Required)
-
-- **Scope**: All orchestration diagnostics emitted by the backend via `logOrch(entry)` covering director lifecycle, agent lifecycle, and any tool invocation (director or agent).
-
-- **Required fields (all entries)**
-  - `timestamp` (ISO)
-  - `director`, `directorName?`
-  - `agent`, `agentName?` (empty string allowed if N/A)
-  - `emailSummary`
-  - `phase`: one of `director | agent | tool | result`
-  - Grouping: `fetchCycleId`, `dirThreadId`, `agentThreadId` when applicable
-
-- **Detail metadata**
-  - Tool calls MUST include `detail.tool` (tool name) and `detail.request` (input args; redact secrets as needed).
-  - Agent final output MUST include `detail.action: 'agent_output'`.
-  - Director lifecycle SHOULD include `detail.action` (e.g., `director_start`, `director_complete`).
-
-- **Result and error**
-  - If a step returns data, `result` MUST reflect it. For agent-phase final output, default to the agent’s final content when no explicit result is set.
-  - Error paths MUST set `error` and retain `detail` (including `detail.request`).
-
-- **Coverage (no omissions)**
-  - Workspace tools: `workspace_add_item`, `workspace_list_items`, `workspace_get_item`, `workspace_update_item`, `workspace_remove_item`.
-  - Agent messaging tools: `agent__<slugOrId>`.
-  - Live tools: `calendar_read`, `calendar_add`, `todo_add`, `filesystem_search`, `filesystem_retrieve`, `memory_search`, `memory_add`, `memory_edit` (handlers currently stubbed in `src/backend/toolCalls.ts`; not exposed as HTTP routes).
-  - Discovery/meta tools SHOULD also be logged: `list_agents`, `list_tools`, `describe_tool`, `validate_tool_params`, `read_api_docs`.
-
-- **Identifiability and ordering**
-  - Entries MUST be attributable via grouping IDs. Diagnostics UIs MUST interleave director and agent entries by `timestamp` and nest agent subtrees by matching the director invocation event (`detail.tool === 'agent'` and session IDs).
-
-- **Persistence and encryption**
-  - Diagnostics are persisted via the persistence layer. If `VX_MAILAGENT_KEY` is a valid 64‑char hex key, logs are encrypted (AES‑256‑GCM); otherwise plaintext with a startup warning.
-
-- **Non-goals**
-  - Diagnostics MUST NOT render as user-facing results. They are admin/debug only and separate from `WorkspaceItem`s and provider events.
-
-- **Enforcement**
-  - Emitting a tool event without `detail.tool`, omitting required fields, or missing result/error where expected is a defect. New tool branches MUST add compliant `logOrch()` calls.
-
 #### 3.2.1 Email Fetcher
 - **Functionality**: Fetches emails from all configured accounts periodically (background loop controlled by API) or on-demand. Runs only while the application is active. Applies regex filters to route emails to directors, supporting multiple directors per email. Control endpoints: `/api/fetcher/status|start|stop|fetch|run` (see `src/backend/routes/fetcher.ts`).
 - **Configuration**: Filter rules defined in UI, stored in JSON (e.g., `{ field: "From", regex: "client[0-9]+@domain\.com", directorId: "director1" }`).
@@ -411,7 +374,6 @@ data/
     - The original email panel is collapsed by default; it can be toggled to show snippet/body/attachments.
     - Toolbar: Refresh, Delete active, Delete selected/all; per-row delete with confirmation. Wired to existing backend endpoints. Diagnostics/admin controls remain separate.
     - Canonical component: `src/frontend/src/Results.tsx`.
-
   - **Diagnostics (Admin/Debug)**:
     - Two-pane layout with resizable splitter. Left: grouped/flat tree of cycles and threads. Right: detail tabs (see below).
     - Grouping and attribution are strictly canonical, using only: `fetchCycleId`, `dirThreadId`, `agentThreadId` (and `phase` for labeling). No heuristic fix-ups.
@@ -428,6 +390,7 @@ data/
     - `DELETE /api/workspaces/:id/items/:itemId[?hard=true]`
   - **Notifications**: Browser Notification API (e.g., “Processing complete for email ID:123”).
   - **Implementation**: React with Tailwind CSS for styling, Material-UI (or similar) for professional components, communicates with backend via HTTP (e.g., `fetch`).
+  - **Shared Components**: `MessageListEditor` (`src/frontend/src/components/MessageListEditor.tsx`) centralizes CRUD operations for prompt/template message arrays; dialogs such as `PromptEditDialog` and `TemplateEditDialog` consume it with configuration (default role, variable insertion, i18n labels).
 
 #### 3.2.7 Persistence
 - **Storage**: Encrypted JSON file stores:

@@ -28,6 +28,17 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 - `docs/DEVELOPER.md`: API details and developer notes; `DESIGN.md` for architecture context
 - `data/`: Local runtime store (accounts, prompts, logs, etc.)
 
+## Architecture Highlights
+
+- Backend CRUD helper: `src/backend/routes/helpers.ts`
+  - Centralizes list/get/create/update/delete (+ optional reorder) to remove duplicated route code.
+  - Used by `routes/agents.ts`, `routes/directors.ts`, `routes/filters.ts` (with reorder), and `routes/imprints.ts`.
+- Frontend shared editor: `src/frontend/src/components/MessageListEditor.tsx`
+  - Reusable component for editing prompt/template message arrays.
+  - Adopted by `PromptEditDialog.tsx` and `TemplateEditDialog.tsx`.
+
+See `docs/DEVELOPER.md` for usage patterns and options.
+
 ## Environment Variables (Backend)
 
 - `VX_MAILAGENT_KEY` — required for encryption: 64‑char hex key to encrypt `data/` at rest. If missing/invalid, data is written in plaintext (dev‑only).

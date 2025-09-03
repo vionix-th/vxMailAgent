@@ -187,6 +187,33 @@ export function loadSettings(req: UserRequest) {
 }
 ```
 
+#### 4. Route Helpers: Generic CRUD
+Location: `src/backend/routes/helpers.ts`
+
+- `createCrudRoutes<T>(app, basePath, repoFns, options?, callbacks?)`
+  - Purpose: Eliminate duplicate CRUD route code by centralizing list/get/create/update/delete logic.
+  - Endpoints: `GET /`, `POST /`, `GET /:id`, `PUT /:id`, `DELETE /:id` under `basePath`. Optional `PUT /reorder`.
+  - `repoFns`: `{ getAll, setAll }` or resource-specific accessors injected per route module.
+  - `options`:
+    - `enableReorder?: boolean` — adds `PUT /reorder` for ordered resources.
+  - `callbacks` (all optional):
+    - `validate?(obj: T, phase: 'create'|'update')` — throw to reject.
+    - `transform?(obj: T, phase: 'create'|'update') => T` — normalize inputs.
+    - `sanitize?(obj: T) => T` — strip/clean fields before persistence.
+    - `onError?(err: unknown, ctx)` — custom error handling.
+  - Logging & Errors: Centralized try/catch with structured logger; unknown errors are stringified safely.
+
+- Refactored modules using the helper:
+  - `src/backend/routes/agents.ts`
+  - `src/backend/routes/directors.ts`
+  - `src/backend/routes/filters.ts` (with `enableReorder: true`)
+  - `src/backend/routes/imprints.ts`
+
+- Notes:
+  - Keep resource-specific validation minimal in route modules; heavy validation belongs in services when needed.
+  - Prefer transformations to maintain consistent shapes (e.g., normalize IDs, map prompt references).
+  - Reorder handler expects `[{ id, order }, ...]` or a new ordered array depending on repo implementation.
+
 ### User Isolation Enforcement
 
 - **Settings Service**: `src/backend/services/settings.ts`
@@ -505,6 +532,22 @@ All token operations are logged with:
 #### Frontend Logging
 - `src/frontend/src/utils/log.ts` logs only in development.
 - No logging in production builds; avoids direct console usage at runtime.
+
+## Frontend Shared Components
+
+### MessageListEditor
+- Location: `src/frontend/src/components/MessageListEditor.tsx`
+- Purpose: Reusable editor for prompt/template message arrays; handles add/change/delete/reorder with minimal boilerplate.
+- Props (core):
+  - `messages`: array of `{ role: 'system'|'user'|'assistant'|'tool', content: string }`-like objects
+  - `onChange(nextMessages)` — emit full updated array
+  - Options: `defaultRole?: 'system'|'user'|'assistant'|'tool'`, `minMessages?`, `maxMessages?`, `showVariableInsert?`, `translationPrefix?`
+- Current usage:
+  - `src/frontend/src/PromptEditDialog.tsx` (defaultRole: `user`, variable insertion enabled)
+  - `src/frontend/src/TemplateEditDialog.tsx` (defaultRole: `system`, variable insertion disabled)
+- Notes:
+  - Centralizes UX and array ops to keep dialogs lean.
+  - Internationalized labels via i18next using the provided `translationPrefix`.
 
 ## Prompt Assistant: Optional Context Inclusion
 
