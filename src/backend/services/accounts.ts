@@ -1,5 +1,6 @@
 import https from 'https';
 import logger from './logger';
+import { ValidationError } from './error-handler';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
 import { signJwt, verifyJwt } from '../utils/jwt';
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo, ensureValidGoogleAccessToken } from '../oauth/google';
@@ -32,6 +33,13 @@ export async function updateAccount(req: ReqLike, id: string, next: Account): Pr
   const accounts = await listAccounts(req);
   const idx = accounts.findIndex(a => a.id === id);
   if (idx === -1) throw new Error('Account not found');
+
+  // Ensure payload id matches path id
+  if (next.id && next.id !== id) {
+    throw new ValidationError('Account id mismatch');
+  }
+  next.id = id;
+
   accounts[idx] = next;
   await persistAccounts(req, accounts);
   logger.info('Updated account', { id });
