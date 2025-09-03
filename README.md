@@ -107,7 +107,7 @@ Frontend (`src/frontend`)
 
 - From the UI, start an OAuth flow → provider redirects to `http://localhost:3000/oauth/callback` (handled by `src/frontend/src/OAuthCallback.tsx`).
 - The frontend calls `/api/accounts/oauth/{google|outlook}/callback` to exchange the `code`. The backend verifies the JWT‑signed state, exchanges tokens, persists the account for the authenticated user, and returns the created/updated `account` JSON. No additional POST is required.
-- If a Gmail/Outlook refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with an `authorizeUrl` for re-auth. The UI should redirect the user to that URL to restore tokens.
+- If a Gmail/Outlook refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with a `reauthUrl` for re-auth. The UI should redirect the user to that URL to restore tokens.
 - To verify provider access in development, call `GET /api/accounts/:id/gmail-test` or `GET /api/accounts/:id/outlook-test`.
 
 ## API Overview (Implemented)

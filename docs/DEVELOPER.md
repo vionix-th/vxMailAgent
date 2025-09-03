@@ -403,7 +403,7 @@ GET /api/accounts/oauth/outlook/callback?code=<code>&state=<state>
 Notes:
 - Redirect URI for provider accounts (local dev) should be `http://localhost:3000/oauth/callback`, handled by `src/frontend/src/OAuthCallback.tsx`.
 - On success, the backend persists or updates the account in the per-user repository and returns it; no additional `POST /api/accounts` is required.
-- On missing/invalid refresh tokens, certain endpoints may return `{ ok: false, authorizeUrl }` to trigger re-authorization.
+- On missing/invalid refresh tokens, certain endpoints may return `{ ok: false, reauthUrl }` to trigger re-authorization.
 
 ### Prompts
 ```
@@ -501,11 +501,11 @@ GET /api/accounts/:id/outlook-test
 ### Error Handling
 - **Missing Refresh Token**
   - Status: 400
-  - Response: `{ ok: false, error: "missing_refresh_token", authorizeUrl: string }`
+  - Response: `{ ok: false, error: "missing_refresh_token", reauthUrl: string }`
 
 - **Invalid Grant**
   - Status: 401
-  - Response: `{ ok: false, error: "invalid_grant", authorizeUrl: string }`
+  - Response: `{ ok: false, error: "invalid_grant", reauthUrl: string }`
 
 - **Network Error**
   - Status: 502

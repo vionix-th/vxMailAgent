@@ -111,9 +111,14 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setLoading(true);
     setError(undefined);
     try {
-      const data = await apiFetch('/api/accounts');
-      const warn = data.headers.get('x-vx-mailagent-warning');
+      const res = await fetch('/api/accounts');
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`${res.status} ${res.statusText}${text ? `: ${text}` : ''}`);
+      }
+      const warn = res.headers.get('x-vx-mailagent-warning');
       if (warn) setError(warn);
+      const data = await res.json();
       setAccounts(data);
     } catch (e: any) {
       setError(e.message || (t('accounts.errors.failedLoad') as string));
@@ -351,9 +356,9 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
           {testResult && testError && (
             <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 13, marginTop: 12 }}>{JSON.stringify(testResult, null, 2)}</pre>
           )}
-          {testResult?.authorizeUrl && (
+          {testResult?.reauthUrl && (
             <Box sx={{ mt: 2 }}>
-              <Alert severity="warning" action={<Button color="inherit" size="small" onClick={() => { window.location.href = testResult.authorizeUrl; }}>{t('accounts.reauth') || 'Re-auth account'}</Button>}>
+              <Alert severity="warning" action={<Button color="inherit" size="small" onClick={() => { window.location.href = testResult.reauthUrl; }}>{t('accounts.reauth') || 'Re-auth account'}</Button>}>
                 {t('accounts.test.reauthNeeded') || 'Authorization has expired or is missing. Please re-authenticate this account.'}
               </Alert>
             </Box>

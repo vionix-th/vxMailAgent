@@ -322,7 +322,7 @@ data/
 
 ###### Re-authorization Flow for Gmail/Outlook Tokens
 
-- For Gmail/Outlook provider accounts, token refresh or API probe failures that require user action return `{ ok: false, error: <category>, authorizeUrl }` from `src/backend/routes/accounts.ts`.
+- For Gmail/Outlook provider accounts, token refresh or API probe failures that require user action return `{ ok: false, error: <category>, reauthUrl }` from `src/backend/routes/accounts.ts`.
 - Error categories include: `missing_refresh_token`, `invalid_grant`, `network`, `other`. The frontend surfaces a re-authenticate action using the provided URL.
 - Structured JSON logs capture the error category and context; info-level events log when a re-auth URL is generated.
   - Related endpoints for probes: `GET /api/accounts/:id/gmail-test` and `GET /api/accounts/:id/outlook-test`.
