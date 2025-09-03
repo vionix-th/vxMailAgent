@@ -66,8 +66,15 @@ export function useCrudResource<T extends { id?: string }>(endpoint: string, opt
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      await refresh();
+      // mark success based on main operation
       setSuccess(successMessage || 'Created');
+      // try to refresh, but do not fail the overall operation if refresh fails
+      try {
+        await refresh();
+      } catch (re: any) {
+        // non-blocking warning
+        console.warn('Refresh failed after create()', re);
+      }
       return created ?? payload;
     } catch (e: any) {
       setError(errorMessage || e?.message || 'Failed to create');
@@ -84,8 +91,15 @@ export function useCrudResource<T extends { id?: string }>(endpoint: string, opt
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item),
       });
-      await refresh();
+      // mark success based on main operation
       setSuccess(successMessage || 'Updated');
+      // try to refresh, but do not fail the overall operation if refresh fails
+      try {
+        await refresh();
+      } catch (re: any) {
+        // non-blocking warning
+        console.warn('Refresh failed after update()', re);
+      }
       return updated ?? (item as T);
     } catch (e: any) {
       setError(errorMessage || e?.message || 'Failed to update');
