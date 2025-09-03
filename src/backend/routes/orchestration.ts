@@ -17,7 +17,7 @@ export default function registerOrchestrationRoutes(
   app.get('/api/orchestration/diagnostics', async (req, res) => {
     try {
       let log: OrchestrationDiagnosticEntry[] = [];
-      try { log = await repos.getOrchestrationLog(req as any as ReqLike) || []; } catch (e) { logger.error('getOrchestrationLog failed', { err: e }); }
+      try { log = await repos.getOrchestrationLog(req as any as ReqLike); } catch (e) { logger.error('getOrchestrationLog failed', { err: e }); }
       const q = req.query as Record<string, string>;
       const director = q.director?.trim();
       const agent = q.agent?.trim();

@@ -22,7 +22,7 @@ export default function registerConversationsRoutes(
   app.get('/api/conversations', async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const list = await repos.getConversations(req as any as ReqLike) || [];
+      const list = await repos.getConversations(req as any as ReqLike);
       const limit = Math.max(0, Math.min(1000, Number(q.limit) || 200));
       const offset = Math.max(0, Number(q.offset) || 0);
       const paged = list.slice(offset, offset + limit);
@@ -75,7 +75,7 @@ export default function registerConversationsRoutes(
     const msg: PromptMessage = { role: 'user', content };
     const updated: ConversationThread = {
       ...t,
-      messages: [...(t.messages || []), msg],
+      messages: [...t.messages, msg],
       lastActiveAt: now,
     };
     const next = conversations.slice();
@@ -101,7 +101,7 @@ export default function registerConversationsRoutes(
       if (!api) return res.status(404).json({ error: 'API config not found' });
 
       // Use existing transcript as-is (OpenAI-aligned)
-      const messages = (t.messages || []).map((m) => {
+      const messages = t.messages.map((m) => {
         const base: any = { role: m.role as any, content: (m as any).content ?? null };
         if ((m as any).name) base.name = (m as any).name;
         if (m.role === 'assistant' && (m as any).tool_calls) base.tool_calls = (m as any).tool_calls;
@@ -129,7 +129,7 @@ export default function registerConversationsRoutes(
             role: 'director',
             roleCaps: { canSpawnAgents: true },
             toolRegistry: TOOL_DESCRIPTORS,
-            context: { conversationId: id, agents: await repos.getAgents(req as any as ReqLike) || [] },
+            context: { conversationId: id, agents: await repos.getAgents(req as any as ReqLike) },
           });
           result = {
             assistantMessage: engineOut.assistantMessage,
@@ -149,7 +149,7 @@ export default function registerConversationsRoutes(
         lastAssistant = assistant;
         const updated: ConversationThread = {
           ...t,
-          messages: [...(t.messages || []), assistant],
+          messages: [...t.messages, assistant],
           lastActiveAt: now,
           provider: 'openai',
         } as any;

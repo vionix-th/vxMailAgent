@@ -64,7 +64,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
 
   // DELETE /api/memory (batch)
   app.delete('/api/memory', async (req, res) => {
-    const ids = (req.body?.ids || []) as string[];
+    const ids = req.body?.ids as string[];
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids array required' });
     }

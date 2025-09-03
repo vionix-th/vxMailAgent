@@ -127,7 +127,7 @@ export function ensureAgentThread(
   if (!agentThread) {
     const agentThreadId = newIdFn();
     const nowIso2 = nowIso;
-    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, messages: [...(agentPrompt.messages || [])], errors: [], workspaceItems: [], finalized: false } as ConversationThread;
+    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [], workspaceItems: [], finalized: false } as ConversationThread;
     conversations = [...conversations, agentThread];
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, agentThreadId } }, req);
     return { conversations, agentThread, isNew };
@@ -150,7 +150,7 @@ export function appendMessageToThread(
   const updated = {
     ...conversations[idx],
     lastActiveAt: new Date().toISOString(),
-    messages: [...(conversations[idx].messages || []), message],
+    messages: [...conversations[idx].messages, message],
   } as any;
   return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
 }
@@ -179,7 +179,7 @@ export async function runAgentConversation(
 ): Promise<AgentConversationResult> {
   const LOOP_MAX = 6;
   let stepCount = 0;
-  let currentMessages: any[] = [...(agentThread.messages || [])];
+  let currentMessages: any[] = [...agentThread.messages];
   let updatedConversations = [...conversations];
   let lastAssistant: any = null;
   if (initialUserMessage) {

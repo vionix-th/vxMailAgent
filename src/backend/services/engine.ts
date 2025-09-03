@@ -22,7 +22,7 @@ export const conversationEngine: ConversationEngine = {
   /** Run a single conversation turn. */
   async run(input: ConversationEngineRunInput): Promise<ConversationEngineRunResult> {
     const { messages, apiConfig, role, roleCaps, toolRegistry } = input;
-    const enabled = filterDescriptorsByRole(toolRegistry || [], role);
+    const enabled = filterDescriptorsByRole(toolRegistry, role);
     let tools: any[] = enabled.map(toOpenAiToolSpec);
 
     if (role === 'director' && roleCaps?.canSpawnAgents) {
@@ -60,7 +60,7 @@ export const conversationEngine: ConversationEngine = {
       usage: usage ? { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } : undefined,
       assistantMessage: assistant,
       content: (assistant && (assistant as any).content) ?? null,
-      toolCalls: (result.toolCalls || []).map((tc: any) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })),
+      toolCalls: (result.toolCalls ?? []).map((tc: any) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })),
       request: result.request,
       response: result.response,
     };

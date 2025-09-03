@@ -59,7 +59,7 @@ export function initFetcher(
 
   try {
     void repos.getFetcherLog(userReq)
-      .then((list: FetcherLogEntry[]) => pruneFetcher((list || []).map((e: FetcherLogEntry) => ({ ...e, id: e.id || newId() }))))
+      .then((list: FetcherLogEntry[]) => pruneFetcher(list.map((e: FetcherLogEntry) => ({ ...e, id: e.id || newId() }))))
       .then((list: FetcherLogEntry[]) => { fetcherLog = list; })
       .catch((e: any) => { logger.error('Failed to initialize fetcherLog', { err: e }); });
   } catch (e) {
@@ -215,13 +215,13 @@ export function initFetcher(
                 continue;
               }
 
-              let dirMsgs: any[] = [...(directorPrompt.messages || [])];
+              let dirMsgs: any[] = [...directorPrompt.messages];
               const emailContextMsg = { role: 'user', content: `Email context\nsubject: ${subject}\nfrom: ${from}\ndate: ${date}\nsnippet: ${snippet}`, context: { traceId } } as any;
               dirMsgs.push(emailContextMsg);
               {
                 const di0 = conversations.findIndex(c => c.id === dirThreadId);
                 if (di0 !== -1) {
-                  const updated = { ...conversations[di0], messages: [...(conversations[di0].messages || []), emailContextMsg] } as any;
+                  const updated = { ...conversations[di0], messages: [...conversations[di0].messages, emailContextMsg] } as any;
                   conversations = [...conversations.slice(0, di0), updated, ...conversations.slice(di0 + 1)];
                   await repos.setConversations(userReq, conversations);
                 }
@@ -234,7 +234,7 @@ export function initFetcher(
               const appendDirTool = async (msg: any) => {
                 dirMsgs.push(msg);
                 if (dirIdx !== -1) {
-                  const updated = { ...conversations[dirIdx], messages: [...(conversations[dirIdx].messages || []), msg] } as any;
+                  const updated = { ...conversations[dirIdx], messages: [...conversations[dirIdx].messages, msg] } as any;
                   conversations = [...conversations.slice(0, dirIdx), updated, ...conversations.slice(dirIdx + 1)];
                   await repos.setConversations(userReq, conversations);
                 }
@@ -282,7 +282,7 @@ export function initFetcher(
                 }
                 if (dirIdx !== -1) {
                   const assistantWithCtx = { ...(step.assistantMessage as any), context: { ...(step.assistantMessage as any)?.context, traceId, spanId: sLlm } };
-                  const updated = { ...conversations[dirIdx], provider: 'openai', messages: [...(conversations[dirIdx].messages || []), assistantWithCtx] } as any;
+                  const updated = { ...conversations[dirIdx], provider: 'openai', messages: [...conversations[dirIdx].messages, assistantWithCtx] } as any;
                   conversations = [...conversations.slice(0, dirIdx), updated, ...conversations.slice(dirIdx + 1)];
                   await repos.setConversations(userReq, conversations);
                 }
@@ -474,7 +474,7 @@ export function initFetcher(
     getFetcherLog: () => fetcherLog,
     setFetcherLog: (next: FetcherLogEntry[]) => {
       const before = fetcherLog.length;
-      fetcherLog = pruneFetcher((next || []).map(e => ({ ...e, id: e.id || newId() })));
+      fetcherLog = pruneFetcher(next.map(e => ({ ...e, id: e.id || newId() })));
       try {
         if (process.env.NODE_ENV !== 'production') {
           logger.debug('FETCHER setFetcherLog', { before, after: fetcherLog.length });

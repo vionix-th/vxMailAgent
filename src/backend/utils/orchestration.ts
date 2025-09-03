@@ -49,7 +49,7 @@ export function resolveDirThread(
 }
 
 export function getWorkspace(thread: ConversationThread): WorkspaceItem[] {
-  return thread.workspaceItems || [];
+  return thread.workspaceItems ?? [];
 }
 
 /**

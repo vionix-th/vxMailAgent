@@ -36,7 +36,7 @@ export const gmailProvider: IMailProvider = {
     const envelopes: EmailEnvelope[] = [];
     for (const msg of items) {
       const msgRes = await gmail.users.messages.get({ userId: 'me', id: String(msg.id) });
-      const headers = msgRes.data?.payload?.headers || [];
+      const headers = msgRes.data?.payload?.headers ?? [];
       const getHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
       const subject: string = getHeader('Subject');
       const from: string = getHeader('From');

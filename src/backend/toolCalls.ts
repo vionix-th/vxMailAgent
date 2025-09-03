@@ -124,7 +124,7 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       const scopes = ['local', 'shared', 'global'];
       let found: MemoryEntry[] = [];
 
-      const all = (await memoryRepo.getAll() || []) as MemoryEntry[];
+      const all = await memoryRepo.getAll() as MemoryEntry[];
       for (const scope of (payload.scope ? [payload.scope, ...scopes.filter(s => s !== payload.scope)] : scopes)) {
         let filtered = all.filter((e: MemoryEntry) => e.scope === scope);
         if (payload.owner) filtered = filtered.filter((e: MemoryEntry) => e.owner === payload.owner);
@@ -219,7 +219,7 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
         mimeType: payload.mimeType || 'text/plain',
         encoding: payload.encoding || 'utf8',
         data: payload.data || '',
-        tags: payload.tags || [],
+        tags: payload.tags ?? [],
         created: now,
         updated: now,
         revision: 1,
