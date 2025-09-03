@@ -7,6 +7,7 @@ import { ProviderEvent, Trace, FetcherLogEntry, OrchestrationDiagnosticEntry } f
 import { TRACE_MAX_TRACES, TRACE_TTL_DAYS, PROVIDER_MAX_EVENTS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_DAYS, ORCHESTRATION_TTL_DAYS } from '../config';
 import { securityAudit } from '../services/security-audit';
 import { SecurityError } from '../services/error-handler';
+import { withFileLock } from '../utils/file-lock';
 
 /** Shared base for file-backed repositories to centralize logging helpers. */
 export abstract class FileRepoBase {
@@ -213,9 +214,11 @@ export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> 
   }
 
   async append(e: FetcherLogEntry): Promise<void> {
-    const list = await this.getAll();
-    list.push(e);
-    await this.setAll(list);
+    await withFileLock(this.filePath, async () => {
+      const list = await this.getAll();
+      list.push(e);
+      await this.setAll(list);
+    });
   }
 }
 
@@ -271,9 +274,11 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
   }
 
   async append(e: OrchestrationDiagnosticEntry): Promise<void> {
-    const list = await this.getAll();
-    list.push(e);
-    await this.setAll(list);
+    await withFileLock(this.filePath, async () => {
+      const list = await this.getAll();
+      list.push(e);
+      await this.setAll(list);
+    });
   }
 }
 
@@ -330,9 +335,11 @@ export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent
   }
 
   async append(ev: ProviderEvent): Promise<void> {
-    const list = await this.getAll();
-    list.push(ev);
-    await this.setAll(list);
+    await withFileLock(this.filePath, async () => {
+      const list = await this.getAll();
+      list.push(ev);
+      await this.setAll(list);
+    });
   }
 }
 
@@ -390,20 +397,24 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
   }
 
   async append(t: Trace): Promise<void> {
-    const list = await this.getAll();
-    list.push(t);
-    await this.setAll(list);
+    await withFileLock(this.filePath, async () => {
+      const list = await this.getAll();
+      list.push(t);
+      await this.setAll(list);
+    });
   }
 
   async update(id: string, updater: (t: Trace) => Trace | void): Promise<void> {
-    const list = await this.getAll();
-    const idx = list.findIndex(x => x.id === id);
-    if (idx >= 0) {
-      const cur = list[idx];
-      const result = updater(cur);
-      if (result) list[idx] = result;
-      await this.setAll(list);
-    }
+    await withFileLock(this.filePath, async () => {
+      const list = await this.getAll();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx >= 0) {
+        const cur = list[idx];
+        const result = updater(cur);
+        if (result) list[idx] = result;
+        await this.setAll(list);
+      }
+    });
   }
 }
 
