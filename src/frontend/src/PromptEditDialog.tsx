@@ -1,19 +1,15 @@
 import React, { useState } from 'react';
 import {
-  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography, IconButton, Snackbar, Alert, FormControl, InputLabel, MenuItem, Select, Tooltip, Divider, Chip, Stack, Tabs, Tab
+  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography, Alert, FormControl, InputLabel, MenuItem, Select, Tooltip, Divider, Stack, Tabs, Tab
 } from '@mui/material';
 import { AnimatePresence, motion } from 'framer-motion';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import AddIcon from '@mui/icons-material/Add';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import { Prompt, PromptMessage } from '../../shared/types';
 import { useTranslation } from 'react-i18next';
-import VariableInsertMenu from './VariableInsertMenu';
 import { useCookieState } from './hooks/useCookieState';
 import { apiFetch } from './utils/http';
+import MessageListEditor from './components/MessageListEditor';
 
 interface PromptEditDialogProps {
   open: boolean;
@@ -38,27 +34,9 @@ export default function PromptEditDialog({ open, editing, onChange, onClose, onS
   const [target, setTarget] = useState<string>('');
   const [tab, setTab] = useCookieState<number>('vx_ui.prompts.dialog.tab', 0, { maxAge: 60 * 60 * 24 * 365 });
 
-  const handleMsgChange = (idx: number, field: 'role' | 'content', value: string) => {
+  const handleMessagesChange = (messages: PromptMessage[]) => {
     if (!prompt) return;
-    const msgs = prompt.messages;
-    const newMsgs = msgs.map((m, i) => i === idx ? { ...m, [field]: value } : m);
-    onChange({ ...prompt, messages: newMsgs });
-  };
-  const handleMsgAdd = () => {
-    if (!prompt) return;
-    onChange({ ...prompt, messages: [...prompt.messages, { role: 'user', content: '' }] });
-  };
-  const handleMsgDelete = (idx: number) => {
-    if (!prompt) return;
-    onChange({ ...prompt, messages: prompt.messages.filter((_, i) => i !== idx) });
-  };
-  const handleMsgMove = (idx: number, dir: -1 | 1) => {
-    if (!prompt) return;
-    const msgs = [...prompt.messages];
-    const tgt = idx + dir;
-    if (tgt < 0 || tgt >= msgs.length) return;
-    [msgs[idx], msgs[tgt]] = [msgs[tgt], msgs[idx]];
-    onChange({ ...prompt, messages: msgs });
+    onChange({ ...prompt, messages });
   };
 
   const handleOptimize = async () => {
@@ -143,69 +121,18 @@ export default function PromptEditDialog({ open, editing, onChange, onClose, onS
               />
             </Box>
             <Divider>{t('prompts.dialog.sections.promptMessages')}</Divider>
-            <Stack spacing={2}>
-              {prompt?.messages && prompt.messages.length > 0 ? (
-                prompt.messages.map((msg, idx) => (
-                  <Box key={idx} display="flex" alignItems="flex-start" gap={2}>
-                    <FormControl sx={{ minWidth: 120 }} size="small">
-                      <InputLabel>{t('prompts.dialog.form.role')}</InputLabel>
-                      <Select
-                        value={msg.role}
-                        label={t('prompts.dialog.form.role')}
-                        onChange={e => handleMsgChange(idx, 'role', e.target.value as any)}
-                      >
-                        <MenuItem value="system">system</MenuItem>
-                        <MenuItem value="user">user</MenuItem>
-                        <MenuItem value="assistant">assistant</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <Box sx={{ flex: 1, display: 'flex', gap: 1 }}>
-                      <TextField
-                        label={t('prompts.dialog.form.content')}
-                        fullWidth
-                        multiline
-                        minRows={2}
-                        value={msg.content ?? ''}
-                        onChange={e => handleMsgChange(idx, 'content', e.target.value)}
-                        inputProps={{
-                          style: { fontFamily: 'monospace' },
-                          name: `prompt-message-content-${idx}`
-                        }}
-                      />
-                      <VariableInsertMenu
-                        idx={idx}
-                        msg={msg}
-                        onInsert={(variable: string) => {
-                          const textarea = document.querySelector(
-                            `textarea[name='prompt-message-content-${idx}']`
-                          ) as HTMLTextAreaElement | null;
-                          const base = msg.content ?? '';
-                          let insertPos = textarea && textarea.selectionStart != null ? textarea.selectionStart : base.length;
-                          const before = base.slice(0, insertPos);
-                          const after = base.slice(insertPos);
-                          handleMsgChange(idx, 'content', before + variable + after);
-                          setTimeout(() => {
-                            if (textarea) {
-                              textarea.focus();
-                              const pos = insertPos + variable.length;
-                              textarea.setSelectionRange(pos, pos);
-                            }
-                          }, 0);
-                        }}
-                      />
-                    </Box>
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <IconButton onClick={() => handleMsgMove(idx, -1)} disabled={idx === 0} size="small"><ArrowUpwardIcon /></IconButton>
-                      <IconButton onClick={() => handleMsgMove(idx, 1)} disabled={idx === prompt.messages.length - 1} size="small"><ArrowDownwardIcon /></IconButton>
-                      <IconButton onClick={() => handleMsgDelete(idx)} disabled={prompt.messages.length === 1} size="small" color="error"><DeleteIcon /></IconButton>
-                    </Stack>
-                  </Box>
-                ))
-              ) : (
-                <Typography color="text.secondary">{t('prompts.dialog.emptyNoMessages')}</Typography>
-              )}
-              <Button startIcon={<AddIcon />} variant="outlined" onClick={handleMsgAdd} sx={{ alignSelf: 'flex-start' }}>{t('prompts.dialog.addMessage')}</Button>
-            </Stack>
+            {prompt && (
+              <MessageListEditor
+                messages={prompt.messages}
+                onChange={handleMessagesChange}
+                config={{
+                  defaultRole: 'user',
+                  minMessages: 1,
+                  showVariableInsert: true,
+                  translationPrefix: 'prompts.dialog'
+                }}
+              />
+            )}
             <Divider>{t('prompts.dialog.sections.preview')}</Divider>
             <Box sx={{ bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
               <Typography variant="subtitle2" gutterBottom>{t('prompts.dialog.sections.messagesRaw')}</Typography>
