@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { randomId as genId } from '../utils/randomId';
+import { apiFetch } from '../utils/http';
 
 export interface CrudOptions<T extends { id?: string }> {
   autoFetch?: boolean;
@@ -26,18 +27,6 @@ export interface CrudApi<T> {
   setSuccess: (msg: string | null) => void;
 }
 
-async function fetchJSON<T = any>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`${res.status} ${res.statusText}${text ? `: ${text}` : ''}`);
-  }
-  // Avoid empty body for DELETE
-  const ct = res.headers.get('content-type') || '';
-  if (ct.includes('application/json')) return res.json();
-  return undefined as unknown as T;
-}
-
 export function useCrudResource<T extends { id?: string }>(endpoint: string, options: CrudOptions<T> = {}): CrudApi<T> {
   const { autoFetch = true, idField } = options;
   const idKey = (idField || 'id') as keyof T;
@@ -51,7 +40,7 @@ export function useCrudResource<T extends { id?: string }>(endpoint: string, opt
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchJSON<T[]>(endpoint);
+      const data = await apiFetch<T[]>(endpoint);
       setItems(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setError(e?.message || 'Failed to load');
@@ -72,7 +61,7 @@ export function useCrudResource<T extends { id?: string }>(endpoint: string, opt
     const payload: any = { ...item };
     if (createIdIfMissing && !payload[idKey]) payload[idKey] = genId();
     try {
-      const created = await fetchJSON<T>(endpoint, {
+      const created = await apiFetch<T>(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -90,7 +79,7 @@ export function useCrudResource<T extends { id?: string }>(endpoint: string, opt
     setError(null);
     const { successMessage, errorMessage } = opts;
     try {
-      const updated = await fetchJSON<T>(`${endpoint}/${encodeURIComponent(id)}`, {
+      const updated = await apiFetch<T>(`${endpoint}/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item),
@@ -116,7 +105,7 @@ export function useCrudResource<T extends { id?: string }>(endpoint: string, opt
     setError(null);
     const { successMessage, errorMessage } = opts;
     try {
-      await fetchJSON(`${endpoint}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await apiFetch(`${endpoint}/${encodeURIComponent(id)}`, { method: 'DELETE' });
       // Optimistic update
       setItems(prev => prev.filter((it: any) => String((it as any)[idKey]) !== id));
       setSuccess(successMessage || 'Deleted');

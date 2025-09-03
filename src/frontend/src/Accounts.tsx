@@ -8,6 +8,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { Account } from '../../shared/types';
 import FetcherControl from './FetcherControl';
 import { useTranslation } from 'react-i18next';
+import { apiFetch } from './utils/http';
 
 export default function Accounts({ showFetcher = true }: { showFetcher?: boolean }) {
   const { t } = useTranslation();
@@ -35,16 +36,11 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setLoading(true);
     setError(undefined);
     try {
-      const res = await fetch(`/api/accounts/${editing.id}`, {
+      await apiFetch(`/api/accounts/${editing.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editing)
       });
-      if (!res.ok) {
-        let msg = t('accounts.errors.failedUpdate') as string;
-        try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
-        throw new Error(msg);
-      }
       setAccounts(accs => accs.map(a => a.id === editing.id ? editing : a));
       setEditing(null);
     } catch (e: any) {
@@ -61,21 +57,15 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setTestError(null);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/accounts/${id}/gmail-test`);
-      const data = await res.json();
-      if (!res.ok || data.ok === false) {
-        // If backend suggests re-auth, surface it in UI and keep full payload for visibility
-        if (data.authorizeUrl) {
-          setTestError(
-            data.error ? `Re-authorization required (${data.error})` : (t('accounts.errors.testFailed') as string)
-          );
-        } else {
-          setTestError(data.error || (t('accounts.errors.testFailed') as string));
+      const data = await apiFetch(`/api/accounts/${id}/gmail-test`);
+      if (data.ok === false) {
+        setTestError(data.error || (t('accounts.errors.testFailed') as string));
+        if (data.reauthUrl) {
+          setReauthUrl(data.reauthUrl);
         }
-        setTestResult(data);
-      } else {
-        setTestResult(data);
+        return;
       }
+      setTestResult(data);
     } catch (e: any) {
       setTestError(e.message || String(e));
     } finally {
@@ -90,14 +80,12 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setTestError(null);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/accounts/${id}/outlook-test`);
-      const data = await res.json();
-      if (!res.ok || data.ok === false) {
+      const data = await apiFetch(`/api/accounts/${id}/outlook-test`);
+      if (data.ok === false) {
         setTestError(data.error || (t('accounts.errors.testFailed') as string));
-        setTestResult(data);
-      } else {
-        setTestResult(data);
+        return;
       }
+      setTestResult(data);
     } catch (e: any) {
       setTestError(e.message || String(e));
     } finally {
@@ -110,12 +98,7 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setLoading(true);
     setError(undefined);
     try {
-      const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        let msg = t('accounts.errors.failedDelete') as string;
-        try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
-        throw new Error(msg);
-      }
+      await apiFetch(`/api/accounts/${id}`, { method: 'DELETE' });
       await fetchAccounts();
     } catch (e: any) {
       setError(e.message || (t('accounts.errors.failedDelete') as string));
@@ -128,16 +111,9 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setLoading(true);
     setError(undefined);
     try {
-      const res = await fetch('/api/accounts');
-      if (!res.ok) {
-        let msg = t('accounts.errors.apiError') as string;
-        try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
-        throw new Error(msg);
-      }
-      // Surface backend warnings if present
-      const warn = res.headers.get('x-vx-mailagent-warning');
+      const data = await apiFetch('/api/accounts');
+      const warn = data.headers.get('x-vx-mailagent-warning');
       if (warn) setError(warn);
-      const data = await res.json();
       setAccounts(data);
     } catch (e: any) {
       setError(e.message || (t('accounts.errors.failedLoad') as string));
@@ -153,18 +129,13 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setError(undefined);
     setReauthUrl(null);
     try {
-      const res = await fetch(`/api/accounts/${id}/refresh`, { method: 'POST' });
-      if (!res.ok) {
-        let msg = t('accounts.errors.refreshFailed') as string;
-        try {
-          const data = await res.json();
-          if (data?.authorizeUrl) {
-            setReauthUrl(data.authorizeUrl);
-            msg = data.error ? `Re-authorization required (${data.error})` : 'Re-authorization required';
-          } else if (data?.error) {
-            msg = data.error;
-          }
-        } catch {}
+      const data = await apiFetch(`/api/accounts/${id}/refresh`, { method: 'POST' });
+      if (data.error) {
+        let msg = data.error;
+        if (data.reauthUrl) {
+          setReauthUrl(data.reauthUrl);
+          msg += ` ${t('accounts.messages.reauthRequired')}`;
+        }
         throw new Error(msg);
       }
       await fetchAccounts();
@@ -183,14 +154,11 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
       const endpoint = provider === 'gmail'
         ? `/api/accounts/oauth/google/initiate?state=${state}`
         : `/api/accounts/oauth/outlook/initiate?state=${state}`;
-      const res = await fetch(endpoint);
-      if (!res.ok) {
-        let msg = t('oauth.initiateFailed') as string;
-        try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
-        throw new Error(msg);
+      const data = await apiFetch(endpoint);
+      if (data.error) {
+        throw new Error(data.error);
       }
-      const { url } = await res.json();
-      window.location.href = url;
+      window.location.href = data.url;
     } catch (e: any) {
       setError(e.message || (t('oauth.initiateFailed') as string));
       setLoading(false);

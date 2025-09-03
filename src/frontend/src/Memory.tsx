@@ -8,6 +8,7 @@ import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import EditIcon from '@mui/icons-material/Edit';
 import { useTranslation } from 'react-i18next';
 import { useCookieState } from './hooks/useCookieState';
+import { apiFetch } from './utils/http';
 
 // Canonical MemoryEntry type (should match shared/types)
 interface MemoryEntry {
@@ -38,9 +39,9 @@ export default function Memory() {
   // Fetch all entities on mount
   useEffect(() => {
     fetchMemory();
-    fetch('/api/agents').then(r => r.json()).then(setAgents).catch(() => {});
-    fetch('/api/directors').then(r => r.json()).then(setDirectors).catch(() => {});
-    fetch('/api/accounts').then(r => r.json()).then(setAccounts).catch(() => {});
+    apiFetch('/api/agents').then(setAgents).catch(() => {});
+    apiFetch('/api/directors').then(setDirectors).catch(() => {});
+    apiFetch('/api/accounts').then(setAccounts).catch(() => {});
   }, []);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,8 +74,7 @@ export default function Memory() {
 
   const fetchMemory = () => {
     setLoading(true);
-    fetch('/api/memory')
-      .then(r => r.json())
+    apiFetch('/api/memory')
       .then(setEntries)
       .catch(() => setError(t('memory.errors.failedLoad')))
       .finally(() => setLoading(false));
@@ -85,8 +85,7 @@ export default function Memory() {
     let url = `/api/memory?query=${encodeURIComponent(search)}${scope ? `&scope=${scope}` : ''}`;
     if (ownerFilter) url += `&owner=${encodeURIComponent(ownerFilter)}`;
     if (ownerTypeFilter) url += `&ownerType=${encodeURIComponent(ownerTypeFilter)}`;
-    fetch(url)
-      .then(r => r.json())
+    apiFetch(url)
       .then(setEntries)
       .catch(() => setError(t('memory.errors.searchFailed')))
       .finally(() => setLoading(false));
@@ -103,8 +102,7 @@ export default function Memory() {
   const deleteOne = (id: string) => {
     const ok = window.confirm(t('memory.confirm.deleteOne', { id }));
     if (!ok) return;
-    fetch(`/api/memory/${id}`, { method: 'DELETE' })
-      .then(r => r.json())
+    apiFetch(`/api/memory/${id}`, { method: 'DELETE' })
       .then(() => {
         setSuccess(t('memory.messages.deleted'));
         setSelected(prev => prev.filter(x => x !== id));
@@ -118,41 +116,47 @@ export default function Memory() {
     if (!selected.length) return;
     const ok = window.confirm(t('memory.confirm.deleteSelected', { count: selected.length }));
     if (!ok) return;
-    fetch('/api/memory', {
+    apiFetch('/api/memory', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: selected })
     })
-      .then(r => r.json())
-      .then(() => { setSuccess(t('memory.messages.deleted')); setSelected([]); fetchMemory(); })
-      .catch(() => setError(t('memory.errors.batchDeleteFailed')));
+      .then(() => {
+        setSuccess(t('memory.messages.deletedSelected', { count: selected.length }));
+        setSelected([]);
+        fetchMemory();
+      })
+      .catch(() => setError(t('memory.errors.deleteFailed')));
   };
 
   const deleteAllEntries = () => {
     if (!entries.length) return;
     const ok = window.confirm(t('memory.confirm.deleteAll', { count: entries.length }));
     if (!ok) return;
-    fetch('/api/memory', {
+    apiFetch('/api/memory', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: entries.map(e => e.id) })
     })
-      .then(r => r.json())
-      .then(() => { setSuccess(t('memory.messages.deletedAll')); setSelected([]); fetchMemory(); })
-      .catch(() => setError(t('memory.errors.deleteAllFailed')));
+      .then(() => {
+        setSuccess(t('memory.messages.deletedAll', { count: entries.length }));
+        setSelected([]);
+        fetchMemory();
+      })
+      .catch(() => setError(t('memory.errors.deleteFailed')));
   };
   const handleSave = () => {
     if (!editing) return;
     const method = editing.id ? 'PUT' : 'POST';
     const url = editing.id ? `/api/memory/${editing.id}` : '/api/memory';
-    fetch(url, {
+    apiFetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(editing),
     })
-      .then(r => r.json())
       .then(() => {
-        setSuccess(t('memory.messages.saved'));
+        setSuccess(editing.id ? t('memory.messages.updated') : t('memory.messages.created'));
+        setEditing(null);
         setOpen(false);
         fetchMemory();
       })

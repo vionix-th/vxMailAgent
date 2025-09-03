@@ -13,6 +13,7 @@ import { Prompt, PromptMessage } from '../../shared/types';
 import { useTranslation } from 'react-i18next';
 import VariableInsertMenu from './VariableInsertMenu';
 import { useCookieState } from './hooks/useCookieState';
+import { apiFetch } from './utils/http';
 
 interface PromptEditDialogProps {
   open: boolean;
@@ -69,15 +70,12 @@ export default function PromptEditDialog({ open, editing, onChange, onClose, onS
       const payload: any = { prompt };
       if (target) payload.target = target;
       if (including) payload.including = including;
-      const resp = await fetch('/api/prompts/assist', {
+      const data = await apiFetch('/api/prompts/assist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await resp.json();
-      if (!resp.ok) {
-        setAssistError(data?.error || t('prompts.dialog.assistant.errors.requestFailed'));
-      } else if (data?.improved?.messages && Array.isArray(data.improved.messages)) {
+      if (data?.improved?.messages && Array.isArray(data.improved.messages)) {
         onChange({ ...prompt, messages: data.improved.messages });
         if (data?.notes) setAssistNotes(String(data.notes));
       } else {

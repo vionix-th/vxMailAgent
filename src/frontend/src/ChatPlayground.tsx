@@ -6,6 +6,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import { PromptMessage } from '../../shared/types';
+import { apiFetch } from './utils/http';
 
 type Role = 'system' | 'user' | 'assistant';
 
@@ -58,13 +59,12 @@ export default function ChatPlayground({ open, title, apiConfigId, initialMessag
     setError(null);
     setLastResponse(null);
     try {
-      const res = await fetch('/api/test/chat', {
+      const data = await apiFetch('/api/test/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiConfigId, messages, includeTools, includeCoreTools, toolChoice: toolChoice === '' ? undefined : toolChoice }),
       });
-      const data = await res.json();
-      if (!res.ok || data.success === false) {
+      if (data.success === false) {
         setError(data?.error ? (typeof data.error === 'string' ? data.error : JSON.stringify(data.error)) : 'Request failed');
       } else {
         setLastResponse(data);

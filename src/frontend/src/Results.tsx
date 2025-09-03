@@ -32,6 +32,7 @@ import remarkGfm from 'remark-gfm';
 import type { WorkspaceItem } from '../../shared/types';
 import { useTranslation } from 'react-i18next';
 import { deleteWorkspaceItem } from './utils/api';
+import { apiFetch } from './utils/http';
 
 // Use canonical OrchestrationResultEntry type from shared/types
 
@@ -99,8 +100,7 @@ export default function Results() {
 
   // Fetch directors for fixed ordering and display names
   useEffect(() => {
-    fetch('/api/directors')
-      .then(r => r.json())
+    apiFetch('/api/directors')
       .then(setDirectors)
       .catch(() => void 0);
   }, []);
@@ -110,8 +110,7 @@ export default function Results() {
 
   const fetchThreads = () => {
     setLoading(true);
-    fetch('/api/workspaces/default/items')
-      .then(r => r.json())
+    apiFetch('/api/workspaces/default/items')
       .then((workspaceData) => {
         setWorkspaceItems(Array.isArray(workspaceData) ? workspaceData : []);
         setLoading(false);
