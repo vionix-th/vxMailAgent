@@ -1,6 +1,7 @@
 import { LiveRepos } from '../liveRepos';
 import { UserRequest } from '../middleware/user-context';
 import { beginSpan, endSpan } from './logging';
+import { getMailProvider } from '../providers/mail';
 
 export interface AccountContext {
   account: any;
@@ -41,8 +42,34 @@ export class AccountManager {
     }, userReq);
 
     try {
-      // TODO: Implement OAuth token refresh logic
-      const refreshResult = { success: true, accessToken: account.tokens.accessToken, updated: false };
+      const provider = getMailProvider(account.provider);
+      if (!provider) {
+        throw new Error(`Unsupported provider: ${account.provider}`);
+      }
+      const refreshResult = await provider.ensureValidAccessToken(account);
+
+      if (refreshResult.error) {
+        endSpan(traceId, sRefresh, { 
+          status: 'error', 
+          error: refreshResult.error 
+        }, userReq);
+
+        this.logFetch({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          provider: account.provider,
+          accountId: account.id,
+          event: 'oauth_refresh_failed',
+          message: 'Failed to refresh OAuth token',
+          detail: refreshResult.error
+        });
+
+        return {
+          success: false,
+          updated: false,
+          error: refreshResult.error
+        };
+      }
 
       if (refreshResult.updated) {
         await this.persistTokenUpdate(account, refreshResult, userReq);
@@ -108,7 +135,8 @@ export class AccountManager {
         tokens: {
           ...accounts[accountIndex].tokens,
           accessToken: refreshResult.accessToken,
-          expiry: refreshResult.expiry
+          expiry: refreshResult.expiry,
+          refreshToken: refreshResult.refreshToken || accounts[accountIndex].tokens.refreshToken
         }
       };
 
