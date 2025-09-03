@@ -246,6 +246,8 @@ export interface Agent {
 }
 
 export interface PromptMessage {
+  // Stable identifier for message ordering in editors
+  id?: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
   // Assistant content may be null when tool_calls are present per OpenAI schema
   content: string | null;
