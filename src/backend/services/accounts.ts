@@ -174,7 +174,7 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
           { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
           signedState
         );
-        return { ok: false, error: category, authorizeUrl: url };
+        return { ok: false, error: category, reauthUrl: url };
       }
       return { ok: false, error: errTxt };
     }
@@ -199,12 +199,13 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
     );
     if (result.error) {
       if (String(result.error).toLowerCase().includes('missing refresh token')) {
-        const state = `reauth:${id}`;
+        const rawState = `reauth:${id}`;
+        const signedState = signJwt({ p: 'outlook', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
         const url = buildOutlookAuthUrl(
           { clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! },
-          state
+          signedState
         );
-        return { ok: false, error: 'missing_refresh_token', authorizeUrl: url };
+        return { ok: false, error: 'missing_refresh_token', reauthUrl: url };
       }
       logger.error('Outlook refresh failed', { id, error: result.error });
       return { ok: false, error: result.error };
@@ -248,7 +249,7 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
         { clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! },
         signedState
       );
-      return { ok: false, error: 'missing_refresh_token', authorizeUrl: url };
+      return { ok: false, error: 'missing_refresh_token', reauthUrl: url };
     }
     throw new Error(String(result.error));
   }
@@ -323,7 +324,7 @@ export async function gmailTest(req: ReqLike, id: string): Promise<any> {
         { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
         signedState
       );
-      return { ok: false, error: category, authorizeUrl: url };
+      return { ok: false, error: category, reauthUrl: url };
     }
     throw new Error(errTxt);
   }
