@@ -3,12 +3,13 @@ import { MemoryEntry } from '../../shared/types';
 import { newId } from '../utils/id';
 import logger from '../services/logger';
 import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
+import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 
 export interface MemoryRoutesDeps {}
 
 export default function registerMemoryRoutes(app: express.Express, _deps: MemoryRoutesDeps) {
   // GET /api/memory
-  app.get('/api/memory', async (req, res) => {
+  app.get('/api/memory', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { scope, query, owner, tag, q } = req.query as Record<string, string>;
     const ureq = requireReq(req as ReqLike);
     let result = await repoGetAll<MemoryEntry>(ureq, 'memory');
@@ -18,11 +19,14 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const queryStr = query || q;
     if (queryStr) result = result.filter((e: MemoryEntry) => e.content.toLowerCase().includes(queryStr.toLowerCase()));
     res.json(result);
-  });
+  }));
 
   // POST /api/memory
-  app.post('/api/memory', async (req, res) => {
+  app.post('/api/memory', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const entry = req.body as MemoryEntry;
+    if (!entry || typeof entry.content !== 'string' || !entry.content.trim()) {
+      throw new ValidationError('Invalid memory entry');
+    }
     entry.id = entry.id || newId();
     entry.created = entry.created || new Date().toISOString();
     entry.updated = new Date().toISOString();
@@ -32,25 +36,25 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     await repoSetAll<MemoryEntry>(ureq, 'memory', next);
     logger.info('POST /api/memory: added', { id: entry.id });
     res.json({ success: true, entry });
-  });
+  }));
 
   // PUT /api/memory/:id
-  app.put('/api/memory/:id', async (req, res) => {
+  app.put('/api/memory/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const ureq = requireReq(req as ReqLike);
     const current = await repoGetAll<MemoryEntry>(ureq, 'memory');
     const idx = current.findIndex((e: MemoryEntry) => e.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'Memory entry not found' });
+    if (idx === -1) throw new NotFoundError('Memory entry not found');
     const updated = { ...current[idx], ...req.body, id, updated: new Date().toISOString() } as MemoryEntry;
     const next = current.slice();
     next[idx] = updated;
     await repoSetAll<MemoryEntry>(ureq, 'memory', next);
     logger.info('PUT /api/memory/:id updated', { id });
     res.json({ success: true, entry: updated });
-  });
+  }));
 
   // DELETE /api/memory/:id
-  app.delete('/api/memory/:id', async (req, res) => {
+  app.delete('/api/memory/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const ureq = requireReq(req as ReqLike);
     const current = await repoGetAll<MemoryEntry>(ureq, 'memory');
@@ -60,13 +64,13 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const after = next.length;
     logger.info('DELETE /api/memory/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
-  });
+  }));
 
   // DELETE /api/memory (batch)
-  app.delete('/api/memory', async (req, res) => {
+  app.delete('/api/memory', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ids = req.body?.ids as string[];
     if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'ids array required' });
+      throw new ValidationError('ids array required');
     }
     const ureq = requireReq(req as ReqLike);
     const current = await repoGetAll<MemoryEntry>(ureq, 'memory');
@@ -77,7 +81,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const after = next.length;
     logger.info('DELETE /api/memory batch deleted', { deleted: before - after });
     res.json({ success: true, deleted: before - after });
-  });
+  }));
 }
 
 

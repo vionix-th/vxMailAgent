@@ -3,6 +3,7 @@ import { requireUserContext } from '../middleware/user-context';
 import logger from '../services/logger';
 import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
 import type { TemplateItem } from '../../shared/types';
+import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 
  
 
@@ -70,47 +71,47 @@ async function saveTemplates(req: ReqLike, items: TemplateItem[]) {
 
 export default function registerTemplatesRoutes(app: express.Express) {
   // List templates
-  app.get('/api/prompt-templates', requireUserContext as any, async (req, res) => {
+  app.get('/api/prompt-templates', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
     logger.info('GET /api/prompt-templates', { uid: requireUid(ureq) });
     res.json(await loadTemplates(ureq));
-  });
+  }));
 
   // Create
-  app.post('/api/prompt-templates', requireUserContext as any, async (req, res) => {
+  app.post('/api/prompt-templates', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const item: TemplateItem = req.body;
     if (!item || !item.id || !item.name || !Array.isArray(item.messages)) {
-      return res.status(400).json({ error: 'Invalid template' });
+      throw new ValidationError('Invalid template');
     }
     const current = await loadTemplates(req as ReqLike);
-    if (current.some(t => t.id === item.id)) return res.status(400).json({ error: 'Duplicate id' });
+    if (current.some(t => t.id === item.id)) throw new ValidationError('Duplicate id');
     const next = [...current, item];
     await saveTemplates(req as ReqLike, next);
     res.json({ success: true });
-  });
+  }));
 
   // Update
-  app.put('/api/prompt-templates/:id', requireUserContext as any, async (req, res) => {
+  app.put('/api/prompt-templates/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const current = await loadTemplates(req as ReqLike);
     const idx = current.findIndex(t => t.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    if (idx === -1) throw new NotFoundError('Not found');
     current[idx] = req.body;
     await saveTemplates(req as ReqLike, current);
     res.json({ success: true });
-  });
+  }));
 
   // Delete
-  app.delete('/api/prompt-templates/:id', requireUserContext as any, async (req, res) => {
+  app.delete('/api/prompt-templates/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     if (id === 'prompt_optimizer') {
-      return res.status(400).json({ error: 'prompt_optimizer is required and cannot be deleted' });
+      throw new ValidationError('prompt_optimizer is required and cannot be deleted');
     }
     const current = await loadTemplates(req as ReqLike);
     const next = current.filter(t => t.id !== id);
     await saveTemplates(req as ReqLike, next);
     res.json({ success: true });
-  });
+  }));
 }
 
 

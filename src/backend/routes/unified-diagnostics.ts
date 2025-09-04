@@ -1,6 +1,7 @@
 import express from 'express';
 import { OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, Trace } from '../../shared/types';
 import { ReqLike } from '../utils/repo-access';
+import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 
 import { LiveRepos } from '../liveRepos';
 
@@ -278,65 +279,57 @@ export default function registerUnifiedDiagnosticsRoutes(
   }
 ) {
   // GET unified hierarchical diagnostics tree
-  app.get('/api/diagnostics/unified', async (req, res) => {
-    try {
-      const [orchestrationEntries, conversations, providerEvents, traces] = await Promise.all([
-        repos.getOrchestrationLog(req as any as ReqLike),
-        repos.getConversations(req as any as ReqLike),
-        services.getProviderEvents(req as any as ReqLike),
-        services.getTraces(req as any as ReqLike),
-      ]);
+  app.get('/api/diagnostics/unified', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const [orchestrationEntries, conversations, providerEvents, traces] = await Promise.all([
+      repos.getOrchestrationLog(req as any as ReqLike),
+      repos.getConversations(req as any as ReqLike),
+      services.getProviderEvents(req as any as ReqLike),
+      services.getTraces(req as any as ReqLike),
+    ]);
 
-      const tree = buildHierarchicalTree(orchestrationEntries, conversations, providerEvents, traces);
+    const tree = buildHierarchicalTree(orchestrationEntries, conversations, providerEvents, traces);
 
-      // Calculate summary statistics
-      const summary = {
-        totalFetchCycles: tree.length,
-        totalEmails: tree.reduce((sum, cycle) => 
-          sum + (cycle.children?.reduce((emailSum, account) => 
-            emailSum + (account.children?.length || 0), 0) || 0), 0),
-        totalDirectors: orchestrationEntries.reduce((set, entry) => 
-          set.add(entry.director), new Set()).size,
-        totalAgents: orchestrationEntries.reduce((set, entry) => 
-          set.add(entry.agent), new Set()).size,
-        totalConversations: conversations.length,
-        totalProviderEvents: providerEvents.length,
-        totalErrors: orchestrationEntries.filter(e => e.error).length
-      };
+    // Calculate summary statistics
+    const summary = {
+      totalFetchCycles: tree.length,
+      totalEmails: tree.reduce((sum, cycle) => 
+        sum + (cycle.children?.reduce((emailSum, account) => 
+          emailSum + (account.children?.length || 0), 0) || 0), 0),
+      totalDirectors: orchestrationEntries.reduce((set, entry) => 
+        set.add(entry.director), new Set()).size,
+      totalAgents: orchestrationEntries.reduce((set, entry) => 
+        set.add(entry.agent), new Set()).size,
+      totalConversations: conversations.length,
+      totalProviderEvents: providerEvents.length,
+      totalErrors: orchestrationEntries.filter(e => e.error).length
+    };
 
-      const response: UnifiedDiagnosticsResponse = { tree, summary };
-      res.json(response);
-    } catch (e: any) {
-      res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
+    const response: UnifiedDiagnosticsResponse = { tree, summary };
+    res.json(response);
+  }));
 
   // GET detailed view for specific node
-  app.get('/api/diagnostics/unified/:nodeId', async (req, res) => {
-    try {
-      const nodeId = req.params.nodeId;
-      const [nodeType, id] = nodeId.split('-', 2);
+  app.get('/api/diagnostics/unified/:nodeId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const nodeId = req.params.nodeId;
+    const [nodeType, id] = nodeId.split('-', 2);
 
-      let result: any = null;
+    let result: any = null;
 
-      switch (nodeType) {
-        case 'conv':
-          result = (await repos.getConversations(req as any as ReqLike)).find((c: any) => c.id === id);
-          break;
-        case 'event':
-          result = (await services.getProviderEvents(req as any as ReqLike)).find((e: any) => e.id === id);
-          break;
-        default:
-          return res.status(400).json({ error: 'Invalid node type' });
-      }
-
-      if (!result) {
-        return res.status(404).json({ error: 'Node not found' });
-      }
-
-      res.json(result);
-    } catch (e: any) {
-      res.status(500).json({ error: String(e?.message || e) });
+    switch (nodeType) {
+      case 'conv':
+        result = (await repos.getConversations(req as any as ReqLike)).find((c: any) => c.id === id);
+        break;
+      case 'event':
+        result = (await services.getProviderEvents(req as any as ReqLike)).find((e: any) => e.id === id);
+        break;
+      default:
+        throw new ValidationError('Invalid node type');
     }
-  });
+
+    if (!result) {
+      throw new NotFoundError('Node not found');
+    }
+
+    res.json(result);
+  }));
 }

@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Trace } from '../../shared/types';
 import { ReqLike } from '../utils/repo-access';
+import { errorHandler, NotFoundError } from '../services/error-handler';
 
 
 export default function registerDiagnosticTracesRoutes(
@@ -13,7 +14,7 @@ export default function registerDiagnosticTracesRoutes(
   const router = express.Router();
 
   // List traces in canonical order with optional pagination only (no filters, no sorting)
-  router.get('/diagnostics/traces', async (req, res) => {
+  router.get('/diagnostics/traces', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { limit, offset } = req.query as Record<string, string>;
     const lim = Math.min(Math.max(parseInt(String(limit || '100'), 10) || 100, 1), 1000);
     const off = Math.max(parseInt(String(offset || '0'), 10) || 0, 0);
@@ -40,28 +41,28 @@ export default function registerDiagnosticTracesRoutes(
     });
 
     res.json({ total, items });
-  });
+  }));
 
   // Get a single trace by id
-  router.get('/diagnostics/trace/:id', async (req, res) => {
+  router.get('/diagnostics/trace/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const t = (await services.getTraces(req as any as ReqLike)).find(x => x.id === id);
-    if (!t) return res.status(404).json({ error: 'Not found' });
+    if (!t) throw new NotFoundError('Not found');
     res.json(t);
-  });
+  }));
 
   // Delete a single trace by id
-  router.delete('/diagnostics/trace/:id', async (req, res) => {
+  router.delete('/diagnostics/trace/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const before = await services.getTraces(req as any as ReqLike);
     const next = before.filter(t => t.id !== id);
     const deleted = before.length - next.length;
     if (deleted > 0) await services.setTraces(req as any as ReqLike, next);
     res.json({ deleted });
-  });
+  }));
 
   // Bulk delete traces by ids, or clear all if no ids provided
-  router.delete('/diagnostics/traces', async (req, res) => {
+  router.delete('/diagnostics/traces', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];
     const before = await services.getTraces(req as any as ReqLike);
     let next: Trace[] = before;
@@ -74,7 +75,7 @@ export default function registerDiagnosticTracesRoutes(
     const deleted = before.length - next.length;
     await services.setTraces(req as any as ReqLike, next);
     res.json({ deleted });
-  });
+  }));
 
   app.use('/api', router);
 }
