@@ -54,6 +54,17 @@ export class AuthorizationError extends Error {
   }
 }
 
+export class NotFoundError extends Error {
+  constructor(
+    message: string,
+    public code: string = 'NOT_FOUND',
+    public statusCode: number = 404
+  ) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
 class ErrorHandlerService {
   /**
    * Sanitizes error messages to prevent information leakage.
@@ -63,7 +74,8 @@ class ErrorHandlerService {
     if (error instanceof SecurityError || 
         error instanceof ValidationError || 
         error instanceof AuthenticationError || 
-        error instanceof AuthorizationError) {
+        error instanceof AuthorizationError ||
+        error instanceof NotFoundError) {
       return {
         message: error.message,
         code: error.code,

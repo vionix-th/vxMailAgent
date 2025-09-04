@@ -19,6 +19,7 @@ import { ReqLike } from './utils/repo-access';
 import logger from './services/logger';
 import { createLiveRepos } from './liveRepos';
 import registerRoutes from './routes';
+import { errorHandler, NotFoundError } from './services/error-handler';
 
 /** Create and configure the backend Express server. */
 export function createServer() {
@@ -31,7 +32,6 @@ export function createServer() {
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
-  
   const origin = (process.env.CORS_ORIGIN || '*');
   if (origin && origin !== '*') app.use(cors({ origin, credentials: true }));
   else app.use(cors());
@@ -65,6 +65,32 @@ export function createServer() {
     getTraces: async (req?: ReqLike) => await getTraces(req),
     setTraces: async (req: ReqLike, next: any[]) => { await repos.getTracesRepo(req).setAll(next); },
     getProviderEvents: async (req?: ReqLike) => await repos.getProviderRepo(req).getAll(),
+  });
+
+  // Centralized 404 handler (must be after routes)
+  app.use((req, res) => {
+    const context = {
+      uid: (req as any)?.auth?.uid,
+      operation: `${req.method} ${req.path}`,
+      resource: req.path,
+      userAgent: req.headers?.['user-agent'] as string | undefined,
+      ip: (req as any)?.ip || (req as any)?.connection?.remoteAddress,
+    };
+    errorHandler.handleError(new NotFoundError('Route not found'), res, context);
+  });
+
+  // Centralized error-handling middleware
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: any, req: any, res: any, _next: any) => {
+    const context = {
+      uid: req?.auth?.uid,
+      operation: `${req?.method} ${req?.path}`,
+      resource: req?.path,
+      userAgent: req?.headers?.['user-agent'] as string | undefined,
+      ip: req?.ip || req?.connection?.remoteAddress,
+    };
+    const e = err instanceof Error ? err : new Error(String(err));
+    errorHandler.handleError(e, res, context);
   });
   
   // Bootstrapping per-user fetchers on server startup for users who enabled auto-start
