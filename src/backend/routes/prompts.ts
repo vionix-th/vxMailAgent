@@ -8,6 +8,7 @@ import { requireUserContext } from '../middleware/user-context';
 import logger from '../services/logger';
 import { requireReq, requireUid, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
 import type { TemplateItem } from '../../shared/types';
+import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 
 export interface PromptsRoutesDeps {
   getPrompts: (req?: ReqLike) => Promise<Prompt[]>;
@@ -243,39 +244,39 @@ async function loadUserTemplates(req?: ReqLike): Promise<TemplateItem[]> {
 
 export default function registerPromptsRoutes(app: express.Express, deps: PromptsRoutesDeps) {
   // GET /api/prompts
-  app.get('/api/prompts', requireUserContext as any, async (req, res) => {
+  app.get('/api/prompts', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     logger.info('GET /api/prompts');
     res.json(await deps.getPrompts(req as ReqLike));
-  });
+  }));
 
   // POST /api/prompts
-  app.post('/api/prompts', requireUserContext as any, async (req, res) => {
+  app.post('/api/prompts', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const prompt: Prompt = req.body;
     const current = await deps.getPrompts(req as ReqLike);
     const next = [...current, prompt];
     await deps.setPrompts(req as ReqLike, next);
     logger.info('POST /api/prompts: added prompt', { id: prompt.id });
     res.json({ success: true });
-  });
+  }));
 
   // PUT /api/prompts/:id
-  app.put('/api/prompts/:id', requireUserContext as any, async (req, res) => {
+  app.put('/api/prompts/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const current = await deps.getPrompts(req as ReqLike);
     const idx = current.findIndex(p => p.id === id);
     if (idx === -1) {
       logger.warn('PUT /api/prompts/:id not found', { id });
-      return res.status(404).json({ error: 'Prompt not found' });
+      throw new NotFoundError('Prompt not found');
     }
     const next = current.slice();
     next[idx] = req.body;
     await deps.setPrompts(req as ReqLike, next);
     logger.info('PUT /api/prompts/:id updated', { id });
     res.json({ success: true });
-  });
+  }));
 
   // DELETE /api/prompts/:id
-  app.delete('/api/prompts/:id', requireUserContext as any, async (req, res) => {
+  app.delete('/api/prompts/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const current = await deps.getPrompts(req as ReqLike);
     const before = current.length;
@@ -284,102 +285,97 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     const after = next.length;
     logger.info('DELETE /api/prompts/:id deleted', { id, deleted: before - after });
     res.json({ success: true });
-  });
+  }));
 
   // POST /api/prompts/assist - optimize a prompt with application context
-  app.post('/api/prompts/assist', requireUserContext as any, async (req, res) => {
-    try {
-      const payload = req.body || {};
-      const prompt: Prompt | undefined = payload.prompt;
-      if (!prompt || !Array.isArray(prompt.messages)) {
-        return res.status(400).json({ error: 'Invalid payload: prompt with messages[] is required' });
-      }
-      const settings = await deps.getSettings(req as ReqLike);
-      const api = Array.isArray(settings?.apiConfigs) && settings.apiConfigs[0];
-      if (!api) return res.status(400).json({ error: 'No API configuration available' });
-
-      // Always resolve optimizer/system messages from the canonical 'prompt_optimizer' template
-      const list = await loadUserTemplates(req as ReqLike);
-      const opt = list.find(t => t.id === 'prompt_optimizer');
-      if (!opt) {
-        return res.status(500).json({ error: 'optimizer_template_missing' });
-      }
-      const optimizerMessages: TemplateMsg[] = opt.messages;
-
-      // Build Context Packs with budgets
-      const root = path.resolve(__dirname, '../../..');
-      const selectedPacks = parseContextSelection(payload, req.query);
-      const includingPacks = parseIncluding(payload, req.query);
-      const finalPacks = Array.from(new Set<ContextPackName>([...selectedPacks, ...includingPacks])) as ContextPackName[];
-      // Runtime agents/directors (ids/names only), and supported tools/actions
-      const agents = (await (deps.getAgents?.(req as ReqLike) || Promise.resolve([]))).map(a => ({ id: a.id, name: a.name }));
-      const directors = (await (deps.getDirectors?.(req as ReqLike) || Promise.resolve([]))).map(d => ({ id: d.id, name: d.name, agentIds: d.agentIds }));
-      const tools = [
-        { kind: 'calendar', actions: ['read', 'add'] },
-        { kind: 'todo', actions: ['add'] },
-        { kind: 'filesystem', actions: ['search', 'retrieve'] },
-        { kind: 'memory', actions: ['search', 'add', 'edit'] },
-      ];
-      const roleAffordances = {
-        roles: {
-          director: {
-            can: ['orchestrate agents', 'sequence actions', 'invoke tools'],
-            tools
-          },
-          agent: {
-            can: ['invoke tools as needed'],
-            tools
-          }
-        }
-      };
-      const target = parseTarget(payload, req.query);
-      if (!target) {
-        return res.status(400).json({ error: 'target_required', allowed: ['director', 'agent'] });
-      }
-      // Filter affordances based on target to avoid irrelevant details
-      let affordancesObj: any;
-      if (target?.role === 'agent') {
-        // Provide only agent capabilities
-        affordancesObj = { roles: { agent: (roleAffordances as any).roles.agent } };
-      } else if (target?.role === 'director') {
-        affordancesObj = { agents, directors, roles: roleAffordances.roles };
-      }
-      const targetMsg = { role: 'user', content: buildTargetMessage(target) } as any;
-      const affordances = { role: 'user', content: `Affordances (actor-accessible, authoritative):\n${JSON.stringify(affordancesObj, null, 2)}` } as any;
-      // Build selected packs (excluding 'affordances' here to avoid duplication)
-      const packOutputs: string[] = [];
-      const include = (name: ContextPackName, builder: () => string) => {
-        if (finalPacks.includes(name)) {
-          const out = builder();
-          if (out) packOutputs.push(out);
-        }
-      };
-      include('docs-lite', () => buildDocsLite(root));
-      include('types-lite', () => buildTypesLite(root));
-      include('routes-lite', () => buildRoutesLite(root));
-      include('examples', () => buildExamples(root));
-      include('policies', () => buildPolicies());
-      // Global cap to prevent bloat
-      let merged = packOutputs.join('\n\n');
-      const GLOBAL_CAP = 9000;
-      if (merged.length > GLOBAL_CAP) merged = clampText(merged, GLOBAL_CAP);
-      const packsLabel = finalPacks.filter(p => p !== 'affordances').join(', ');
-      const appContext = { role: 'user', content: `Application context (packs: ${packsLabel}):\n${merged}` } as any;
-      const current = { role: 'user', content: `Current prompt JSON:\n${JSON.stringify({ id: prompt.id, name: prompt.name, messages: prompt.messages }, null, 2)}` } as any;
-      const instruction = { role: 'user', content: 'Rewrite the prompt messages for the specified target, ensuring the first message is a SYSTEM prompt. You MAY optionally include additional USER and/or ASSISTANT messages for strategic priming if they are concise and clearly helpful. Use only relevant and accessible capabilities from the Affordances; do not invent capabilities. For director targets, orchestrate, sequence, and invoke tools as needed. For agent targets, you MAY invoke tools during your turn when necessary and relevant to the objective; keep tool usage minimal and goal-aligned. Prefer structured prompts using Markdown-style headings: Intent, Affordances, IO, Guidelines, Examples. Provide realistic few-shot examples. Do not include markdown code fences. Include infra/meta directives only when they are explicitly actor-accessible and necessary for the task; otherwise omit. Return strict JSON as specified.' } as any;
-
-      const resp = await chatCompletion(api.apiKey, api.model, [...optimizerMessages as any[], targetMsg, affordances, appContext, current, instruction], {
-        max_completion_tokens: (typeof (api as any)?.maxCompletionTokens === 'number' ? (api as any).maxCompletionTokens : undefined),
-      });
-      const text = String((resp as any)?.assistantMessage?.content || '').trim();
-      let improved: { messages?: Array<{ role: string; content: string }>; notes?: string } = {};
-      try { improved = JSON.parse(text); } catch { return res.status(502).json({ error: 'Assistant returned non-JSON', raw: text }); }
-      if (!improved || !Array.isArray(improved.messages)) return res.status(502).json({ error: 'Assistant returned invalid JSON', raw: improved });
-      const next: Prompt = { ...prompt, messages: improved.messages as any };
-      return res.json({ improved: next, notes: improved.notes || '' });
-    } catch (e: any) {
-      logger.error('POST /api/prompts/assist failed', { err: e });
-      return res.status(500).json({ error: 'assist_failed', detail: String(e?.message || e) });
+  app.post('/api/prompts/assist', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const payload = req.body || {};
+    const prompt: Prompt | undefined = payload.prompt;
+    if (!prompt || !Array.isArray(prompt.messages)) {
+      throw new ValidationError('Invalid payload: prompt with messages[] is required');
     }
-  });
+    const settings = await deps.getSettings(req as ReqLike);
+    const api = Array.isArray(settings?.apiConfigs) && settings.apiConfigs[0];
+    if (!api) throw new ValidationError('No API configuration available');
+
+    // Always resolve optimizer/system messages from the canonical 'prompt_optimizer' template
+    const list = await loadUserTemplates(req as ReqLike);
+    const opt = list.find(t => t.id === 'prompt_optimizer');
+    if (!opt) {
+      throw new NotFoundError('optimizer_template_missing');
+    }
+    const optimizerMessages: TemplateMsg[] = opt.messages;
+
+    // Build Context Packs with budgets
+    const root = path.resolve(__dirname, '../../..');
+    const selectedPacks = parseContextSelection(payload, req.query);
+    const includingPacks = parseIncluding(payload, req.query);
+    const finalPacks = Array.from(new Set<ContextPackName>([...selectedPacks, ...includingPacks])) as ContextPackName[];
+    // Runtime agents/directors (ids/names only), and supported tools/actions
+    const agents = (await (deps.getAgents?.(req as ReqLike) || Promise.resolve([]))).map(a => ({ id: a.id, name: a.name }));
+    const directors = (await (deps.getDirectors?.(req as ReqLike) || Promise.resolve([]))).map(d => ({ id: d.id, name: d.name, agentIds: d.agentIds }));
+    const tools = [
+      { kind: 'calendar', actions: ['read', 'add'] },
+      { kind: 'todo', actions: ['add'] },
+      { kind: 'filesystem', actions: ['search', 'retrieve'] },
+      { kind: 'memory', actions: ['search', 'add', 'edit'] },
+    ];
+    const roleAffordances = {
+      roles: {
+        director: {
+          can: ['orchestrate agents', 'sequence actions', 'invoke tools'],
+          tools
+        },
+        agent: {
+          can: ['invoke tools as needed'],
+          tools
+        }
+      }
+    };
+    const target = parseTarget(payload, req.query);
+    if (!target) {
+      throw new ValidationError('target_required');
+    }
+    // Filter affordances based on target to avoid irrelevant details
+    let affordancesObj: any;
+    if (target?.role === 'agent') {
+      // Provide only agent capabilities
+      affordancesObj = { roles: { agent: (roleAffordances as any).roles.agent } };
+    } else if (target?.role === 'director') {
+      affordancesObj = { agents, directors, roles: roleAffordances.roles };
+    }
+    const targetMsg = { role: 'user', content: buildTargetMessage(target) } as any;
+    const affordances = { role: 'user', content: `Affordances (actor-accessible, authoritative):\n${JSON.stringify(affordancesObj, null, 2)}` } as any;
+    // Build selected packs (excluding 'affordances' here to avoid duplication)
+    const packOutputs: string[] = [];
+    const include = (name: ContextPackName, builder: () => string) => {
+      if (finalPacks.includes(name)) {
+        const out = builder();
+        if (out) packOutputs.push(out);
+      }
+    };
+    include('docs-lite', () => buildDocsLite(root));
+    include('types-lite', () => buildTypesLite(root));
+    include('routes-lite', () => buildRoutesLite(root));
+    include('examples', () => buildExamples(root));
+    include('policies', () => buildPolicies());
+    // Global cap to prevent bloat
+    let merged = packOutputs.join('\n\n');
+    const GLOBAL_CAP = 9000;
+    if (merged.length > GLOBAL_CAP) merged = clampText(merged, GLOBAL_CAP);
+    const packsLabel = finalPacks.filter(p => p !== 'affordances').join(', ');
+    const appContext = { role: 'user', content: `Application context (packs: ${packsLabel}):\n${merged}` } as any;
+    const current = { role: 'user', content: `Current prompt JSON:\n${JSON.stringify({ id: prompt.id, name: prompt.name, messages: prompt.messages }, null, 2)}` } as any;
+    const instruction = { role: 'user', content: 'Rewrite the prompt messages for the specified target, ensuring the first message is a SYSTEM prompt. You MAY optionally include additional USER and/or ASSISTANT messages for strategic priming if they are concise and clearly helpful. Use only relevant and accessible capabilities from the Affordances; do not invent capabilities. For director targets, orchestrate, sequence, and invoke tools as needed. For agent targets, you MAY invoke tools during your turn when necessary and relevant to the objective; keep tool usage minimal and goal-aligned. Prefer structured prompts using Markdown-style headings: Intent, Affordances, IO, Guidelines, Examples. Provide realistic few-shot examples. Do not include markdown code fences. Include infra/meta directives only when they are explicitly actor-accessible and necessary for the task; otherwise omit. Return strict JSON as specified.' } as any;
+
+    const resp = await chatCompletion(api.apiKey, api.model, [...optimizerMessages as any[], targetMsg, affordances, appContext, current, instruction], {
+      max_completion_tokens: (typeof (api as any)?.maxCompletionTokens === 'number' ? (api as any).maxCompletionTokens : undefined),
+    });
+    const text = String((resp as any)?.assistantMessage?.content || '').trim();
+    let improved: { messages?: Array<{ role: string; content: string }>; notes?: string } = {};
+    try { improved = JSON.parse(text); } catch { throw new Error('Assistant returned non-JSON'); }
+    if (!improved || !Array.isArray(improved.messages)) throw new Error('Assistant returned invalid JSON');
+    const next: Prompt = { ...prompt, messages: improved.messages as any };
+    return res.json({ improved: next, notes: improved.notes || '' });
+  }));
 }
