@@ -63,6 +63,14 @@ export class ConversationOrchestrator {
       const stepResult = await this.executeConversationStep(context, userReq);
       
       if (!stepResult.success) {
+        // Ensure error paths that return (not throw) still produce a step error log
+        const stepDuration = Date.now() - stepStartTime;
+        this.stepLogger.logStepError(
+          thread.id,
+          thread.kind,
+          stepDuration,
+          stepResult.error || 'unknown_error'
+        );
         return {
           updatedThread: thread,
           success: false,
