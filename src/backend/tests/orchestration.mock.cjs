@@ -127,3 +127,4 @@ test('Integration: Email processing with real/mock accounts', async () => {
     assert.strictEqual(typeof result.directorsTriggered, 'number');
   });
 });
+

@@ -131,3 +131,4 @@ test('ConversationOrchestrator step handling - mock test', async () => {
   assert.strictEqual(loggedEvents[0].event, 'step_start');
   assert.strictEqual(loggedEvents[0].threadId, 'thread-789');
 });
+

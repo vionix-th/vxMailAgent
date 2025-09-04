@@ -48,12 +48,12 @@ async function runTest(testFile) {
 async function runAllTests() {
   console.log('🚀 Running all backend tests...');
   
-  // Find all .cjs test files
-  const testFiles = fs.readdirSync(__dirname)
-    .filter(file => file.endsWith('.cjs') && file !== 'run-all-tests.cjs')
-    .map(file => path.join(__dirname, file));
+  // Find all .cjs test files with priority: *.live.cjs -> *.unit.cjs -> *.mock.cjs -> others
+  const files = fs.readdirSync(__dirname).filter(f => f.endsWith('.cjs') && f !== 'run-all-tests.cjs');
+  const score = (f) => f.endsWith('.live.cjs') ? 0 : f.endsWith('.unit.cjs') ? 1 : f.endsWith('.mock.cjs') ? 2 : 3;
+  const testFiles = files.sort((a, b) => score(a) - score(b)).map(file => path.join(__dirname, file));
   
-  console.log(`Found ${testFiles.length} test files:`);
+  console.log(`Found ${testFiles.length} test files (live first):`);
   testFiles.forEach(file => console.log(`  - ${path.basename(file)}`));
   
   let passCount = 0;

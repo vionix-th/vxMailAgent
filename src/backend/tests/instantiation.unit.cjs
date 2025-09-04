@@ -60,3 +60,4 @@ test('Debug EmailProcessor instantiation error', async () => {
     throw error;
   }
 });
+

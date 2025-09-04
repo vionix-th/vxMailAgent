@@ -48,7 +48,7 @@ test('Backend TypeScript compilation', async () => {
 test('EmailProcessor real require and instantiation', async () => {
   try {
     // Use require to test actual module loading
-    const { EmailProcessor } = require('../services/email-processor');
+    const { EmailProcessor } = require('../dist/services/email-processor');
     
     // Create minimal mock repos
     const mockRepos = {
@@ -79,7 +79,7 @@ test('EmailProcessor real require and instantiation', async () => {
 // Test ConversationOrchestrator real require
 test('ConversationOrchestrator real require and instantiation', async () => {
   try {
-    const { ConversationOrchestrator } = require('../services/conversation-orchestrator');
+    const { ConversationOrchestrator } = require('../dist/services/conversation-orchestrator');
     
     const mockRepos = {
       getOrchestrationLog: async () => [],
@@ -102,7 +102,7 @@ test('ConversationOrchestrator real require and instantiation', async () => {
 // Test FetcherManager real require
 test('FetcherManager real require and instantiation', async () => {
   try {
-    const { FetcherManager } = require('../services/fetcher-manager');
+    const { FetcherManager } = require('../dist/services/fetcher-manager');
     
     const mockRepos = {
       getAccounts: async () => [],

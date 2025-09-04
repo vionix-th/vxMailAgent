@@ -5,8 +5,8 @@ auto_execution_mode: 1
 
 Audit the codebase for:
 
-- Flaws in Architecture / Design
-- Flaws in Business logic
+- Flaws and Bugs in Architecture / Design
+- Flaws and Bugs in Business logic
 - Divergance from best practices / clean code
 - Deprecated / legacgy and unused code
 - Oportunities for consolidation / unification of code paths.
