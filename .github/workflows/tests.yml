@@ -40,6 +40,8 @@ jobs:
         env:
           NODE_ENV: development
           JWT_SECRET: dev-insecure-jwt
+          VX_TEST_MOCK_PROVIDER: 'true'
+          VX_TEST_MOCK_OPENAI: 'true'
         run: |
           nohup npm run dev >/tmp/backend.log 2>&1 &
           echo $! > /tmp/backend.pid
@@ -56,6 +58,8 @@ jobs:
           BACKEND_URL: http://localhost:3001
           JWT_SECRET: dev-insecure-jwt
           VX_TEST_USER_ID: ci-user
+          VX_TEST_MOCK_PROVIDER: 'true'
+          VX_TEST_MOCK_OPENAI: 'true'
         run: node --test *.live.cjs
       - name: Show backend logs on failure
         if: failure()

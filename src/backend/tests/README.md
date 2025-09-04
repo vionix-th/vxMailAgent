@@ -23,7 +23,12 @@
 - Diagnostics runtime and conversations listing.
 - OAuth: initiation URLs; refresh/test flows return reauthUrl for tokenless accounts.
 - OpenAI (optional): `/api/test/chat` hits provider when `OPENAI_API_KEY` is set.
+- E2E orchestration (mocked): with `VX_TEST_MOCK_PROVIDER=true` and `VX_TEST_MOCK_OPENAI=true`, `/api/fetcher/run` processes a mock email and creates a director conversation, optionally appending a mock assistant reply.
 
 ## Optional OpenAI Live Test
 - Set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`.
 - Run: `node --test openai.live.cjs`.
+
+## Mocked End-to-End
+- Backend env: set `VX_TEST_MOCK_PROVIDER=true` and `VX_TEST_MOCK_OPENAI=true` before starting the backend.
+- Then run: `node --test e2e_orchestration.live.cjs`.

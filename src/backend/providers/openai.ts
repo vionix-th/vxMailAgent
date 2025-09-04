@@ -16,6 +16,16 @@ export async function chatCompletion(
   messages: ChatCompletionMessageParam[],
   options?: { tools?: any[]; tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } }; max_completion_tokens?: number }
 ): Promise<ChatCompletionResult> {
+  if (String(process.env.VX_TEST_MOCK_OPENAI || '').toLowerCase() === 'true') {
+    const assistantMessage: ChatCompletionMessageParam = { role: 'assistant', content: 'OK (mock)' } as any;
+    return Promise.resolve({
+      content: 'OK (mock)',
+      request: { model, messages, tools: options?.tools, tool_choice: options?.tool_choice, provider: 'openai', endpoint: 'chat.completions', mock: true },
+      response: { id: 'mock', object: 'chat.completion', choices: [{ message: assistantMessage }], mock: true },
+      toolCalls: [],
+      assistantMessage,
+    });
+  }
   const openai = new OpenAI({ apiKey });
   const payload: any = {
     model,
