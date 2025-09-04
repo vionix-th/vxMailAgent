@@ -1,0 +1,68 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  unit_and_mock:
+    runs-on: ubuntu-latest
+    name: Unit + Mock Tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install backend deps
+        working-directory: src/backend
+        run: npm ci
+      - name: Build backend
+        working-directory: src/backend
+        run: npm run build --if-present
+      - name: Run unit + mock tests
+        working-directory: src/backend/tests
+        run: node --test *.unit.cjs *.mock.cjs
+
+  live:
+    runs-on: ubuntu-latest
+    name: Live Tests (Local Backend)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install backend deps
+        working-directory: src/backend
+        run: npm ci
+      - name: Start backend
+        working-directory: src/backend
+        env:
+          NODE_ENV: development
+          JWT_SECRET: dev-insecure-jwt
+        run: |
+          nohup npm run dev >/tmp/backend.log 2>&1 &
+          echo $! > /tmp/backend.pid
+      - name: Wait for health
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:3001/api/health >/dev/null; then echo ready; exit 0; fi
+            sleep 1
+          done
+          echo "Backend did not become healthy" && (tail -n +1 /tmp/backend.log || true) && exit 1
+      - name: Run live tests
+        working-directory: src/backend/tests
+        env:
+          BACKEND_URL: http://localhost:3001
+          JWT_SECRET: dev-insecure-jwt
+          VX_TEST_USER_ID: ci-user
+        run: node --test *.live.cjs
+      - name: Show backend logs on failure
+        if: failure()
+        run: |
+          echo '--- backend.log ---'
+          tail -n +1 /tmp/backend.log || true
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f /tmp/backend.pid ]; then kill $(cat /tmp/backend.pid) || true; fi

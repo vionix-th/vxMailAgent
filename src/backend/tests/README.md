@@ -7,7 +7,7 @@
 
 ## Running
 - Live first, then unit/mock: `node run-all-tests.cjs`
-- Only live: `node --test backend.live.cjs`
+- Only live: `node --test *.live.cjs`
 
 ## Live Auth
 - Env: `BACKEND_URL` (default `http://localhost:3001`), `JWT_SECRET` (default `dev-insecure-jwt`), `VX_TEST_USER_ID` (default `test-user`).
@@ -17,3 +17,13 @@
 - Long steps emit `STATUS <label>: running <ms>ms` heartbeats.
 - All steps also log `TEST_EVENT { ... }` and end with `RESULT_JSON { ... }` for machine parsing.
 
+## Live Coverage (prioritized)
+- Health/auth/settings baseline.
+- CRUD: settings (apiConfigs), directors, agents, filters (+reorder).
+- Diagnostics runtime and conversations listing.
+- OAuth: initiation URLs; refresh/test flows return reauthUrl for tokenless accounts.
+- OpenAI (optional): `/api/test/chat` hits provider when `OPENAI_API_KEY` is set.
+
+## Optional OpenAI Live Test
+- Set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`.
+- Run: `node --test openai.live.cjs`.
