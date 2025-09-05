@@ -1,5 +1,5 @@
 import express from 'express';
-import { JWT_EXPIRES_IN_SEC, CORS_ORIGIN } from '../config';
+import { JWT_EXPIRES_IN_SEC, CORS_ORIGIN, isProd } from '../config';
 import { getGoogleLoginUrl, handleGoogleLoginCallback, getUserFromToken } from '../services/auth';
 import { errorHandler, ValidationError, AuthenticationError } from '../services/error-handler';
 
@@ -34,7 +34,7 @@ export default function registerAuthSessionRoutes(app: express.Express) {
     if (!code) throw new ValidationError('Missing code');
 
     const { token } = await handleGoogleLoginCallback(code, state);
-    const secure = (process.env.NODE_ENV || 'development') === 'production';
+    const secure = isProd;
     res.setHeader('Set-Cookie', cookieSerialize('vx.session', token, { maxAgeSec: JWT_EXPIRES_IN_SEC, httpOnly: true, sameSite: 'Lax', secure, path: '/' }));
     // Redirect to frontend after setting cookie. Use CORS_ORIGIN when it's a concrete origin; otherwise fallback to '/'
     const origin = (CORS_ORIGIN && CORS_ORIGIN !== '*') ? CORS_ORIGIN : '';
@@ -59,7 +59,7 @@ export default function registerAuthSessionRoutes(app: express.Express) {
 
   app.post('/api/auth/logout', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     void req;
-    const secure = (process.env.NODE_ENV || 'development') === 'production';
+    const secure = isProd;
     const parts = ['vx.session=', 'Path=/', 'SameSite=Lax', 'HttpOnly', 'Max-Age=0'];
     if (secure) parts.push('Secure');
     res.setHeader('Set-Cookie', parts.join('; '));

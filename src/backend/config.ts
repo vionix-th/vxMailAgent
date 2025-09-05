@@ -10,6 +10,7 @@ export const VX_MAILAGENT_KEY = process.env.VX_MAILAGENT_KEY || '';
 export const PORT: number = parseInt(process.env.PORT || '3001', 10);
 export const HOST = process.env.HOST || '172.0.0.1';
 export const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+export const isProd = (process.env.NODE_ENV || 'development') === 'production';
 // OAuth: Google
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';

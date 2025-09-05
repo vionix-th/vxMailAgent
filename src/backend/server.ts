@@ -19,6 +19,7 @@ import logger from './services/logger';
 import { createLiveRepos } from './liveRepos';
 import registerRoutes from './routes';
 import { errorHandler, NotFoundError } from './services/error-handler';
+import { CORS_ORIGIN, isProd } from './config';
  
 
 /** Create and configure the backend Express server. */
@@ -32,12 +33,12 @@ export function createServer() {
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
-  const origin = (process.env.CORS_ORIGIN || '*');
+  const origin = CORS_ORIGIN;
   if (origin && origin !== '*') app.use(cors({ origin, credentials: true }));
   else app.use(cors());
   app.use(express.json());
   app.use((req, res, next) => { void res; logger.info('HTTP request', { method: req.method, url: req.url }); next(); });
-  if ((process.env.NODE_ENV || 'development') === 'production') {
+  if (isProd) {
     app.enable('trust proxy');
     app.use((req, res, next) => {
       const xfProto = String(req.headers['x-forwarded-proto'] || '');
