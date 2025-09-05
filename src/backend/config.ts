@@ -62,6 +62,8 @@ export const USER_MAX_CONVERSATIONS = parseInt(process.env.USER_MAX_CONVERSATION
 export const USER_MAX_LOGS_PER_TYPE = parseInt(process.env.USER_MAX_LOGS_PER_TYPE || '10000', 10);
 export const FETCHER_MANAGER_TTL_MINUTES = parseInt(process.env.FETCHER_MANAGER_TTL_MINUTES || '60', 10);
 export const FETCHER_MANAGER_MAX_FETCHERS = parseInt(process.env.FETCHER_MANAGER_MAX_FETCHERS || '100', 10);
+// Bootstrap concurrency for starting user fetchers on server startup
+export const FETCHER_BOOTSTRAP_CONCURRENCY = parseInt(process.env.FETCHER_BOOTSTRAP_CONCURRENCY || '10', 10);
 
 export function envSummary() {
   return {
@@ -102,6 +104,7 @@ export function envSummary() {
     FETCHER_MANAGER: {
       FETCHER_MANAGER_TTL_MINUTES,
       FETCHER_MANAGER_MAX_FETCHERS,
+      FETCHER_BOOTSTRAP_CONCURRENCY,
     },
     NODE_ENV: process.env.NODE_ENV || 'development',
   };
