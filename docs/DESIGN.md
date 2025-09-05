@@ -145,6 +145,12 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 - Sensitive data redaction in traces via `TRACE_REDACT_FIELDS`; avoid logging secrets elsewhere
 - Immutable audit trail
 
+#### Retention & Pruning
+- Traces: retention TTL controlled by `TRACE_TTL_DAYS`; per-user cap enforced by `USER_MAX_LOGS_PER_TYPE`.
+- Provider events: retention TTL controlled by `PROVIDER_TTL_DAYS`; per-user cap enforced by `USER_MAX_LOGS_PER_TYPE`.
+- Orchestration and fetcher logs: retention TTLs controlled by `ORCHESTRATION_TTL_DAYS` and `FETCHER_TTL_DAYS`; per-user cap enforced by `USER_MAX_LOGS_PER_TYPE`.
+- There are no global repositories or global max-count environment variables.
+
 #### Monitoring
 - Security event monitoring
 - Anomaly detection
@@ -228,6 +234,7 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Logging Service**: All logging functions require user context parameter; no global repositories
 - **Route Dependencies**: All routes pass `LiveRepos` and services directly to route handlers
 - **Path Constants**: Only `USERS_FILE` constant exists; all other global file constants removed
+- **Repository Implementations**: Repositories operate in per-user mode only; legacy global helpers and mode flags were removed. Max-item caps are enforced per user via `USER_MAX_LOGS_PER_TYPE`.
 - **Fetcher Manager**: Per-user instances accepting `LiveRepos` and service functions directly
 
 Data files are organized as:
