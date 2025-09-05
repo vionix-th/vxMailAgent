@@ -18,7 +18,7 @@
 - Storage lives under `data/` (overridable via `VX_MAILAGENT_DATA_DIR`).
 - AES‑256‑GCM at rest when `VX_MAILAGENT_KEY` is a valid 64‑char hex.
 - If missing/invalid, the backend still starts in PLAINTEXT mode and logs a warning. See `src/backend/config.ts::warnIfInsecure()` and `src/backend/persistence.ts`.
-- Tracing/provider events retention settings are in `src/backend/config.ts` (e.g., `TRACE_MAX_TRACES`, `PROVIDER_TTL_DAYS`).
+- Tracing/provider events retention settings are in `src/backend/config.ts` (e.g., `TRACE_TTL_DAYS`, `PROVIDER_TTL_DAYS`).
 
 ## Environment Variables (authoritative)
 
@@ -52,12 +52,10 @@ Source of truth: `src/backend/config.ts`, `src/backend/services/logger.ts`, and 
   - `TRACE_VERBOSE` (default: `false`) — include redacted payload excerpts.
   - `TRACE_MAX_PAYLOAD` (default: `32768`) — bytes per payload.
   - `TRACE_MAX_SPANS` (default: `1000`) — cap spans per trace.
-  - `TRACE_MAX_TRACES` (default: `1000`) — retention cap.
   - `TRACE_TTL_DAYS` (default: `7`) — retention TTL.
   - `TRACE_REDACT_FIELDS` (default: `authorization,api_key,access_token,refresh_token,set-cookie,cookie`) — comma-separated, case-insensitive.
 
 - **Retention (logs & events)**
-  - `PROVIDER_MAX_EVENTS` (default: `5000`)
   - `PROVIDER_TTL_DAYS` (default: `7`)
   - `FETCHER_TTL_DAYS` (default: `7`)
   - `ORCHESTRATION_TTL_DAYS` (default: `7`)
@@ -575,9 +573,9 @@ Response shape:
 ## Tracing & Provider Events (Admin)
 
 - Tracing config in `src/backend/config.ts`:
-  - `TRACE_VERBOSE`, `TRACE_PERSIST`, `TRACE_MAX_PAYLOAD`, `TRACE_MAX_SPANS`, `TRACE_MAX_TRACES`, `TRACE_TTL_DAYS`, `TRACE_REDACT_FIELDS`
+  - `TRACE_VERBOSE`, `TRACE_PERSIST`, `TRACE_MAX_PAYLOAD`, `TRACE_MAX_SPANS`, `TRACE_TTL_DAYS`, `TRACE_REDACT_FIELDS`
 - Provider events retention:
-  - `PROVIDER_MAX_EVENTS`, `PROVIDER_TTL_DAYS`
+  - `PROVIDER_TTL_DAYS` (per-user caps enforced by `USER_MAX_LOGS_PER_TYPE`)
 - Diagnostics endpoints surface traces/provider events for admin only; they are not rendered in the user Results view.
 
 ### Orchestration & Fetcher Logs Retention

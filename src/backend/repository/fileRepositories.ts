@@ -4,7 +4,7 @@ import * as persistence from '../persistence';
 import { Repository } from './core';
 import { dataPath } from '../utils/paths';
 import { ProviderEvent, Trace, FetcherLogEntry, OrchestrationDiagnosticEntry } from '../../shared/types';
-import { TRACE_MAX_TRACES, TRACE_TTL_DAYS, PROVIDER_MAX_EVENTS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_DAYS, ORCHESTRATION_TTL_DAYS } from '../config';
+import { TRACE_TTL_DAYS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_DAYS, ORCHESTRATION_TTL_DAYS } from '../config';
 import { securityAudit } from '../services/security-audit';
 import { SecurityError } from '../services/error-handler';
 import { withFileLock } from '../utils/file-lock';
@@ -292,12 +292,11 @@ export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent
   constructor(
     filePath: string = dataPath('provider-events.json'), 
     containerPath?: string,
-    isPerUser: boolean = true,
     uid?: string
   ) {
     super(filePath, containerPath, uid, {
       ttlMs: () => Math.max(0, PROVIDER_TTL_DAYS) * 24 * 60 * 60 * 1000,
-      maxItems: () => (isPerUser ? USER_MAX_LOGS_PER_TYPE : PROVIDER_MAX_EVENTS),
+      maxItems: () => USER_MAX_LOGS_PER_TYPE,
       getTimestamp: (e) => e.timestamp,
     });
   }
@@ -354,12 +353,11 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
   constructor(
     filePath: string = dataPath('traces.json'), 
     containerPath?: string,
-    isPerUser: boolean = true,
     uid?: string
   ) {
     super(filePath, containerPath, uid, {
       ttlMs: () => Math.max(0, TRACE_TTL_DAYS) * 24 * 60 * 60 * 1000,
-      maxItems: () => (isPerUser ? USER_MAX_LOGS_PER_TYPE : TRACE_MAX_TRACES),
+      maxItems: () => USER_MAX_LOGS_PER_TYPE,
       getTimestamp: (t) => t.createdAt,
     });
   }
@@ -430,22 +428,12 @@ export function createUserJsonRepository<T>(filePath: string, containerPath: str
 
 /** Create a per-user provider events repository. */
 export function createUserProviderEventsRepository(filePath: string, containerPath: string, uid?: string): ProviderEventsRepository {
-  return new FileProviderEventsRepository(filePath, containerPath, true, uid);
-}
-
-/** Create a global provider events repository (legacy). */
-export function createGlobalProviderEventsRepository(filePath: string, containerPath?: string): ProviderEventsRepository {
-  return new FileProviderEventsRepository(filePath, containerPath, false);
+  return new FileProviderEventsRepository(filePath, containerPath, uid);
 }
 
 /** Create a per-user traces repository. */
 export function createUserTracesRepository(filePath: string, containerPath: string, uid?: string): TracesRepository {
-  return new FileTracesRepository(filePath, containerPath, true, uid);
-}
-
-/** Create a global traces repository (legacy). */
-export function createGlobalTracesRepository(filePath: string, containerPath?: string): TracesRepository {
-  return new FileTracesRepository(filePath, containerPath, false);
+  return new FileTracesRepository(filePath, containerPath, uid);
 }
 
 /** Create a per-user fetcher log repository. */

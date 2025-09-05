@@ -35,11 +35,9 @@ export const TRACE_MAX_PAYLOAD = parseInt(process.env.TRACE_MAX_PAYLOAD || '3276
 export const TRACE_MAX_SPANS = parseInt(process.env.TRACE_MAX_SPANS || '1000', 10);
 export const TRACE_REDACT_FIELDS = (process.env.TRACE_REDACT_FIELDS || 'authorization,api_key,access_token,refresh_token,set-cookie,cookie').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 // Retention
-export const TRACE_MAX_TRACES = parseInt(process.env.TRACE_MAX_TRACES || '1000', 10);
 export const TRACE_TTL_DAYS = parseInt(process.env.TRACE_TTL_DAYS || '7', 10);
 
 // Provider events retention (audit log)
-export const PROVIDER_MAX_EVENTS = parseInt(process.env.PROVIDER_MAX_EVENTS || '5000', 10);
 export const PROVIDER_TTL_DAYS = parseInt(process.env.PROVIDER_TTL_DAYS || '7', 10);
 
 // Fetcher log retention
@@ -92,12 +90,10 @@ export function envSummary() {
       TRACE_PERSIST,
       TRACE_MAX_PAYLOAD,
       TRACE_MAX_SPANS,
-      TRACE_MAX_TRACES,
       TRACE_TTL_DAYS,
       TRACE_REDACT_FIELDS_COUNT: TRACE_REDACT_FIELDS.length,
     },
     PROVIDER_EVENTS: {
-      PROVIDER_MAX_EVENTS,
       PROVIDER_TTL_DAYS,
     },
     ORCHESTRATION: {

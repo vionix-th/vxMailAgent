@@ -60,8 +60,8 @@ See `docs/DEVELOPER.md` for usage patterns and options.
   - `VX_MAILAGENT_DATA_DIR` → override `data/` path (absolute or relative to process cwd). See resolution in `src/backend/utils/paths.ts`.
   - `CORS_ORIGIN` → allowed frontend origin for CORS (default `*`)
   - Logging: `LOG_LEVEL` (default `debug` in dev, `info` in prod), `NODE_ENV`
-  - Diagnostics/Tracing: `TRACE_PERSIST`, `TRACE_VERBOSE`, `TRACE_MAX_PAYLOAD`, `TRACE_MAX_SPANS`, `TRACE_MAX_TRACES`, `TRACE_TTL_DAYS`, `TRACE_REDACT_FIELDS`
-  - Retention: `PROVIDER_MAX_EVENTS`, `PROVIDER_TTL_DAYS`, `FETCHER_TTL_DAYS`, `ORCHESTRATION_TTL_DAYS`
+  - Diagnostics/Tracing: `TRACE_PERSIST`, `TRACE_VERBOSE`, `TRACE_MAX_PAYLOAD`, `TRACE_MAX_SPANS`, `TRACE_TTL_DAYS`, `TRACE_REDACT_FIELDS`
+  - Retention: `PROVIDER_TTL_DAYS`, `FETCHER_TTL_DAYS`, `ORCHESTRATION_TTL_DAYS` (per-user caps enforced by `USER_MAX_LOGS_PER_TYPE`)
   - Timeouts (ms): `OPENAI_REQUEST_TIMEOUT_MS`, `GRAPH_REQUEST_TIMEOUT_MS`, `PROVIDER_REQUEST_TIMEOUT_MS`, `CONVERSATION_STEP_TIMEOUT_MS`, `TOOL_EXEC_TIMEOUT_MS`
   - Multi‑user limits: `USER_REGISTRY_TTL_MINUTES`, `USER_REGISTRY_MAX_ENTRIES`, `USER_MAX_FILE_SIZE_MB`, `USER_MAX_CONVERSATIONS`, `USER_MAX_LOGS_PER_TYPE`, `FETCHER_MANAGER_TTL_MINUTES`, `FETCHER_MANAGER_MAX_FETCHERS`
 
