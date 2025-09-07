@@ -65,6 +65,47 @@ export const FETCHER_MANAGER_MAX_FETCHERS = parseInt(process.env.FETCHER_MANAGER
 // Bootstrap concurrency for starting user fetchers on server startup
 export const FETCHER_BOOTSTRAP_CONCURRENCY = parseInt(process.env.FETCHER_BOOTSTRAP_CONCURRENCY || '10', 10);
 
+// ---- Validated OAuth config helpers (fail fast; avoid non-null assertions) ----
+type OAuthCfg = { clientId: string; clientSecret: string; redirectUri: string };
+
+function requireNonEmpty(val: string, key: string): string {
+  if (!val) throw new Error(`Missing required environment variable: ${key}`);
+  return val;
+}
+
+export function getGoogleOAuthConfig(): OAuthCfg {
+  return {
+    clientId: requireNonEmpty(GOOGLE_CLIENT_ID, 'GOOGLE_CLIENT_ID'),
+    clientSecret: requireNonEmpty(GOOGLE_CLIENT_SECRET, 'GOOGLE_CLIENT_SECRET'),
+    redirectUri: requireNonEmpty(GOOGLE_REDIRECT_URI, 'GOOGLE_REDIRECT_URI'),
+  };
+}
+
+export function getOutlookOAuthConfig(): OAuthCfg {
+  return {
+    clientId: requireNonEmpty(OUTLOOK_CLIENT_ID, 'OUTLOOK_CLIENT_ID'),
+    clientSecret: requireNonEmpty(OUTLOOK_CLIENT_SECRET, 'OUTLOOK_CLIENT_SECRET'),
+    redirectUri: requireNonEmpty(OUTLOOK_REDIRECT_URI, 'OUTLOOK_REDIRECT_URI'),
+  };
+}
+
+/**
+ * Prefer dedicated Google Login client if fully configured; otherwise fallback to primary Google client.
+ * Throws a clear error if neither set is fully specified.
+ */
+export function getGoogleLoginOAuthConfigOrPrimary(): OAuthCfg {
+  const loginSetComplete = !!(GOOGLE_LOGIN_CLIENT_ID && GOOGLE_LOGIN_CLIENT_SECRET && GOOGLE_LOGIN_REDIRECT_URI);
+  if (loginSetComplete) {
+    return {
+      clientId: requireNonEmpty(GOOGLE_LOGIN_CLIENT_ID, 'GOOGLE_LOGIN_CLIENT_ID'),
+      clientSecret: requireNonEmpty(GOOGLE_LOGIN_CLIENT_SECRET, 'GOOGLE_LOGIN_CLIENT_SECRET'),
+      redirectUri: requireNonEmpty(GOOGLE_LOGIN_REDIRECT_URI, 'GOOGLE_LOGIN_REDIRECT_URI'),
+    };
+  }
+  // Fallback to primary Google OAuth client
+  return getGoogleOAuthConfig();
+}
+
 export function envSummary() {
   return {
     VX_MAILAGENT_KEY_PRESENT: VX_MAILAGENT_KEY.length === 64,

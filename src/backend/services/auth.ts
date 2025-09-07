@@ -1,4 +1,4 @@
-import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_LOGIN_CLIENT_ID, GOOGLE_LOGIN_CLIENT_SECRET, GOOGLE_LOGIN_REDIRECT_URI, JWT_EXPIRES_IN_SEC, JWT_SECRET } from '../config';
+import { getGoogleLoginOAuthConfigOrPrimary, JWT_EXPIRES_IN_SEC, JWT_SECRET } from '../config';
 import { buildGoogleLoginAuthUrl } from '../oauth/googleLogin';
 import { exchangeGoogleCode, getGoogleUserInfo } from '../oauth/google';
 import { signJwt, verifyJwt } from '../utils/jwt';
@@ -7,11 +7,7 @@ import type { User } from '../../shared/types';
 
 /** Build the Google login initiation URL with signed state. */
 export function getGoogleLoginUrl(): string {
-  const googleCfg = {
-    clientId: GOOGLE_LOGIN_CLIENT_ID || GOOGLE_CLIENT_ID!,
-    clientSecret: GOOGLE_LOGIN_CLIENT_SECRET || GOOGLE_CLIENT_SECRET!,
-    redirectUri: GOOGLE_LOGIN_REDIRECT_URI || GOOGLE_REDIRECT_URI!,
-  };
+  const googleCfg = getGoogleLoginOAuthConfigOrPrimary();
   const rawState = JSON.stringify({ mode: 'login', provider: 'google' });
   const signedState = signJwt({ p: 'google.login', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
   return buildGoogleLoginAuthUrl(googleCfg, signedState);
@@ -19,11 +15,7 @@ export function getGoogleLoginUrl(): string {
 
 /** Handle Google login callback; returns persisted User and signed session token. */
 export async function handleGoogleLoginCallback(code: string, state: string): Promise<{ user: User; token: string }> {
-  const googleCfg = {
-    clientId: GOOGLE_LOGIN_CLIENT_ID || GOOGLE_CLIENT_ID!,
-    clientSecret: GOOGLE_LOGIN_CLIENT_SECRET || GOOGLE_CLIENT_SECRET!,
-    redirectUri: GOOGLE_LOGIN_REDIRECT_URI || GOOGLE_REDIRECT_URI!,
-  };
+  const googleCfg = getGoogleLoginOAuthConfigOrPrimary();
   const payload = state ? verifyJwt(state, JWT_SECRET) : null;
   if (!payload || payload.p !== 'google.login') throw new Error('Invalid or expired state');
   const tokens = await exchangeGoogleCode(googleCfg, code);

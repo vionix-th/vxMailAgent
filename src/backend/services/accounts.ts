@@ -1,7 +1,7 @@
 import https from 'https';
 import logger from './logger';
 import { ValidationError } from './error-handler';
-import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_REDIRECT_URI, JWT_SECRET } from '../config';
+import { getGoogleOAuthConfig, getOutlookOAuthConfig, JWT_SECRET } from '../config';
 import { signJwt, verifyJwt } from '../utils/jwt';
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo, ensureValidGoogleAccessToken } from '../oauth/google';
 import { buildOutlookAuthUrl, exchangeOutlookCode, getOutlookUserInfo, ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outlook';
@@ -80,25 +80,22 @@ export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeS
 // OAuth initiation
 export function initiateGoogleAccountOAuth(rawState: string): string {
   const signedState = signJwt({ p: 'google.account', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-  return buildGoogleAuthUrl(
-    { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
-    signedState
-  );
+  const cfg = getGoogleOAuthConfig();
+  return buildGoogleAuthUrl(cfg, signedState);
 }
 
 export async function initiateOutlookAccountOAuth(rawState: string): Promise<string> {
   const signedState = signJwt({ p: 'outlook.account', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-  return buildOutlookAuthUrl(
-    { clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! },
-    signedState
-  );
+  const cfg = getOutlookOAuthConfig();
+  return buildOutlookAuthUrl(cfg, signedState);
 }
 
 // OAuth callbacks
 export async function handleGoogleAccountCallback(code: string, stateToken: string, req: ReqLike): Promise<Account> {
   const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
   if (!payload || payload.p !== 'google.account') throw new Error('Invalid or expired state');
-  const tokens = await exchangeGoogleCode({ clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! }, code);
+  const cfg = getGoogleOAuthConfig();
+  const tokens = await exchangeGoogleCode(cfg, code);
   const me = await getGoogleUserInfo(tokens.accessToken);
   const email = me?.email || '';
   if (!email) throw new Error('Google profile missing email address');
@@ -120,7 +117,8 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
 export async function handleOutlookAccountCallback(code: string, stateToken: string, req: ReqLike): Promise<Account> {
   const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
   if (!payload || payload.p !== 'outlook.account') throw new Error('Invalid or expired state');
-  const tokens = await exchangeOutlookCode({ clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! }, code);
+  const cfg = getOutlookOAuthConfig();
+  const tokens = await exchangeOutlookCode(cfg, code);
   let email = '';
   if (tokens?.raw?.id_token) {
     try {
@@ -162,11 +160,12 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
   const account = accounts[idx];
 
   if (account.provider === 'gmail') {
+    const cfg = getGoogleOAuthConfig();
     const result = await ensureValidGoogleAccessToken(
       account,
-      GOOGLE_CLIENT_ID!,
-      GOOGLE_CLIENT_SECRET!,
-      GOOGLE_REDIRECT_URI!
+      cfg.clientId,
+      cfg.clientSecret,
+      cfg.redirectUri
     );
     if (result.error) {
       const errTxt = String(result.error || '');
@@ -178,10 +177,7 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
       if (missing || invalidGrant) {
         const rawState = `reauth:${id}`;
         const signedState = signJwt({ p: 'google', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-        const url = buildGoogleAuthUrl(
-          { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
-          signedState
-        );
+        const url = buildGoogleAuthUrl(getGoogleOAuthConfig(), signedState);
         return { ok: false, error: category, reauthUrl: url };
       }
       return { ok: false, error: errTxt };
@@ -196,23 +192,20 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
     }
     return { ok: true, updated: result.updated, tokens: account.tokens };
   } else if (account.provider === 'outlook') {
-    if (!OUTLOOK_CLIENT_ID || !OUTLOOK_CLIENT_SECRET) {
-      return { ok: false, error: 'Missing Outlook OAuth env vars (OUTLOOK_CLIENT_ID/OUTLOOK_CLIENT_SECRET)' };
-    }
+    let cfg;
+    try { cfg = getOutlookOAuthConfig(); }
+    catch (e: any) { return { ok: false, error: e?.message || String(e) }; }
     const result = await ensureValidOutlookAccessToken(
       account,
-      OUTLOOK_CLIENT_ID!,
-      OUTLOOK_CLIENT_SECRET!,
-      OUTLOOK_REDIRECT_URI!
+      cfg.clientId,
+      cfg.clientSecret,
+      cfg.redirectUri
     );
     if (result.error) {
       if (String(result.error).toLowerCase().includes('missing refresh token')) {
         const rawState = `reauth:${id}`;
         const signedState = signJwt({ p: 'outlook', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-        const url = buildOutlookAuthUrl(
-          { clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! },
-          signedState
-        );
+        const url = buildOutlookAuthUrl(getOutlookOAuthConfig(), signedState);
         return { ok: false, error: 'missing_refresh_token', reauthUrl: url };
       }
       logger.error('Outlook refresh failed', { id, error: result.error });
@@ -233,9 +226,7 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
 }
 
 export async function outlookTest(req: ReqLike, id: string): Promise<any> {
-  if (!OUTLOOK_CLIENT_ID || !OUTLOOK_CLIENT_SECRET) {
-    throw new Error('Missing Outlook OAuth env vars (OUTLOOK_CLIENT_ID/OUTLOOK_CLIENT_SECRET)');
-  }
+  const cfg = getOutlookOAuthConfig();
   const accounts = await listAccounts(req);
   if (accounts.length === 0) throw new Error('no accounts found');
   const idx = accounts.findIndex(a => a.id === id);
@@ -245,18 +236,15 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
 
   const result = await ensureValidOutlookAccessToken(
     account,
-    OUTLOOK_CLIENT_ID!,
-    OUTLOOK_CLIENT_SECRET!,
-    OUTLOOK_REDIRECT_URI!
+    cfg.clientId,
+    cfg.clientSecret,
+    cfg.redirectUri
   );
   if (result.error) {
     if (String(result.error).toLowerCase().includes('missing refresh token')) {
       const rawState = `reauth:${id}`;
       const signedState = signJwt({ p: 'outlook', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-      const url = buildOutlookAuthUrl(
-        { clientId: OUTLOOK_CLIENT_ID!, clientSecret: OUTLOOK_CLIENT_SECRET!, redirectUri: OUTLOOK_REDIRECT_URI! },
-        signedState
-      );
+      const url = buildOutlookAuthUrl(getOutlookOAuthConfig(), signedState);
       return { ok: false, error: 'missing_refresh_token', reauthUrl: url };
     }
     throw new Error(String(result.error));
@@ -303,9 +291,7 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
 }
 
 export async function gmailTest(req: ReqLike, id: string): Promise<any> {
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
-    throw new Error('Missing Google OAuth env vars (GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI)');
-  }
+  const cfg = getGoogleOAuthConfig();
   const accounts = await listAccounts(req);
   const idx = accounts.findIndex(a => a.id === id);
   if (idx === -1) throw new Error('account not found');
@@ -314,9 +300,9 @@ export async function gmailTest(req: ReqLike, id: string): Promise<any> {
 
   const result = await ensureValidGoogleAccessToken(
     account,
-    GOOGLE_CLIENT_ID!,
-    GOOGLE_CLIENT_SECRET!,
-    GOOGLE_REDIRECT_URI!
+    cfg.clientId,
+    cfg.clientSecret,
+    cfg.redirectUri
   );
   if (result.error) {
     const errTxt = String(result.error || '');
@@ -328,10 +314,7 @@ export async function gmailTest(req: ReqLike, id: string): Promise<any> {
     if (missing || invalidGrant) {
       const rawState = `reauth:${id}`;
       const signedState = signJwt({ p: 'google', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-      const url = buildGoogleAuthUrl(
-        { clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET!, redirectUri: GOOGLE_REDIRECT_URI! },
-        signedState
-      );
+      const url = buildGoogleAuthUrl(getGoogleOAuthConfig(), signedState);
       return { ok: false, error: category, reauthUrl: url };
     }
     throw new Error(errTxt);

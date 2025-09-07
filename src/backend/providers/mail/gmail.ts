@@ -1,6 +1,6 @@
 import type { Account, EmailEnvelope } from '../../../shared/types';
 import type { IMailProvider, FetchOptions } from './base';
-import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } from '../../config';
+import { getGoogleOAuthConfig } from '../../config';
 import { ensureValidGoogleAccessToken, getGoogleOAuth2Client } from '../../oauth/google';
 import { google } from 'googleapis';
 
@@ -8,11 +8,12 @@ export const gmailProvider: IMailProvider = {
   id: 'gmail',
 
   async ensureValidAccessToken(account: Account) {
+    const cfg = getGoogleOAuthConfig();
     const result = await ensureValidGoogleAccessToken(
       account,
-      GOOGLE_CLIENT_ID!,
-      GOOGLE_CLIENT_SECRET!,
-      GOOGLE_REDIRECT_URI!,
+      cfg.clientId,
+      cfg.clientSecret,
+      cfg.redirectUri,
     );
     return result;
   },
@@ -22,10 +23,11 @@ export const gmailProvider: IMailProvider = {
     const unread = (typeof opts?.unreadOnly === 'boolean' ? opts!.unreadOnly : true);
     const q = unread ? 'is:unread' : '';
 
+    const cfg = getGoogleOAuthConfig();
     const oauth2Client = getGoogleOAuth2Client(
-      GOOGLE_CLIENT_ID!,
-      GOOGLE_CLIENT_SECRET!,
-      GOOGLE_REDIRECT_URI!,
+      cfg.clientId,
+      cfg.clientSecret,
+      cfg.redirectUri,
     );
     oauth2Client.setCredentials({ access_token: account.tokens.accessToken });
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
