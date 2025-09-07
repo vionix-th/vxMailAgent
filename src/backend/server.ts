@@ -1,62 +1,42 @@
 import express from 'express';
-import cors from 'cors';
 
 import { requireAuth } from './middleware/auth';
 import { setOrchestrationLog as svcSetOrchestrationLog, logProviderEvent as svcLogProviderEvent, getTraces } from './services/logging';
 import { newId } from './utils/id';
 import { ProviderEvent } from '../shared/types';
 
-import { User } from '../shared/types';
-import { USERS_FILE } from './utils/paths';
-import { createJsonRepository } from './repository/fileRepositories';
-import { setUsersRepo } from './services/users';
 import registerHealthRoutes from './routes/health';
 // Cleanup routes kept (admin); health route is unauthenticated
 import { FetcherManager } from './services/fetcher-manager';
 import { attachUserContext } from './middleware/user-context';
 import { ReqLike } from './utils/repo-access';
-import logger from './services/logger';
-import { createLiveRepos } from './liveRepos';
+import { initRepos } from './initRepos';
 import registerRoutes from './routes';
 import { errorHandler, NotFoundError } from './services/error-handler';
-import { CORS_ORIGIN, isProd } from './config';
+import {
+  configureSecurityHeaders,
+  configureCors,
+  configureParsersAndRequestLogging,
+  configureHttpsEnforcement,
+} from './bootstrap/app';
  
 
 /** Create and configure the backend Express server. */
 export function createServer() {
   const app = express();
-  const repos = createLiveRepos();
+  const repos = initRepos();
 
-  app.use((req, res, next) => {
-    void req; // satisfy noUnusedParameters
-    res.setHeader('Content-Security-Policy', "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'");
-    res.setHeader('Referrer-Policy', 'no-referrer');
-    next();
-  });
-  const origin = CORS_ORIGIN;
-  if (origin && origin !== '*') app.use(cors({ origin, credentials: true }));
-  else app.use(cors());
-  app.use(express.json());
-  app.use((req, res, next) => { void res; logger.info('HTTP request', { method: req.method, url: req.url }); next(); });
-  if (isProd) {
-    app.enable('trust proxy');
-    app.use((req, res, next) => {
-      const xfProto = String(req.headers['x-forwarded-proto'] || '');
-      if (req.secure || xfProto === 'https') return next();
-      const host = req.headers.host;
-      res.redirect(301, `https://${host}${req.url}`);
-    });
-    app.use((req, res, next) => { void req; res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains'); next(); });
-  }
+  // App configuration (security headers, CORS, parsers, logging, HTTPS)
+  configureSecurityHeaders(app);
+  configureCors(app);
+  configureParsersAndRequestLogging(app);
+  configureHttpsEnforcement(app);
 
   // Public health check (unauthenticated)
   registerHealthRoutes(app);
 
   app.use(requireAuth);
   app.use(attachUserContext);
-  // System-level repositories: only users registry remains
-  const usersRepo = createJsonRepository<User>(USERS_FILE);
-  setUsersRepo(usersRepo);
   const fetcherManager = new FetcherManager(repos);
 
   registerRoutes(app, repos, fetcherManager, {
@@ -96,3 +76,4 @@ export function createServer() {
 
   return { app, fetcherManager } as const;
 }
+
