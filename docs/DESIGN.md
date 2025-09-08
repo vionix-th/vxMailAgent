@@ -1,6 +1,4 @@
-# Design Specification
-
-# vxMailAgent Design Specification
+# vxMailAgent — Design Specification
 
 Note on scope: This document describes architecture and intended behaviors, and may include planned features. For the authoritative list of implemented HTTP APIs and developer procedures, see `docs/DEVELOPER.md`.
 
@@ -14,6 +12,13 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 - **Authentication**: OAuth 2.0 with JWT sessions
 - **Data Storage**: Encrypted JSON files with strict user isolation
 - **AI Integration**: OpenAI API for natural language processing
+
+### Terminology
+
+- **Thread**: Canonical persisted chat object. In code this is `ConversationThread` with OpenAI‑aligned `messages[]` and lifecycle fields.
+- **Conversation**: Informal synonym for Thread used in UI/docs.
+- **Turn**: One user message followed by the assistant’s reply. A Director step may include tool execution and a subsequent assistant message.
+- **Workspace Items**: MIME‑typed artifacts persisted via the Workspaces repository and keyed by the director thread id (`conversationId`). Not embedded in the thread transcript.
 
 ### Core Security Principles
 
@@ -42,51 +47,28 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 ### Core Entities
 
 #### User
-- `id`: Unique identifier (UUID v4)
-- `email`: User's primary email
-- `name`: Display name
-- `createdAt`: Account creation timestamp
-- `lastLogin`: Last login timestamp
-- `preferences`: User preferences
+- `id`: Stable user id (e.g., `google:{sub}`)
+- `email`: Primary email
+- `name?`: Optional display name
+- `picture?`: Optional avatar URL
+- `createdAt`: Account creation timestamp (ISO)
+- `lastLoginAt`: Last login timestamp (ISO)
 
 #### Account (Email Provider)
 - `id`: Unique identifier (UUID v4)
-- `userId`: Owner reference
 - `provider`: 'gmail' | 'outlook'
 - `email`: Account email
-- `displayName`: Account display name
-- `accessToken`: Encrypted OAuth access token
-- `refreshToken`: Encrypted OAuth refresh token
-- `expiresAt`: Token expiration timestamp
-- `signature`: Email signature (HTML)
-- `settings`: Provider-specific settings
+- `signature`: Email signature
+- `tokens`: `{ accessToken, refreshToken, expiry }`
 
-#### Workspace
-- `id`: Unique identifier (UUID v4)
-- `userId`: Owner reference
-- `name`: Workspace name
-- `description`: Optional description
-- `createdAt`: Creation timestamp
-- `updatedAt`: Last update timestamp
-- `tags`: String array for categorization
-
-#### WorkspaceItem
-- `id`: Unique identifier (UUID v4)
-- `workspaceId`: Parent workspace
-- `mimeType`: MIME type of content
-- `label`: Human-readable label
-- `data`: Content data (base64 encoded if binary)
-- `encoding`: 'utf8' | 'base64' | 'binary'
-- `size`: Size in bytes
-- `createdAt`: Creation timestamp
-- `updatedAt`: Last update timestamp
-- `deletedAt`: Soft delete timestamp
-- `metadata`: Additional metadata (JSON)
+#### Workspace Items (director-thread scoped)
+- Persisted via the Workspaces repository, keyed by the director conversation thread id (`conversationId`).
+- Shape matches `WorkspaceItem` in `src/shared/types.ts` (MIME-first, provenance context, optional `tags`, `revision`, soft-delete via `deleted`).
+- Items are not embedded in `ConversationThread` objects; use Workspaces endpoints to read/write.
 
 ### Relationships
 - User 1:N Account
-- User 1:N Workspace
-- Workspace 1:N WorkspaceItem
+- Each director conversation thread 1:N WorkspaceItem (via Workspaces repository, keyed by `conversationId`)
 
 ## 3. Security Architecture
 
@@ -109,12 +91,9 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 ### Data Protection
 
 #### At Rest Encryption
-- **AES-256-GCM** with random IVs
-- Per-file encryption keys derived from master key
-- Secure key management
-  - Environment variable injection
-  - No hardcoded keys
-  - Key rotation support
+- **AES-256-GCM** with random IVs when `VX_MAILAGENT_KEY` is a valid 64‑char hex key; plaintext JSON in development when unset/invalid.
+- Secure key management via environment variables; no hardcoded keys.
+- Key rotation: not implemented; rotate by re‑encrypting data offline if required.
 
 #### In-Transit Security
 - Deployment: terminate TLS (TLS 1.2+) at proxy/load balancer
@@ -159,7 +138,7 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 - Implemented routes include health, prompts, prompt-templates, conversations, accounts, directors, agents, filters, memory, settings, fetcher, diagnostics, and workspaces. Some live tools (calendar/todo/filesystem/memory) described below are planned and may not be wired as HTTP APIs yet.
 - Route composition uses a generic CRUD routes helper for common resources to reduce duplication; resource-specific validation/transform/sanitization are provided via callbacks.
 
-Core Concept: For each routed email, a director AI orchestrates specialized agents via tool-calls and inter-agent messaging. All agents work in a shared Workspace for that email, where they add, list and remove items. The director decides next actions and completes the run; the Workspace is the deliverable.
+Core Concept: For each routed email, a director AI orchestrates specialized agents via tool-calls and inter-agent messaging. All agents work in a shared Workspace for that email (scoped to the director thread), where they add, list and remove items. The director decides next actions and completes the run; the Workspace is the deliverable. There is no explicit "finalize" flag — completion is implicit when loops end.
 
 ## 2. Functional Requirements
 - **Multi-Account Support**: Users add multiple Gmail/Outlook accounts, with emails fetched and processed in parallel.
@@ -341,7 +320,7 @@ data/
 
 #### 3.2.3 Director Orchestration
 - **Functionality**: Receive filtered emails and initialize a conversation using the director’s prompt and `ApiConfig`. The director’s model is in control and uses function-calling to invoke tools (calendar, to-do, filesystem, memory) and to message specialized agents via per-agent tools. Agents are not invoked independently.
-- **Configuration**: Stored in JSON (e.g., `{ id: "director1", name: "Client Manager", prompt: "...", imprint: "", apiConfigId: "config1", accountIds: ["jane@company.com"], memoryAccess: ["agent1"] }`).
+- **Configuration**: `{ id, name, promptId, apiConfigId, agentIds: string[], enabledToolCalls?: string[] }`.
 - **Implementation**: The orchestration loop is director-driven. The director’s model issues tool calls and, when delegating, spawns agent conversation threads; agent outputs are returned to the director as tool results, and the director produces the final content.
 
 #### 3.2.4 Specialized Agents
@@ -360,9 +339,9 @@ data/
   - Ensures full compatibility with OpenAI ChatML and future multi-turn conversational models.
 
   - **File System**: Search/retrieve files by name/content within virtual root (e.g., `/home/jane/client_docs`), using Node.js `fs` (e.g., `readdir`, `readFile`).
-  - **Memory**: Search/add/edit semi-structured memories (e.g., `{ id: string, content: string, scope: "global" | "shared" | "local", timestamp: string }`); search cascades (local→shared→global), additions specify scope.
+  - **Memory**: Search/add/edit semi-structured memories (see `MemoryEntry` in `src/shared/types.ts`: `{ id, scope, content, created, updated, tags?, relatedEmailId?, owner?, metadata? }`); search cascades (local→shared→global), additions specify scope.
 - **Output**: Text (plain, markdown, rich text) or images; tool outputs (e.g., file content, memory entries) included only if agent specifies (e.g., in reply text or as attachments).
-- **Configuration**: Stored in JSON (e.g., `{ id: "agent1", directorId: "director1", name: "Psychologist", prompt: "...", tools: ["calendar_read", "memory_add"] }`).
+- **Configuration**: Agent objects use `{ id, name, type: 'openai', promptId, apiConfigId, enabledToolCalls?: string[] }`.
 - **Implementation**: Uses OpenAI’s function-calling API for tasks/tools. Tool outputs are processed by the agent’s prompt logic.
 
 #### 3.2.5 Processing Pipeline
@@ -370,7 +349,7 @@ data/
 - **Implementation**: Uses Node.js async (e.g., `Promise.all`) for parallel processing, respects external provider API rate limits (OpenAI, Gmail, Microsoft Graph). Errors trigger UI alerts and are logged via the backend logger (`src/backend/services/logger.ts`).
 
 #### 3.2.6 UI
- - **Layout**: Split-pane for the Results view. The original email panel is visually de-emphasized and collapsed by default (read-only, headers/body/attachments) and can be toggled from the Results header. The right pane shows results. In the current simplified browser UI, the right pane is a single preview-only view for the selected workspace item (no chat thread rendering). The Diagnostics view is a separate panel focused on the audit/process trail; it may display structured debug artifacts (function returns, provider payload summaries) but must not re-render the User Result View.
+ - **Layout**: Conversations view with a table of threads and a detail panel. The detail shows transcript and the director-thread-scoped workspace items. Diagnostics is a separate admin panel focused on the audit/process trail and must not re‑render the user result view.
   - **Components**:
   - **Accounts**: Modal for OAuth, signature preview/edit (text area showing provider default or custom).
   - **API Settings**: Form to add/edit OpenAI keys/models.
@@ -385,7 +364,7 @@ data/
       - Selecting a workspace item: right pane shows a MIME-aware preview (markdown/HTML for text, image previews, file chips, formatted JSON for structured content). Chat is hidden in this mode.
     - The original email panel is collapsed by default; it can be toggled to show snippet/body/attachments.
     - Toolbar: Refresh, Delete active, Delete selected/all; per-row delete with confirmation. Wired to existing backend endpoints. Diagnostics/admin controls remain separate.
-    - Canonical component: `src/frontend/src/Results.tsx`.
+    - Canonical component: `src/frontend/src/Conversations.tsx`.
   - **Diagnostics (Admin/Debug)**:
     - Two-pane layout with resizable splitter. Left: grouped/flat tree of cycles and threads. Right: detail tabs (see below).
     - Grouping and attribution are strictly canonical, using only: `fetchCycleId`, `dirThreadId`, `agentThreadId` (and `phase` for labeling). No heuristic fix-ups.
@@ -395,9 +374,9 @@ data/
       - Result: shows the structured result payload (if present) and Diagnostic detail as JSON for debugging. This does not re-render the user-facing Result View.
       - Email: shows headers, snippet, and attachments for the originating email, with a toggle to view raw JSON.
     - Delete controls: per-entry delete and bulk delete are available; operations use the Diagnostics endpoints.
-  - **Workspace**: Conversation detail view renders the workspace item list (type, provenance, tags, preview, created/updated, revision) with controls to Add/Update/Remove. Wired to:
+  - **Workspace**: Conversation detail view renders the workspace item list (type, provenance, tags, preview, created/updated, revision) with controls to Update/Remove (create is via orchestration tools). Wired to:
     - `GET /api/workspaces/:id/items`
-    - `POST /api/workspaces/:id/items`
+    - [no REST create endpoint — creation is performed by orchestration tools]
     - `PUT /api/workspaces/:id/items/:itemId`
     - `DELETE /api/workspaces/:id/items/:itemId[?hard=true]`
   - **Notifications**: Browser Notification API (e.g., “Processing complete for email ID:123”).
@@ -428,44 +407,38 @@ data/
 #### 3.2.8 Director-Driven Orchestration (Model-In-Control)
 - **Overview**: The director’s LLM is authoritative. It initializes the conversation for each routed email and controls the flow via function-calling.
 - **Tools (Director model)**: The director sees a curated tool surface:
-  - Discovery: `list_agents` (assigned roster), `list_tools` (currently available tools, reflecting dynamic exclusions).
-  - Agent messaging: per-agent tools exposed as `agent__<slugOrId>`.
+  - Agent messaging: per-agent tools exposed as `agent__<id>` for assigned agents only.
   - Workspace tools: `workspace_add_item`, `workspace_list_items`, `workspace_get_item`, `workspace_update_item`, `workspace_remove_item`.
-  - Live tools: `calendar_read`, `calendar_add`, `todo_add`, `filesystem_search`, `filesystem_retrieve`, `memory_search`, `memory_add`, `memory_edit`.
-  - Tool names and schemas are defined in `src/shared/tools.ts`; live provider actions are handled via stub implementations in `src/backend/toolCalls.ts` (no separate HTTP routes yet).
-  - **Conditional availability**: If a director has no assigned agents, there are no agent tools. Discovery tools still return an empty roster.
-  - **Agent messaging (conversational, session-based)**: The director manages agent conversations by calling a per-agent tool with a message and optional `sessionId`.
-  - If `sessionId` is absent, a new agent session (child `ConversationThread`) is created and returned.
-  - Each call appends the director’s message to the agent session and runs the agent turn. The agent may call tools; the application resolves those tool calls and feeds results back to the agent until the agent emits an assistant message or a step-limit is reached.
-  - The tool result returned to the director includes `{ sessionId, output, toolCalls[], done? }`. The director decides whether to continue messaging the agent, manipulate the workspace, or complete the run.
-- **Session lifecycle**:
-  - Agent session reuse: within a single director conversation, each agent has at most one active session. The director reuses the agent `sessionId` across multiple `agent__<id>` tool calls. Director conversations are never reused across emails/runs.
-  - Timeout: sessions expire after a configurable inactivity period (e.g., 15 minutes) and reject further messages with a clear error. Timeout is logged.
-  - Scope end (director completion): when a director conversation is completed or otherwise closed, all child agent sessions are marked `status: 'completed'` with `endedAt` set. These sessions are not `finalized` and further messages to those sessions are rejected.
-  - Lifecycle fields (ConversationThread):
-    - `status`: includes `ongoing` | `completed` | `failed` | `expired`.
-    - `lastActiveAt`: ISO timestamp of the last message/activity in the thread.
-    - `expiresAt`: ISO timestamp when the session becomes invalid due to inactivity.
-  - Finalized flag semantics:
-    - Only director threads set `finalized: true` on completion. Agent threads never set `finalized: true`; their terminal state is expressed via `status` and timestamps.
-  - Settings:
-    - `sessionTimeoutMinutes` (default 15) controls inactivity timeout. Exposed via Settings API/UI.
-  - Rejections and logging:
-    - Agent tool calls with an expired `sessionId` return a structured error (`reason: "expired"`).
-    - Agent tool calls after director completion return a structured error (`reason: "completed"`).
-    - All lifecycle events are timestamped and surfaced in diagnostics.
+  - Live tools (as available): `calendar_read`, `calendar_add`, `todo_add`, `filesystem_search`, `filesystem_retrieve`, `memory_search`, `memory_add`, `memory_edit`.
+  - Effective registry: mandatory tools always on; optional tools filtered by `director.enabledToolCalls`.
+  - Dynamic `agent__<id>` tools limited to `director.agentIds` when provided.
+  - Tool names/schemas: see `src/shared/tools.ts`. Provider actions are handled by `src/backend/toolCalls.ts`.
+  - Agent delegation call ensures or creates an agent child `ConversationThread`, runs the agent loop (bounded steps), and returns a summary `{ status, agentThreadId }` as a director tool message.
+- **Lifecycle**:
+  - Within a director conversation, each agent is reused via a single child agent thread when invoked repeatedly.
+  - No explicit session object or timeout semantics. Completion is implicit when loops end or step limits are reached.
+  - `ConversationThread.status` uses `ongoing | completed | failed | cancelled | timeout` with `startedAt`, optional `endedAt`, and `lastActiveAt`.
+  - There is no `finalized` flag and no `expired` status.
 - **Traceability**: Each `ConversationThread` (director/agent) maintains a canonical OpenAI-aligned transcript in `messages[]`. Provider requests/responses/errors are appended as separate `ProviderEvent` entries (request/response/error) with timestamps, usage, and latency. Diagnostics endpoints expose these events; the user-facing chat derives solely from the canonical transcript.
+
+ - **Invariants**:
+   - A director thread is never reused across emails/runs; exactly one director thread per (emailId × directorId).
+   - All workspace operations are scoped to the director thread id (`conversationId`); agents write into the director’s workspace.
+   - Tool registry: dynamic `agent__<id>` tools only for the director’s assigned agents; optional tools gated by `enabledToolCalls`; mandatory tools are always available.
+   - Transcript cadence is OpenAI-aligned: assistant with `tool_calls[]` → one tool message per call (matching `tool_call_id`) → next assistant.
 
 #### 3.2.8b OpenAI Tools and Canonical Signatures
 
 - **Discovery (Director)**
   - `list_agents()` → returns assigned agents: `[{ id, name, summary?, apiConfigId }]`.
   - `list_tools()` → returns currently available tools for the director context: `[{ name, description, paramsSummary }]`.
+  - `tool_help(name)` → returns detailed help for a tool (purpose, parameters, examples).
 
 - **Agent Messaging (Director)**
   - Per-agent tools exposed as `agent__<slugOrId>` share the same signature:
     - Input: `{ input: string; sessionId?: string; options?: { allowTools?: boolean; toolFilter?: string[] } }` (`input` required).
     - Output: `{ sessionId: string; output: string; toolCalls: [{ name: string; args: any; success: boolean; error?: string }]; done?: boolean }`.
+  - Director-side summary embedded in the transcript (tool message content) is JSON-stringified and may use a compact shape: `{ status: 'completed' | 'failed', agentThreadId }`.
 
 - **Workspace (Common and Director-only)**
   - Common (director + agents):
@@ -475,6 +448,9 @@ data/
     - `workspace_update_item(id, patch, expectedRevision?)` → `{ item }`
     - `workspace_remove_item(id, hardDelete?)` → `{ removed: true }`
     - Access: All participants (director and agents) may add, list, update, and remove any workspace item. `hardDelete` is available to all participants.
+  - Tool message content uses `JSON.stringify(result)` for transcript tool messages. Canonical result shapes:
+    - Success: `{ ok: true, item }` or `{ ok: true, items }`.
+    - Error: `{ ok: false, error }`.
 
 - **Live Tools (Director and Agent)**
   - `calendar_read(provider, accountId, dateRange)` → returns events. Required: `provider`, `accountId`, `dateRange: { start, end }`.
