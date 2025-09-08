@@ -11,6 +11,7 @@ export type OrchBaseInput = {
   agent?: string;
   agentName?: string;
   emailSummary: string;
+  emailId: string;
   accountId?: string;
   email?: EmailEnvelope;
   fetchCycleId?: string;
@@ -28,15 +29,16 @@ export function buildOrchBase(
   return {
     timestamp: new Date().toISOString(),
     director: input.director,
-    directorName: input.directorName,
+    emailId: input.emailId,
+    ...(input.directorName ? { directorName: input.directorName } : {}),
     agent: input.agent ?? '',
-    agentName: input.agentName ?? '',
+    ...(input.agentName ? { agentName: input.agentName } : {}),
     emailSummary: input.emailSummary,
-    accountId: input.accountId,
-    email: input.email,
-    fetchCycleId: input.fetchCycleId,
-    dirThreadId: input.dirThreadId,
-    agentThreadId: input.agentThreadId,
+    ...(input.accountId ? { accountId: input.accountId } : {}),
+    ...(input.email ? { email: input.email } : {}),
+    ...(input.fetchCycleId ? { fetchCycleId: input.fetchCycleId } : {}),
+    ...(input.dirThreadId ? { dirThreadId: input.dirThreadId } : {}),
+    ...(input.agentThreadId ? { agentThreadId: input.agentThreadId } : {}),
   };
 }
 

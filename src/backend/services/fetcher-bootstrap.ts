@@ -1,5 +1,5 @@
 import { FETCHER_BOOTSTRAP_CONCURRENCY } from '../config';
-import { getUsersRepo } from './users';
+import { getUserAccountsRepo } from './users';
 import { repoBundleRegistry } from '../repository/registry';
 import logger from './logger';
 import type { FetcherLogEntry } from '../../shared/types';
@@ -11,7 +11,7 @@ import type { FetcherManager } from './fetcher-manager';
  */
 export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise<void> {
   try {
-    const users = await getUsersRepo().getAll();
+    const users = await getUserAccountsRepo().getAll();
     const limit = Math.max(1, FETCHER_BOOTSTRAP_CONCURRENCY || 1);
 
     async function worker(u: any) {

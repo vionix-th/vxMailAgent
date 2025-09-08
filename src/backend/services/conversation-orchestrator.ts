@@ -39,7 +39,7 @@ export interface OrchestrationResult {
  * spawns Agent threads, and persists transcripts and provider diagnostics.
  */
 export class ConversationOrchestrator {
-  private activeSteps = new Map<string, { timeoutId: NodeJS.Timeout; startTime: number }>();
+  private activeSteps = new Map<string, { timeoutId: NodeJS.Timeout; startTime: number; emailId: string }>();
   private stepLogger: ConversationStepLogger;
   private providerLogger: ProviderEventLogger;
 
@@ -92,7 +92,7 @@ export class ConversationOrchestrator {
     const { thread } = context;
     const stepStartTime = Date.now();
     
-    this.stepLogger.logStepStart(thread.id, thread.kind);
+    this.stepLogger.logStepStart(thread.id, thread.kind, thread.email.id);
     
     try {
       const stepResult = await this.executeConversationStep(context, userReq);
@@ -104,14 +104,15 @@ export class ConversationOrchestrator {
           thread.id,
           thread.kind,
           stepDuration,
-          stepResult.error || 'unknown_error'
+          stepResult.error || 'unknown_error',
+          thread.email.id
         );
         return {
           updatedThread: thread,
           success: false,
           shouldContinue: false,
-          error: stepResult.error
-        };
+          ...(stepResult.error ? { error: stepResult.error } : {}),
+        } as OrchestrationResult;
       }
 
       let updatedThread = await this.updateThreadMessages(
@@ -141,7 +142,8 @@ export class ConversationOrchestrator {
         thread.kind,
         stepDuration,
         shouldContinue,
-        stepResult.toolCalls?.length || 0
+        stepResult.toolCalls?.length || 0,
+        thread.email.id
       );
 
       return {
@@ -153,7 +155,7 @@ export class ConversationOrchestrator {
     } catch (error: any) {
       const stepDuration = Date.now() - stepStartTime;
       
-      this.stepLogger.logStepError(thread.id, thread.kind, stepDuration, error.message);
+      this.stepLogger.logStepError(thread.id, thread.kind, stepDuration, error.message, thread.email.id);
 
       // On error, finalize thread as failed
       let failedThread: ConversationThread = thread;
@@ -249,7 +251,7 @@ export class ConversationOrchestrator {
     }, userReq);
 
     try {
-      this.stepLogger.logEngineStart(thread.id, thread.kind, thread.messages.length);
+      this.stepLogger.logEngineStart(thread.id, thread.kind, thread.messages.length, thread.email.id);
 
       const stepPromise = conversationEngine.run({
         messages: thread.messages as any,
@@ -266,7 +268,7 @@ export class ConversationOrchestrator {
 
       const stepTimeoutPromise = new Promise<never>((_, reject) => {
         const timeoutId = setTimeout(() => {
-          this.stepLogger.logEngineTimeout(thread.id, thread.kind, CONVERSATION_STEP_TIMEOUT_MS);
+          this.stepLogger.logEngineTimeout(thread.id, thread.kind, CONVERSATION_STEP_TIMEOUT_MS, thread.email.id);
           // Clean up active step tracking
           this.activeSteps.delete(thread.id);
           reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`));
@@ -275,7 +277,8 @@ export class ConversationOrchestrator {
         // Track active step for cleanup
         this.activeSteps.set(thread.id, {
           timeoutId,
-          startTime: Date.now()
+          startTime: Date.now(),
+          emailId: thread.email.id
         });
       });
 
@@ -569,7 +572,7 @@ export class ConversationOrchestrator {
       clearTimeout(activeStep.timeoutId);
       this.activeSteps.delete(threadId);
       
-      this.stepLogger.logStepCancelled(threadId, Date.now() - activeStep.startTime);
+      this.stepLogger.logStepCancelled(threadId, Date.now() - activeStep.startTime, activeStep.emailId);
       
       return true;
     }
@@ -591,7 +594,7 @@ export class ConversationOrchestrator {
     const count = this.activeSteps.size;
     for (const [threadId, step] of this.activeSteps.entries()) {
       clearTimeout(step.timeoutId);
-      this.stepLogger.logStepCancelledShutdown(threadId, Date.now() - step.startTime);
+      this.stepLogger.logStepCancelledShutdown(threadId, Date.now() - step.startTime, step.emailId);
     }
     this.activeSteps.clear();
     return count;

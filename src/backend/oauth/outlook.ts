@@ -34,8 +34,8 @@ export async function exchangeOutlookCode(cfg: OAuthProviderConfig, code: string
   });
   const accessToken = String(json.access_token || '');
   const refreshToken = json.refresh_token ? String(json.refresh_token) : undefined;
-  const expiryISO = computeExpiryISO(typeof json.expires_in === 'number' ? json.expires_in : undefined);
-  return { accessToken, refreshToken, expiryISO, raw: json };
+  const expiryISO = typeof json.expires_in === 'number' ? computeExpiryISO(json.expires_in) : computeExpiryISO();
+  return { accessToken, ...(refreshToken ? { refreshToken } : {}), expiryISO, raw: json } as OAuthTokens;
 }
 
 export async function refreshOutlookToken(cfg: OAuthProviderConfig, refreshToken: string): Promise<OAuthTokens> {

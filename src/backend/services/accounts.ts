@@ -74,7 +74,10 @@ export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeS
   const filtered = accounts.filter(a => a.id !== id);
   await persistAccounts(req, filtered);
   logger.debug('Deleted account', { id, before: accounts.length, after: filtered.length });
-  return { revokeStatus, revokeError };
+  const resp: { revokeStatus?: boolean; revokeError?: string } = {};
+  if (typeof revokeStatus === 'boolean') resp.revokeStatus = revokeStatus;
+  if (typeof revokeError === 'string') resp.revokeError = revokeError;
+  return resp;
 }
 
 // OAuth initiation

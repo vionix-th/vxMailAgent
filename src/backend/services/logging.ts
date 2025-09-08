@@ -113,13 +113,13 @@ export function beginTrace(seed?: Partial<Trace>, req?: ReqLike): string {
   const id = seed?.id || newId();
   const t: Trace = {
     id,
-    emailId: seed?.emailId,
-    accountId: seed?.accountId,
-    provider: seed?.provider,
+    ...(seed?.emailId ? { emailId: seed.emailId } : {}),
+    ...(seed?.accountId ? { accountId: seed.accountId } : {}),
+    ...(seed?.provider ? { provider: seed.provider } : {}),
     createdAt: new Date().toISOString(),
     status: 'ok',
     spans: [],
-  };
+  } as Trace;
   const repo = getTracesRepo(req);
   if (TRACE_PERSIST && repo) enqueue(() => repo.append(t), 'beginTrace');
   return id;
@@ -148,20 +148,19 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
     if (t.spans.length >= TRACE_MAX_SPANS) return;
     const s: Span = {
       id: sid,
-      parentId: span.parentId,
       type: span.type,
-      name: span.name,
       status: 'ok',
       start: now,
-      emailId: span.emailId,
-      provider: span.provider,
-      directorId: span.directorId,
-      agentId: span.agentId,
-      toolCallId: span.toolCallId,
-      request: TRACE_VERBOSE ? redact(span.request) : undefined,
-      response: undefined,
-      annotations: span.annotations,
-    };
+      ...(span.parentId ? { parentId: span.parentId } : {}),
+      ...(span.name ? { name: span.name } : {}),
+      ...(span.emailId ? { emailId: span.emailId } : {}),
+      ...(span.provider ? { provider: span.provider } : {}),
+      ...(span.directorId ? { directorId: span.directorId } : {}),
+      ...(span.agentId ? { agentId: span.agentId } : {}),
+      ...(span.toolCallId ? { toolCallId: span.toolCallId } : {}),
+      ...(TRACE_VERBOSE && span.request !== undefined ? { request: redact(span.request) } : {}),
+      ...(span.annotations ? { annotations: span.annotations } : {}),
+    } as Span;
     t.spans.push(s);
   }), 'beginSpan');
   return sid;

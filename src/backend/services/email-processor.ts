@@ -129,14 +129,15 @@ export class EmailProcessor {
       request: { filtersCount: filters.length }
     }, userReq);
 
-    const filterEvaluations = evaluateFilters(filters, {
+    const ctx = {
       from: envelope.from,
       subject: envelope.subject,
-      bodyPlain: envelope.bodyPlain,
-      bodyHtml: envelope.bodyHtml,
-      snippet: envelope.snippet,
-      date: envelope.date
-    });
+      ...(envelope.bodyPlain ? { bodyPlain: envelope.bodyPlain } : {}),
+      ...(envelope.bodyHtml ? { bodyHtml: envelope.bodyHtml } : {}),
+      ...(envelope.snippet ? { snippet: envelope.snippet } : {}),
+      ...(envelope.date ? { date: envelope.date } : {}),
+    };
+    const filterEvaluations = evaluateFilters(filters, ctx as any);
 
     endSpan(traceId, sFilters, {
       status: 'ok',

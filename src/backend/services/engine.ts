@@ -46,23 +46,27 @@ export const conversationEngine: ConversationEngine = {
       }
     }
 
-    const result = await chatCompletion(apiConfig.apiKey, apiConfig.model, messages as any, {
+    const completionOpts: any = {
       tools,
       tool_choice: tools && tools.length ? 'auto' : 'none',
-      max_completion_tokens: typeof apiConfig.maxCompletionTokens === 'number' ? apiConfig.maxCompletionTokens : undefined,
-    });
+      ...(typeof apiConfig.maxCompletionTokens === 'number' ? { max_completion_tokens: apiConfig.maxCompletionTokens } : {}),
+    };
+    const result = await chatCompletion(apiConfig.apiKey, apiConfig.model, messages as any, completionOpts);
 
     const assistant = result.assistantMessage as any;
     const updatedMessages = [...messages, assistant];
     const usage = (result.response && (result.response as any).usage) || undefined;
-    return {
+    const out: ConversationEngineRunResult = {
       messages: updatedMessages,
-      usage: usage ? { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } : undefined,
       assistantMessage: assistant,
       content: (assistant && (assistant as any).content) ?? null,
       toolCalls: (result.toolCalls ?? []).map((tc: any) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })),
       request: result.request,
       response: result.response,
     };
+    if (usage) {
+      (out as any).usage = { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens };
+    }
+    return out;
   },
 };

@@ -85,5 +85,5 @@ trigger: always_on
   instructed. 
   Do not plan or implement unit tests unless explicitly instructed.
   Do not create route aliases or deprecated endpoint paths.
-  Use "plan or implement" phrasing where applicable.
+  Do not implement type-system workarounds but address the actual issue.
 </CodingDiscipline>

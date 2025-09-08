@@ -86,9 +86,9 @@ async function handleCalendarToolCall(payload: any): Promise<ToolCallResult> {
   // Stub: log and return static result
   logger.info('[TOOLCALL] calendar', { payload });
   if (payload.action === 'read') {
-    return { kind: 'calendar', success: true, result: [{ title: 'Stub Event', start: payload.dateRange?.start, end: payload.dateRange?.end }], error: undefined };
+    return { kind: 'calendar', success: true, result: [{ title: 'Stub Event', start: payload.dateRange?.start, end: payload.dateRange?.end }] };
   } else if (payload.action === 'add') {
-    return { kind: 'calendar', success: true, result: { added: true, event: payload.event }, error: undefined };
+    return { kind: 'calendar', success: true, result: { added: true, event: payload.event } };
   }
   return { kind: 'calendar', success: false, result: null, error: 'Invalid calendar action' };
 }
@@ -96,7 +96,7 @@ async function handleCalendarToolCall(payload: any): Promise<ToolCallResult> {
 async function handleTodoToolCall(payload: any): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] todo', { payload });
   if (payload.action === 'add') {
-    return { kind: 'todo', success: true, result: { added: true, task: payload.task }, error: undefined };
+    return { kind: 'todo', success: true, result: { added: true, task: payload.task } };
   }
   return { kind: 'todo', success: false, result: null, error: 'Invalid todo action' };
 }
@@ -104,9 +104,9 @@ async function handleTodoToolCall(payload: any): Promise<ToolCallResult> {
 async function handleFilesystemToolCall(payload: any): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] filesystem', { payload });
   if (payload.action === 'search') {
-    return { kind: 'filesystem', success: true, result: [{ file: 'stub.txt', path: '/virtual/stub.txt' }], error: undefined };
+    return { kind: 'filesystem', success: true, result: [{ file: 'stub.txt', path: '/virtual/stub.txt' }] };
   } else if (payload.action === 'retrieve') {
-    return { kind: 'filesystem', success: true, result: { file: payload.filePath, content: 'stub content' }, error: undefined };
+    return { kind: 'filesystem', success: true, result: { file: payload.filePath, content: 'stub content' } };
   }
   return { kind: 'filesystem', success: false, result: null, error: 'Invalid filesystem action' };
 }
@@ -138,11 +138,11 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       }
       // If nothing found, return empty
       if (found.length === 0) {
-        return { kind: 'memory', success: true, result: [], error: undefined };
+        return { kind: 'memory', success: true, result: [] };
       }
       // Attach provenance to each result
       const resultWithProvenance = found.map(e => ({ ...e, provenance: { scope: e.scope, owner: typeof e.owner === 'string' ? e.owner : '' } }));
-      return { kind: 'memory', success: true, result: resultWithProvenance, error: undefined };
+      return { kind: 'memory', success: true, result: resultWithProvenance };
 
     } else if (payload.action === 'add') {
       // Accept either an explicit entry object, or a shorthand with query/content
@@ -168,10 +168,10 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
         content: String(base.content),
         created: now,
         updated: now,
-        tags: base.tags,
-        relatedEmailId: (base as any)?.relatedEmailId,
-        owner: base.owner,
-        metadata: base.metadata,
+        ...(Array.isArray(base.tags) ? { tags: base.tags } : {}),
+        ...((base as any)?.relatedEmailId ? { relatedEmailId: (base as any).relatedEmailId } : {}),
+        ...(typeof base.owner === 'string' ? { owner: base.owner } : {}),
+        ...(base.metadata ? { metadata: base.metadata } : {}),
       } : null;
       if (!entry) {
         return { kind: 'memory', success: false, result: { ok: false, errors, received: sanitize(payload) }, error: 'Invalid memory add payload' };
@@ -179,7 +179,7 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       const current = await memoryRepo.getAll();
       const next = [...current, entry];
       await memoryRepo.setAll(next);
-      return { kind: 'memory', success: true, result: { added: true, entry }, error: undefined };
+      return { kind: 'memory', success: true, result: { added: true, entry } };
     } else if (payload.action === 'edit') {
       // Require an entry with id; merge provided fields
       const received = payload.entry;
@@ -195,7 +195,7 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       const next = list.slice();
       next[idx] = updated;
       await memoryRepo.setAll(next);
-      return { kind: 'memory', success: true, result: { edited: true, entry: updated }, error: undefined };
+      return { kind: 'memory', success: true, result: { edited: true, entry: updated } };
     }
     return { kind: 'memory', success: false, result: null, error: 'Invalid memory action' };
   } catch (err: any) {
@@ -228,17 +228,17 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
       };
       const current = await workspaceRepo.getAll();
       await workspaceRepo.setAll([...current, item]);
-      return { kind: 'workspace', success: true, result: { added: true, item }, error: undefined };
+      return { kind: 'workspace', success: true, result: { added: true, item } };
     } else if (payload.action === 'list') {
       const items = await workspaceRepo.getAll();
-      return { kind: 'workspace', success: true, result: items, error: undefined };
+      return { kind: 'workspace', success: true, result: items };
     } else if (payload.action === 'get') {
       const items = await workspaceRepo.getAll();
       const item = items.find((i: WorkspaceItem) => i.id === payload.id);
       if (!item) {
         return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
       }
-      return { kind: 'workspace', success: true, result: item, error: undefined };
+      return { kind: 'workspace', success: true, result: item };
     } else if (payload.action === 'update') {
       const items = await workspaceRepo.getAll();
       const idx = items.findIndex((i: WorkspaceItem) => i.id === payload.id);
@@ -249,7 +249,7 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
       const next = items.slice();
       next[idx] = updated;
       await workspaceRepo.setAll(next);
-      return { kind: 'workspace', success: true, result: { updated: true, item: updated }, error: undefined };
+      return { kind: 'workspace', success: true, result: { updated: true, item: updated } };
     } else if (payload.action === 'remove') {
       const items = await workspaceRepo.getAll();
       const filtered = items.filter((i: WorkspaceItem) => i.id !== payload.id);
@@ -257,7 +257,7 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
         return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
       }
       await workspaceRepo.setAll(filtered);
-      return { kind: 'workspace', success: true, result: { removed: true }, error: undefined };
+      return { kind: 'workspace', success: true, result: { removed: true } };
     }
     return { kind: 'workspace', success: false, result: null, error: 'Invalid workspace action' };
   } catch (err: any) {

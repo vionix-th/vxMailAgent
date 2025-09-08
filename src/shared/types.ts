@@ -183,6 +183,7 @@ export interface OrchestrationDiagnosticEntry {
   agent: string;
   agentName?: string;
   emailSummary: string;
+  emailId: string;
   accountId?: string;
   email?: EmailEnvelope;
   result?: OrchestrationResult | null;
@@ -202,6 +203,7 @@ export interface OrchestrationResultEntry {
   agent: string;
   agentName?: string;
   emailSummary: string;
+  emailId: string;
   accountId?: string;
   email?: EmailEnvelope;
   result: OrchestrationResult;

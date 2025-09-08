@@ -23,12 +23,13 @@ export abstract class FileRepoBase {
     error?: string,
     fileSize?: number
   ): void {
-    securityAudit.logFileOperation(this.uid, {
+    // Base does not enforce uid; overridden in UserFileRepoBase.
+    securityAudit.logSystemFileOperation({
       filePath: this.filePath,
       operation,
       success,
-      error,
-      fileSize,
+      ...(typeof error === 'string' ? { error } : {}),
+      ...(typeof fileSize === 'number' ? { fileSize } : {}),
     });
   }
 
@@ -42,23 +43,46 @@ export abstract class FileRepoBase {
   }
 }
 
+/** Per-user repository base that enforces uid presence and user-scoped auditing. */
+export abstract class UserFileRepoBase extends FileRepoBase {
+  constructor(filePath: string, uid: string, containerPath?: string) {
+    super(filePath, containerPath, uid);
+    if (!uid) throw new SecurityError('User context required for repository I/O');
+  }
+
+  protected override logFileOperation(
+    operation: 'read' | 'write' | 'delete' | 'create',
+    success: boolean,
+    error?: string,
+    fileSize?: number
+  ): void {
+    securityAudit.logUserFileOperation(this.uid as string, {
+      filePath: this.filePath,
+      operation,
+      success,
+      ...(typeof error === 'string' ? { error } : {}),
+      ...(typeof fileSize === 'number' ? { fileSize } : {}),
+    });
+  }
+}
+
 /**
  * Generic pruning base that encapsulates TTL and max-items logic.
  * - Keeps logging and security via FileRepoBase.
  * - Timestamp extraction is configurable per repository.
  */
-export abstract class PrunableFileRepo<T> extends FileRepoBase {
+export abstract class PrunableFileRepo<T> extends UserFileRepoBase {
   constructor(
     filePath: string,
+    uid: string,
     containerPath?: string,
-    uid?: string,
     private pruneOptions?: {
       ttlMs?: number | (() => number);
       maxItems?: number | (() => number);
       getTimestamp?: (item: T) => string | number | Date | undefined;
     }
   ) {
-    super(filePath, containerPath, uid);
+    super(filePath, uid, containerPath);
   }
 
   protected pruneList(list: T[]): T[] {
@@ -104,11 +128,11 @@ export abstract class PrunableFileRepo<T> extends FileRepoBase {
 export class FileJsonRepository<T> extends PrunableFileRepo<T> implements Repository<T> {
   constructor(
     filePath: string,
+    uid: string,
     containerPath?: string,
-    maxItems?: number,
-    uid?: string
+    maxItems?: number
   ) {
-    super(filePath, containerPath, uid, { maxItems });
+    super(filePath, uid, containerPath, (typeof maxItems === 'number' ? { maxItems } : undefined));
   }
   
   async getAll(): Promise<T[]> {
@@ -172,10 +196,10 @@ export interface FetcherLogRepository extends Repository<FetcherLogEntry> {
 export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> implements FetcherLogRepository {
   constructor(
     filePath: string = dataPath('fetcher.json'),
-    containerPath?: string,
-    uid?: string
+    uid: string,
+    containerPath?: string
   ) {
-    super(filePath, containerPath, uid, {
+    super(filePath, uid, containerPath, {
       ttlMs: () => Math.max(0, FETCHER_TTL_DAYS) * 24 * 60 * 60 * 1000,
       maxItems: () => USER_MAX_LOGS_PER_TYPE,
       getTimestamp: (e) => e.timestamp,
@@ -239,10 +263,10 @@ export interface OrchestrationLogRepository extends Repository<OrchestrationDiag
 export class FileOrchestrationLogRepository extends PrunableFileRepo<OrchestrationDiagnosticEntry> implements OrchestrationLogRepository {
   constructor(
     filePath: string = dataPath('orchestration.json'),
-    containerPath?: string,
-    uid?: string
+    uid: string,
+    containerPath?: string
   ) {
-    super(filePath, containerPath, uid, {
+    super(filePath, uid, containerPath, {
       ttlMs: () => Math.max(0, ORCHESTRATION_TTL_DAYS) * 24 * 60 * 60 * 1000,
       maxItems: () => USER_MAX_LOGS_PER_TYPE,
       getTimestamp: (e) => e.timestamp,
@@ -306,10 +330,10 @@ export interface ProviderEventsRepository extends Repository<ProviderEvent> {
 export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent> implements ProviderEventsRepository {
   constructor(
     filePath: string = dataPath('provider-events.json'), 
-    containerPath?: string,
-    uid?: string
+    uid: string,
+    containerPath?: string
   ) {
-    super(filePath, containerPath, uid, {
+    super(filePath, uid, containerPath, {
       ttlMs: () => Math.max(0, PROVIDER_TTL_DAYS) * 24 * 60 * 60 * 1000,
       maxItems: () => USER_MAX_LOGS_PER_TYPE,
       getTimestamp: (e) => e.timestamp,
@@ -374,10 +398,10 @@ export interface TracesRepository extends Repository<Trace> {
 export class FileTracesRepository extends PrunableFileRepo<Trace> implements TracesRepository {
   constructor(
     filePath: string = dataPath('traces.json'), 
-    containerPath?: string,
-    uid?: string
+    uid: string,
+    containerPath?: string
   ) {
-    super(filePath, containerPath, uid, {
+    super(filePath, uid, containerPath, {
       ttlMs: () => Math.max(0, TRACE_TTL_DAYS) * 24 * 60 * 60 * 1000,
       maxItems: () => USER_MAX_LOGS_PER_TYPE,
       getTimestamp: (t) => t.createdAt,
@@ -446,31 +470,132 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
 }
 
 /** Create a simple JSON file repository instance. */
-export function createJsonRepository<T>(filePath: string, containerPath?: string, maxItems?: number): Repository<T> {
-  return new FileJsonRepository<T>(filePath, containerPath, maxItems);
-}
-
 /** Create a per-user JSON repository with security and size limits. */
-export function createUserJsonRepository<T>(filePath: string, containerPath: string, maxItems?: number, uid?: string): Repository<T> {
-  return new FileJsonRepository<T>(filePath, containerPath, maxItems, uid);
+export function createUserJsonRepository<T>(filePath: string, containerPath: string, maxItems: number | undefined, uid: string): Repository<T> {
+  return new FileJsonRepository<T>(filePath, uid, containerPath, maxItems);
 }
 
 /** Create a per-user provider events repository. */
-export function createUserProviderEventsRepository(filePath: string, containerPath: string, uid?: string): ProviderEventsRepository {
+export function createUserProviderEventsRepository(filePath: string, containerPath: string, uid: string): ProviderEventsRepository {
   return new FileProviderEventsRepository(filePath, containerPath, uid);
 }
 
 /** Create a per-user traces repository. */
-export function createUserTracesRepository(filePath: string, containerPath: string, uid?: string): TracesRepository {
+export function createUserTracesRepository(filePath: string, containerPath: string, uid: string): TracesRepository {
   return new FileTracesRepository(filePath, containerPath, uid);
 }
 
 /** Create a per-user fetcher log repository. */
-export function createUserFetcherLogRepository(filePath: string, containerPath: string, uid?: string): FetcherLogRepository {
+export function createUserFetcherLogRepository(filePath: string, containerPath: string, uid: string): FetcherLogRepository {
   return new FileFetcherLogRepository(filePath, containerPath, uid);
 }
 
 /** Create a per-user orchestration log repository. */
-export function createUserOrchestrationLogRepository(filePath: string, containerPath: string, uid?: string): OrchestrationLogRepository {
+export function createUserOrchestrationLogRepository(filePath: string, containerPath: string, uid: string): OrchestrationLogRepository {
   return new FileOrchestrationLogRepository(filePath, containerPath, uid);
+}
+
+// ---- System-scoped repositories (no uid) ----
+
+abstract class SystemPrunableFileRepo<T> extends FileRepoBase {
+  constructor(
+    filePath: string,
+    containerPath?: string,
+    private pruneOptions?: {
+      ttlMs?: number | (() => number);
+      maxItems?: number | (() => number);
+      getTimestamp?: (item: T) => string | number | Date | undefined;
+    }
+  ) {
+    super(filePath, containerPath, undefined);
+  }
+
+  protected pruneList(list: T[]): T[] {
+    try {
+      let next = list;
+      const ttlVal = this.pruneOptions?.ttlMs;
+      const ttlMs = typeof ttlVal === 'function' ? ttlVal() : ttlVal;
+      if (ttlMs && ttlMs > 0) {
+        const now = Date.now();
+        const getTs = this.pruneOptions?.getTimestamp;
+        if (getTs) {
+          next = next.filter((item) => {
+            const raw = getTs(item);
+            let ts: number | undefined;
+            if (raw instanceof Date) ts = raw.getTime();
+            else if (typeof raw === 'number') ts = raw;
+            else if (typeof raw === 'string') {
+              const parsed = Date.parse(raw);
+              ts = isNaN(parsed) ? undefined : parsed;
+            }
+            return ts === undefined ? true : (now - ts) <= ttlMs;
+          });
+        }
+      }
+      const maxVal = this.pruneOptions?.maxItems;
+      const maxItems = typeof maxVal === 'function' ? maxVal() : maxVal;
+      if (maxItems && maxItems > 0 && next.length > maxItems) {
+        next = next.slice(Math.max(0, next.length - maxItems));
+      }
+      return next;
+    } catch {
+      return list;
+    }
+  }
+}
+
+class SystemFileJsonRepository<T> extends SystemPrunableFileRepo<T> implements Repository<T> {
+  constructor(
+    filePath: string,
+    containerPath?: string,
+    maxItems?: number
+  ) {
+    super(filePath, containerPath, (typeof maxItems === 'number' ? { maxItems } : undefined));
+  }
+
+  async getAll(): Promise<T[]> {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const data = await persistence.loadAndDecrypt(this.filePath, this.containerPath) as T[];
+        const fileStats = fs.statSync(this.filePath);
+        this.logFileOperation('read', true, undefined, fileStats.size);
+        return data;
+      }
+      this.logFileOperation('read', true, 'File does not exist');
+      return [] as T[];
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('read', false, error.message);
+      logger.error('SystemFileJsonRepository.getAll failed', { filePath: this.filePath, error });
+      throw new RepositoryError(`Failed to read repository file: ${this.filePath}`);
+    }
+  }
+
+  private async writeAllUnlocked(next: T[]): Promise<void> {
+    const items = this.pruneList(next);
+    try {
+      await persistence.encryptAndPersist(items, this.filePath, this.containerPath);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
+      this.logFileOperation('write', true, undefined, fileStats?.size);
+    } catch (e) {
+      const error = e as Error;
+      this.logFileOperation('write', false, error.message);
+      if (error.message.includes('size exceeds limit')) {
+        throw new SecurityError(`File size limit exceeded: ${this.filePath}`);
+      }
+      logger.error('SystemFileJsonRepository.setAll failed', { filePath: this.filePath, error });
+      throw error;
+    }
+  }
+
+  async setAll(next: T[]): Promise<void> {
+    await withFileLock(this.filePath, async () => {
+      await this.writeAllUnlocked(next);
+    });
+  }
+}
+
+/** Create a system-level JSON repository (no uid). */
+export function createSystemJsonRepository<T>(filePath: string, containerPath?: string, maxItems?: number): Repository<T> {
+  return new SystemFileJsonRepository<T>(filePath, containerPath, maxItems);
 }

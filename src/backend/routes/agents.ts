@@ -22,10 +22,13 @@ export default function registerAgentsRoutes(app: express.Express, repos: LiveRe
           throw new Error('apiConfigId is required for Agent');
         }
       },
-      afterValidate: (agent: Agent) => ({
-        ...agent,
-        enabledToolCalls: sanitizeEnabled((agent as any).enabledToolCalls)
-      })
+      afterValidate: (agent: Agent) => {
+        const enabled = sanitizeEnabled((agent as any).enabledToolCalls);
+        return {
+          ...agent,
+          ...(Array.isArray(enabled) ? { enabledToolCalls: enabled } : {}),
+        } as Agent;
+      }
     }
   );
 }

@@ -119,7 +119,15 @@ class SecurityAuditService {
     this.logQueue.push(event);
   }
 
-  logFileOperation(uid: string | undefined, details: FileOperationDetails, req?: any): void {
+  /** Backward-compat: user-scoped file operation (uid required). */
+  logFileOperation(uid: string, details: FileOperationDetails, req?: any): void {
+    this.logUserFileOperation(uid, details, req);
+  }
+
+  /** Explicit user-scoped file operation audit. */
+  logUserFileOperation(uid: string, details: FileOperationDetails, req?: any): void {
+    const ua = req?.headers?.['user-agent'] as string | undefined;
+    const ip = req?.ip || req?.connection?.remoteAddress;
     const event: SecurityAuditEvent = {
       timestamp: new Date().toISOString(),
       uid,
@@ -127,54 +135,76 @@ class SecurityAuditService {
       resource: details.filePath,
       details,
       severity: details.success ? 'info' : 'error',
-      userAgent: req?.headers?.['user-agent'],
-      ip: req?.ip || req?.connection?.remoteAddress,
+      ...(ua ? { userAgent: ua } : {}),
+      ...(ip ? { ip } : {}),
     };
     
     this.writeLogEntry(event);
   }
 
-  logAuthOperation(uid: string | undefined, details: AuthOperationDetails, req?: any): void {
+  /** Explicit system-scoped file operation audit (no uid). */
+  logSystemFileOperation(details: FileOperationDetails, req?: any): void {
+    const ua = req?.headers?.['user-agent'] as string | undefined;
+    const ip = req?.ip || req?.connection?.remoteAddress;
     const event: SecurityAuditEvent = {
       timestamp: new Date().toISOString(),
-      uid,
+      operation: 'file_operation',
+      resource: details.filePath,
+      details,
+      severity: details.success ? 'info' : 'error',
+      ...(ua ? { userAgent: ua } : {}),
+      ...(ip ? { ip } : {}),
+    };
+    this.writeLogEntry(event);
+  }
+
+  logAuthOperation(uid: string | undefined, details: AuthOperationDetails, req?: any): void {
+    const ua = req?.headers?.['user-agent'] as string | undefined;
+    const ip = req?.ip || req?.connection?.remoteAddress;
+    const event: SecurityAuditEvent = {
+      timestamp: new Date().toISOString(),
       operation: 'auth_operation',
       resource: 'authentication',
       details,
       severity: details.success ? 'info' : 'warning',
-      userAgent: req?.headers?.['user-agent'],
-      ip: req?.ip || req?.connection?.remoteAddress,
-    };
+      ...(uid ? { uid } : {}),
+      ...(ua ? { userAgent: ua } : {}),
+      ...(ip ? { ip } : {}),
+    } as SecurityAuditEvent;
     
     this.writeLogEntry(event);
   }
 
   logDataAccess(uid: string | undefined, details: DataAccessDetails, req?: any): void {
+    const ua = req?.headers?.['user-agent'] as string | undefined;
+    const ip = req?.ip || req?.connection?.remoteAddress;
     const event: SecurityAuditEvent = {
       timestamp: new Date().toISOString(),
-      uid,
       operation: 'data_access',
       resource: details.resource,
       details,
       severity: details.success ? 'info' : 'error',
-      userAgent: req?.headers?.['user-agent'],
-      ip: req?.ip || req?.connection?.remoteAddress,
-    };
+      ...(uid ? { uid } : {}),
+      ...(ua ? { userAgent: ua } : {}),
+      ...(ip ? { ip } : {}),
+    } as SecurityAuditEvent;
     
     this.writeLogEntry(event);
   }
 
   logSecurityViolation(uid: string | undefined, violation: string, details: Record<string, any>, req?: any): void {
+    const ua = req?.headers?.['user-agent'] as string | undefined;
+    const ip = req?.ip || req?.connection?.remoteAddress;
     const event: SecurityAuditEvent = {
       timestamp: new Date().toISOString(),
-      uid,
       operation: 'security_violation',
       resource: 'system',
       details: { violation, ...details },
       severity: 'critical',
-      userAgent: req?.headers?.['user-agent'],
-      ip: req?.ip || req?.connection?.remoteAddress,
-    };
+      ...(uid ? { uid } : {}),
+      ...(ua ? { userAgent: ua } : {}),
+      ...(ip ? { ip } : {}),
+    } as SecurityAuditEvent;
     
     this.writeLogEntry(event);
     

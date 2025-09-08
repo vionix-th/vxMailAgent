@@ -207,6 +207,6 @@ export function userPaths(uid: string): UserPaths {
 
 
 // System-level JSON files (non user-isolated)
-// Only users.json is allowed as global application data
-export const USERS_FILE = dataPath('users.json');
+// Only the global "users" registry is allowed as application-wide data
+export const USER_ACCOUNTS_FILE = dataPath('users.json');
 

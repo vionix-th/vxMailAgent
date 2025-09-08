@@ -12,6 +12,7 @@
     "prebuild": "npm run clean",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
     "lint": "eslint \"**/*.ts\" --max-warnings=0",
     "check": "npm run lint && npm run typecheck && npm run build",
     "test": "node --test -r ts-node/register **/*.test.ts"

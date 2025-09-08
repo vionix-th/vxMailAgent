@@ -63,7 +63,7 @@ This section is the operational contract the backend must uphold. It is used as 
 
 ### Core Principles
 - **Strict User Isolation**: All data access requires user context; no global fallbacks
-- **Minimal Global State**: Only `users.json` is global (login registry); all other data is user-scoped
+- **Minimal Global State**: Only `users.json` (the user accounts registry) is global; all other data is user-scoped
 - **Security First**: All operations validate user context and path safety
 - **Audit Trail**: Comprehensive logging of all operations with user context
 
@@ -199,7 +199,7 @@ Location: `src/backend/repository/registry.ts`
 - Paths and safety: `src/backend/utils/paths.ts`
   - `userPaths(uid)` derives absolute, validated paths under `DATA_DIR/users/{uid}` and creates directories with 0700 permissions.
   - Disallows symlinks and path traversal; validates containment under the per-user root.
-  - **SECURITY**: Only `USERS_FILE` constant exists - all other global file constants have been removed to prevent data leakage.
+  - **SECURITY**: Only `USER_ACCOUNTS_FILE` constant exists for the global user accounts registry; all other data is per-user to prevent leakage.
   - Config (multi-user limits): `src/backend/config.ts`
     - `USER_REGISTRY_TTL_MINUTES`, `USER_REGISTRY_MAX_ENTRIES`
     - `USER_MAX_CONVERSATIONS`, `USER_MAX_LOGS_PER_TYPE`, `USER_MAX_FILE_SIZE_MB`

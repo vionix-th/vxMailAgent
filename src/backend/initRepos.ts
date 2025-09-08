@@ -1,14 +1,14 @@
 import { User } from '../shared/types';
-import { USERS_FILE } from './utils/paths';
-import { createJsonRepository } from './repository/fileRepositories';
-import { setUsersRepo } from './services/users';
+import { USER_ACCOUNTS_FILE, DATA_DIR } from './utils/paths';
+import { createSystemJsonRepository } from './repository/fileRepositories';
+import { setUserAccountsRepo } from './services/users';
 import { createLiveRepos, LiveRepos } from './liveRepos';
 
 /** Initialize system-level repositories and return live per-user repo accessors. */
 export function initRepos(): LiveRepos {
   // System-level repository: users
-  const usersRepo = createJsonRepository<User>(USERS_FILE);
-  setUsersRepo(usersRepo);
+  const userAccountsRepo = createSystemJsonRepository<User>(USER_ACCOUNTS_FILE, DATA_DIR);
+  setUserAccountsRepo(userAccountsRepo);
 
   // Live per-user repositories
   return createLiveRepos();

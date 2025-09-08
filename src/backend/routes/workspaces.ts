@@ -44,14 +44,17 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
       throw new ValidationError(`Invalid encoding: ${encoding}`);
     }
     const now = new Date().toISOString();
+    const partial: Partial<WorkspaceItem> = {
+      ...(typeof label !== 'undefined' ? { label } : {}),
+      ...(typeof description !== 'undefined' ? { description } : {}),
+      ...(Array.isArray(tags) ? { tags } : {}),
+      ...(typeof mimeType !== 'undefined' ? { mimeType } : {}),
+      ...(typeof encoding !== 'undefined' ? { encoding } : {}),
+      ...(typeof data !== 'undefined' ? { data } : {}),
+    };
     const nextItem: WorkspaceItem = {
       ...current,
-      label: typeof label !== 'undefined' ? label : current.label,
-      description: typeof description !== 'undefined' ? description : current.description,
-      tags: Array.isArray(tags) ? tags : current.tags,
-      mimeType: typeof mimeType !== 'undefined' ? mimeType : current.mimeType,
-      encoding: typeof encoding !== 'undefined' ? encoding : current.encoding,
-      data: typeof data !== 'undefined' ? data : (current as any).data,
+      ...partial,
       updated: now,
       revision: (current.revision || 1) + 1,
     };
@@ -81,7 +84,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
       const nextItems = items.filter(i => i.id !== itemId);
       await repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', nextItems);
       logger.info('DELETE /api/workspaces/:id/items/:itemId removed', { itemId, hard: true });
-      return res.json({ success: true });
+      res.json({ success: true });
     }
     // Soft delete -> mark deleted and bump revision
     const current = items[itemIdx];

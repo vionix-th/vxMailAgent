@@ -85,7 +85,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
       apiConfig.model,
       messages,
       (typeof maxCompletionTokens === 'number' ? maxCompletionTokens : (apiConfig as any)?.maxCompletionTokens),
-      { tools, tool_choice: tc as any }
+      { ...(tools ? { tools } : {}), ...(tc ? { tool_choice: tc as any } : {}) }
     );
     res.json(result);
   }));

@@ -51,8 +51,8 @@ export const gmailProvider: IMailProvider = {
         from,
         date,
         snippet,
-        bodyPlain: bodies.bodyPlain,
-        bodyHtml: bodies.bodyHtml,
+        ...(bodies.bodyPlain ? { bodyPlain: bodies.bodyPlain } : {}),
+        ...(bodies.bodyHtml ? { bodyHtml: bodies.bodyHtml } : {}),
         attachments: [],
       });
     }

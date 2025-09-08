@@ -51,10 +51,9 @@ export const outlookProvider: IMailProvider = {
         from,
         date,
         snippet,
-        bodyPlain: contentType === 'html' ? undefined : content,
-        bodyHtml: contentType === 'html' ? content : undefined,
+        ...(contentType === 'html' ? { bodyHtml: content } : { bodyPlain: content }),
         attachments: [],
-      };
+      } as EmailEnvelope;
       envelopes.push(env);
     }
     return envelopes;

@@ -154,7 +154,7 @@ export default function registerConversationsRoutes(
           type: 'response',
           timestamp: now,
           latencyMs,
-          usage: usage ? { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } : undefined,
+          ...(usage ? { usage: { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } } : {}),
           payload: result.response,
         }, req as any as ReqLike);
       } catch (e: any) {
