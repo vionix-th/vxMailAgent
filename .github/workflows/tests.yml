@@ -17,6 +17,12 @@ jobs:
       - name: Install backend deps
         working-directory: src/backend
         run: npm ci
+      - name: Lint backend
+        working-directory: src/backend
+        run: npm run lint
+      - name: Type-check backend
+        working-directory: src/backend
+        run: npm run typecheck
       - name: Build backend
         working-directory: src/backend
         run: npm run build --if-present
@@ -35,6 +41,12 @@ jobs:
       - name: Install backend deps
         working-directory: src/backend
         run: npm ci
+      - name: Lint backend
+        working-directory: src/backend
+        run: npm run lint
+      - name: Type-check backend
+        working-directory: src/backend
+        run: npm run typecheck
       - name: Start backend
         working-directory: src/backend
         env:

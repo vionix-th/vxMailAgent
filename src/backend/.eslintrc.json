@@ -21,7 +21,8 @@
         "no-empty": ["error", { "allowEmptyCatch": false }],
         "no-throw-literal": "error",
         "@typescript-eslint/only-throw-error": ["error", { "allow": ["any", "unknown"] }],
-        "@typescript-eslint/no-floating-promises": ["warn", { "ignoreVoid": true, "ignoreIIFE": true }]
+        "@typescript-eslint/no-floating-promises": ["warn", { "ignoreVoid": true, "ignoreIIFE": true }],
+        "no-useless-catch": "error"
       }
     }
   ]
