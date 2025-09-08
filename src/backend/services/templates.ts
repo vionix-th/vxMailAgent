@@ -53,13 +53,8 @@ export async function loadUserTemplates(req?: ReqLike): Promise<TemplateItem[]> 
     }
     return next as TemplateItem[];
   } catch (e) {
-    logger.warn('loadUserTemplates failed', { err: e });
-    try {
-      const ureq = requireReq(req);
-      const seeded = [DEFAULT_OPTIMIZER];
-      await repoSetAll<TemplateItem>(ureq, 'templates', seeded);
-      return seeded;
-    } catch {}
-    return [DEFAULT_OPTIMIZER];
+    // Strict escalation: propagate repository errors; do not seed on error
+    logger.error('loadUserTemplates failed (escalating)', { err: e });
+    throw e;
   }
 }

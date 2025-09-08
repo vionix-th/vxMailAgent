@@ -11,6 +11,7 @@ import { ConversationStepLogger, ProviderEventLogger } from './logging-handlers'
 import type { ReqLike } from '../interfaces';
 import { ensureAgentThread, appendMessageToThread, runAgentConversation } from './orchestration';
 import { repoGetAll, repoSetAll } from '../utils/repo-access';
+import logger from './logger';
 
 export interface ConversationContext {
   thread: ConversationThread;
@@ -49,6 +50,35 @@ export class ConversationOrchestrator {
   ) {
     this.stepLogger = new ConversationStepLogger(this.req);
     this.providerLogger = new ProviderEventLogger(this.req);
+  }
+
+  /** Persist a terminal status for a conversation thread. */
+  private async finalizeThreadStatus(
+    threadId: string,
+    status: 'completed' | 'failed',
+    userReq: UserRequest
+  ): Promise<ConversationThread | null> {
+    try {
+      const conversations = await this.repos.getConversations(userReq);
+      const idx = conversations.findIndex(c => c.id === threadId);
+      if (idx === -1) return null;
+      const endedAt = new Date().toISOString();
+      const updated = {
+        ...conversations[idx],
+        status,
+        endedAt,
+        lastActiveAt: endedAt,
+      } as ConversationThread;
+      const next = [
+        ...conversations.slice(0, idx),
+        updated,
+        ...conversations.slice(idx + 1),
+      ];
+      await this.repos.setConversations(userReq, next);
+      return updated;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -99,6 +129,11 @@ export class ConversationOrchestrator {
         );
         shouldContinue = true;
       }
+      // If there are no tool calls and we've appended assistant message, finalize thread
+      if (!shouldContinue) {
+        const finalized = await this.finalizeThreadStatus(updatedThread.id, 'completed', userReq);
+        if (finalized) updatedThread = finalized;
+      }
       const stepDuration = Date.now() - stepStartTime;
 
       this.stepLogger.logStepComplete(
@@ -120,8 +155,21 @@ export class ConversationOrchestrator {
       
       this.stepLogger.logStepError(thread.id, thread.kind, stepDuration, error.message);
 
+      // On error, finalize thread as failed
+      let failedThread: ConversationThread = thread;
+      try {
+        const finalized = await this.finalizeThreadStatus(thread.id, 'failed', userReq);
+        if (finalized) failedThread = finalized;
+      } catch (e: any) {
+        logger.warn('ORCHESTRATOR failed to finalize thread as failed', {
+          error: e?.message || String(e),
+          threadId: thread.id,
+          kind: thread.kind,
+        });
+      }
+
       return {
-        updatedThread: thread,
+        updatedThread: failedThread,
         success: false,
         shouldContinue: false,
         error: error.message
@@ -375,7 +423,8 @@ export class ConversationOrchestrator {
         };
         conversations = appendMessageToThread(conversations, thread.id, toolErrorMsg);
         await this.repos.setConversations(userReq, conversations);
-        continue;
+        // Strict failure escalation: abort processing and propagate error
+        throw new Error(`agent_thread_ensure_failed:${ensured.error}:${ensured.reason}`);
       }
 
       conversations = ensured.conversations;
@@ -387,7 +436,13 @@ export class ConversationOrchestrator {
       try {
         const parsed = tc.arguments ? JSON.parse(tc.arguments) : {};
         agentInput = String(parsed.input || '').trim();
-      } catch {}
+      } catch (e: any) {
+        logger.warn('ORCHESTRATOR failed to parse tool arguments', {
+          error: e?.message || String(e),
+          tool: tc?.name,
+          raw: String(tc?.arguments || ''),
+        });
+      }
 
       const handleTool = async (name: string, params: any): Promise<any> => {
         switch (name) {
@@ -443,7 +498,13 @@ export class ConversationOrchestrator {
           if (ev.type === 'request') this.providerLogger.logRequest(ev.conversationId, ev.payload);
           else if (ev.type === 'response') this.providerLogger.logResponse(ev.conversationId, ev.latencyMs || 0, ev.payload, ev.usage);
           else if (ev.type === 'error') this.providerLogger.logError(ev.conversationId, ev.error || 'unknown_error', ev.latencyMs);
-        } catch {}
+        } catch (e: any) {
+          logger.warn('ORCHESTRATOR provider logger failed', {
+            error: e?.message || String(e),
+            conversationId: ev?.conversationId,
+            type: ev?.type,
+          });
+        }
       };
 
       const agentApi = apiConfigs.find(c => c.id === agent.apiConfigId) as any;

@@ -70,7 +70,10 @@ export async function setWorkspace(
 ): Promise<void> {
   try {
     await persistence.encryptAndPersist(conversations, conversationsFilePath);
-  } catch {}
+  } catch (e: any) {
+    // Strict escalation: propagate persistence failure
+    throw e;
+  }
 }
 
 /**

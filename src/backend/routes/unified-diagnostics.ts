@@ -110,6 +110,11 @@ function buildHierarchicalTree(
           for (const [dirThreadId, dirConv] of email.directorConversations) {
             if (conversationId === dirThreadId) {
               dirConv.conversation = conversation;
+              // Backfill subject from conversation email if missing
+              if (!email.subject || email.subject === 'Unknown Subject') {
+                const subj = (conversation as any)?.email?.subject;
+                if (subj && typeof subj === 'string') email.subject = subj;
+              }
             }
           }
         }

@@ -10,6 +10,50 @@ export interface ErrorContext {
   ip?: string;
 }
 
+export class PersistenceError extends Error {
+  constructor(
+    message: string,
+    public code: string = 'PERSISTENCE_ERROR',
+    public statusCode: number = 500
+  ) {
+    super(message);
+    this.name = 'PersistenceError';
+  }
+}
+
+export class RepositoryError extends Error {
+  constructor(
+    message: string,
+    public code: string = 'REPOSITORY_ERROR',
+    public statusCode: number = 500
+  ) {
+    super(message);
+    this.name = 'RepositoryError';
+  }
+}
+
+export class OrchestrationError extends Error {
+  constructor(
+    message: string,
+    public code: string = 'ORCHESTRATION_ERROR',
+    public statusCode: number = 500
+  ) {
+    super(message);
+    this.name = 'OrchestrationError';
+  }
+}
+
+export class OAuthError extends Error {
+  constructor(
+    message: string,
+    public code: string = 'OAUTH_ERROR',
+    public statusCode: number = 502
+  ) {
+    super(message);
+    this.name = 'OAuthError';
+  }
+}
+
 export class SecurityError extends Error {
   constructor(
     message: string,
@@ -75,7 +119,11 @@ class ErrorHandlerService {
         error instanceof ValidationError || 
         error instanceof AuthenticationError || 
         error instanceof AuthorizationError ||
-        error instanceof NotFoundError) {
+        error instanceof NotFoundError ||
+        error instanceof PersistenceError ||
+        error instanceof RepositoryError ||
+        error instanceof OrchestrationError ||
+        error instanceof OAuthError) {
       return {
         message: error.message,
         code: error.code,

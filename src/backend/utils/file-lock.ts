@@ -114,11 +114,14 @@ export class FileLock {
         await fs.promises.unlink(this.lockPath);
         logger.info('Removed stale lock', { lockPath: this.lockPath, stalePid: lockData.pid });
       }
-    } catch {
+    } catch (e: any) {
       // Lock file is corrupted or unreadable, remove it
+      logger.warn('Lock file read failed during stale cleanup', { lockPath: this.lockPath, error: e?.message || String(e) });
       try {
         await fs.promises.unlink(this.lockPath);
-      } catch {}
+      } catch (e2: any) {
+        logger.warn('Failed to remove unreadable/corrupted lock file', { lockPath: this.lockPath, error: e2?.message || String(e2) });
+      }
     }
   }
 

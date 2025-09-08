@@ -1,4 +1,5 @@
 import { OAuthProviderConfig, OAuthTokens, computeExpiryISO, postForm } from './common';
+import { OAuthError } from '../services/error-handler';
 import { graphRequest } from '../utils/graph';
 import { request as httpsRequest } from 'https';
 
@@ -57,7 +58,7 @@ export async function ensureValidOutlookAccessToken(
   clientId: string,
   clientSecret: string,
   redirectUri: string
-): Promise<{ accessToken: string; expiry: string; refreshToken: string; updated: boolean; error?: string }>
+): Promise<{ accessToken: string; expiry: string; refreshToken: string; updated: boolean }>
 {
   const now = Date.now();
   const expiryTime = account?.tokens?.expiry ? new Date(account.tokens.expiry).getTime() : 0;
@@ -73,14 +74,14 @@ export async function ensureValidOutlookAccessToken(
   }
   const existingRefresh = account?.tokens?.refreshToken;
   if (!existingRefresh) {
-    return { accessToken: '', expiry: '', refreshToken: '', updated: false, error: 'Missing refresh token' };
+    throw new OAuthError('Missing refresh token', 'OAUTH_MISSING_REFRESH_TOKEN', 401);
   }
 
   try {
     const tokens = await refreshOutlookToken({ clientId, clientSecret, redirectUri }, existingRefresh);
     const accessToken = tokens.accessToken;
     if (!accessToken) {
-      return { accessToken: '', expiry: '', refreshToken: existingRefresh, updated: false, error: 'No access token returned from Microsoft' };
+      throw new OAuthError('No access token returned from Microsoft', 'OAUTH_NO_ACCESS_TOKEN', 502);
     }
     return {
       accessToken,
@@ -89,7 +90,7 @@ export async function ensureValidOutlookAccessToken(
       updated: true,
     };
   } catch (err: any) {
-    return { accessToken: '', expiry: '', refreshToken: existingRefresh, updated: false, error: err?.message || String(err) };
+    throw new OAuthError(err?.message || String(err));
   }
 }
 

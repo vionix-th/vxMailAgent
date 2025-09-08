@@ -157,7 +157,12 @@ export default function registerConversationsRoutes(
           usage: usage ? { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } : undefined,
           payload: result.response,
         }, req as any as ReqLike);
-      } catch {}
+      } catch (e: any) {
+        logger.warn('Provider events logging failed in /api/conversations/:id/assistant', {
+          id,
+          error: e?.message || String(e),
+        });
+      }
       lastStep = result;
     } else {
       // Agent threads: use unified agent conversation logic

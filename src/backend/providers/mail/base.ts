@@ -12,7 +12,6 @@ export interface IMailProvider {
     accessToken: string;
     expiry: string;
     refreshToken: string;
-    error?: string;
   }>;
   fetchUnread(account: Account, opts?: FetchOptions): Promise<EmailEnvelope[]>;
 }

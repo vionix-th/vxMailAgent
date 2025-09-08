@@ -6,7 +6,7 @@ import { dataPath } from '../utils/paths';
 import { ProviderEvent, Trace, FetcherLogEntry, OrchestrationDiagnosticEntry } from '../../shared/types';
 import { TRACE_TTL_DAYS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_DAYS, ORCHESTRATION_TTL_DAYS } from '../config';
 import { securityAudit } from '../services/security-audit';
-import { SecurityError } from '../services/error-handler';
+import { SecurityError, RepositoryError } from '../services/error-handler';
 import { withFileLock } from '../utils/file-lock';
 
 /** Shared base for file-backed repositories to centralize logging helpers. */
@@ -35,7 +35,9 @@ export abstract class FileRepoBase {
   protected currentFileSize(): number | undefined {
     try {
       if (fs.existsSync(this.filePath)) return fs.statSync(this.filePath).size;
-    } catch {}
+    } catch (e: any) {
+      logger.warn('FileRepoBase.currentFileSize failed', { filePath: this.filePath, error: e?.message || String(e) });
+    }
     return undefined;
   }
 }
@@ -129,7 +131,7 @@ export class FileJsonRepository<T> extends PrunableFileRepo<T> implements Reposi
       }
 
       logger.error('FileJsonRepository.getAll failed', { filePath: this.filePath, error });
-      return [] as T[];
+      throw new RepositoryError(`Failed to read repository file: ${this.filePath}`);
     }
   }
   
@@ -194,7 +196,7 @@ export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> 
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
       logger.error('FileFetcherLogRepository.getAll failed', { error });
-      return [];
+      throw new RepositoryError(`Failed to read fetcher log file: ${this.filePath}`);
     }
   }
 
@@ -261,7 +263,7 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
       logger.error('FileOrchestrationLogRepository.getAll failed', { error });
-      return [];
+      throw new RepositoryError(`Failed to read orchestration log file: ${this.filePath}`);
     }
   }
 
@@ -328,7 +330,7 @@ export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
       logger.error('FileProviderEventsRepository.getAll failed', { error });
-      return [];
+      throw new RepositoryError(`Failed to read provider events file: ${this.filePath}`);
     }
   }
 
@@ -396,7 +398,7 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
       logger.error('FileTracesRepository.getAll failed', { error });
-      return [];
+      throw new RepositoryError(`Failed to read traces file: ${this.filePath}`);
     }
   }
 

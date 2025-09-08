@@ -31,8 +31,21 @@ trigger: always_on
   Use iterative, stepwise problem solving.
   Maintain an internal plan or to-do list if beneficial.
 
+  <!-- Documentation -->
+  `/docs/DEVELOPER.md` documents the ongoing development
+  `/docs/DESIGN.md` describes the general application design
+  Read the documentation before implementing changes to the architecture to ensure alignment.
+
+  <!-- Error handling -->
+  Always add proper error handling and reporting and never silently swollow errors and 
+  exceptions.
+
+  <!-- Code comments -->
+  Only add comments where they provide actual value and never commment self explaining code.
+
   <!-- Knowledge sources -->
-  Consult and search online documentation or external resources whenever necessary for accuracy or completeness.
+  Consult and search online documentation or external resources whenever necessary for accuracy 
+  or completeness.
 
   <!-- Conventions and idioms -->
   Follow established best practices and language idioms.
@@ -68,7 +81,8 @@ trigger: always_on
   Git history provides recovery - no need to preserve old implementations.
 
   <!-- Explicit exclusions -->
-  Do not plan or implement backward compatibility or data migration paths unless explicitly instructed.
+  Do not plan or implement backward compatibility or data migration paths unless explicitly 
+  instructed. 
   Do not plan or implement unit tests unless explicitly instructed.
   Do not create route aliases or deprecated endpoint paths.
   Use "plan or implement" phrasing where applicable.

@@ -1,4 +1,5 @@
 import { OAuthProviderConfig, OAuthTokens, computeExpiryISO, postForm } from './common';
+import { OAuthError } from '../services/error-handler';
 import { request as httpsRequest } from 'https';
 import { google } from 'googleapis';
 
@@ -66,7 +67,7 @@ export async function ensureValidGoogleAccessToken(
   clientId: string,
   clientSecret: string,
   redirectUri: string
-): Promise<{ accessToken: string; expiry: string; refreshToken: string; updated: boolean; error?: string }>
+): Promise<{ accessToken: string; expiry: string; refreshToken: string; updated: boolean }>
 {
   const now = Date.now();
   const expiryTime = account?.tokens?.expiry ? new Date(account.tokens.expiry).getTime() : 0;
@@ -82,7 +83,7 @@ export async function ensureValidGoogleAccessToken(
   }
 
   const existingRefresh = account?.tokens?.refreshToken;
-  if (!existingRefresh) return { accessToken: '', expiry: '', refreshToken: '', updated: false, error: 'Missing refresh token' };
+  if (!existingRefresh) throw new OAuthError('Missing refresh token', 'OAUTH_MISSING_REFRESH_TOKEN', 401);
 
   try {
     const tokens = await refreshGoogleToken(
@@ -91,7 +92,7 @@ export async function ensureValidGoogleAccessToken(
     );
     const accessToken = tokens.accessToken;
     if (!accessToken) {
-      return { accessToken: '', expiry: '', refreshToken: existingRefresh, updated: false, error: 'No access token returned from Google' };
+      throw new OAuthError('No access token returned from Google', 'OAUTH_NO_ACCESS_TOKEN', 502);
     }
     return {
       accessToken,
@@ -100,13 +101,7 @@ export async function ensureValidGoogleAccessToken(
       updated: true,
     };
   } catch (err: any) {
-    return {
-      accessToken: '',
-      expiry: '',
-      refreshToken: existingRefresh,
-      updated: false,
-      error: err?.message || String(err),
-    };
+    throw new OAuthError(err?.message || String(err));
   }
 }
 

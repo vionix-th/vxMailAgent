@@ -25,7 +25,10 @@ export function resolveDataDir(): string {
   for (const p of candidates) {
     try {
       if (fs.existsSync(p) && fs.statSync(p).isDirectory()) return p;
-    } catch {}
+    } catch (e) {
+      // Intentionally ignore file system probe errors; continue probing candidates
+      void e;
+    }
   }
   // Fallback to the ts-node default
   return candidates[0];

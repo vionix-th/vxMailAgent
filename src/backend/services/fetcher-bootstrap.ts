@@ -46,7 +46,9 @@ export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise
               detail: String((e as any)?.message || e)
             } as any;
             await fetcherManager.setFetcherLogForUid(uid, [...cur, entry] as any);
-          } catch {}
+          } catch (e2: any) {
+            logger.warn('Boot: failed to write boot_autostart_failed entry to user fetcher log', { uid, error: e2?.message || String(e2) });
+          }
         }
       } catch (e) {
         logger.error('Boot: error preparing user bundle', { uid, err: e });

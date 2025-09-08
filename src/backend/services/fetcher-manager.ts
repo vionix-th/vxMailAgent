@@ -134,7 +134,9 @@ export class FetcherManager {
     const now = Date.now();
     for (const [uid, entry] of this.fetchers.entries()) {
       if (now - entry.lastAccessed > ttlMs) {
-        try { entry.service.stopFetcherLoop(); } catch {}
+        try { entry.service.stopFetcherLoop(); } catch (e: any) {
+          logger.warn('FETCHER_MANAGER stopFetcherLoop failed during eviction', { uid, error: e?.message || String(e) });
+        }
         this.fetchers.delete(uid);
         logger.info('FETCHER_MANAGER evicted idle fetcher', { uid });
       }
@@ -152,7 +154,9 @@ export class FetcherManager {
     }
     if (oldestUid) {
       const entry = this.fetchers.get(oldestUid)!;
-      try { entry.service.stopFetcherLoop(); } catch {}
+      try { entry.service.stopFetcherLoop(); } catch (e: any) {
+        logger.warn('FETCHER_MANAGER stopFetcherLoop failed while evicting oldest', { uid: oldestUid, error: e?.message || String(e) });
+      }
       this.fetchers.delete(oldestUid);
       logger.info('FETCHER_MANAGER evicted oldest fetcher to respect cap', { uid: oldestUid });
     }

@@ -4,6 +4,7 @@ import path from 'path';
 import { VX_MAILAGENT_KEY, USER_MAX_FILE_SIZE_MB } from './config';
 import { validatePathSafety, resolveDataDir } from './utils/paths';
 import { logger } from './services/logger';
+import { PersistenceError } from './services/error-handler';
 
 export const DATA_DIR = resolveDataDir();
 
@@ -40,7 +41,10 @@ export async function encryptAndPersist(obj: any, filePath: string, containerPat
   const dir = path.dirname(filePath);
   try {
     await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
-  } catch {}
+  } catch (e: any) {
+    logger.error('Failed to create directory for persistence', { dir, error: e?.message || String(e) });
+    throw new PersistenceError(`mkdir failed for ${dir}: ${e?.message || String(e)}`);
+  }
 
   const key = getKey();
   let content: string;
@@ -74,11 +78,13 @@ export async function encryptAndPersist(obj: any, filePath: string, containerPat
       await handle.close();
     }
     await fs.promises.rename(tmpPath, filePath);
-  } catch (error) {
+  } catch (error: any) {
     try {
       await fs.promises.unlink(tmpPath);
-    } catch {}
-    throw error;
+    } catch (e2: any) {
+      logger.warn('Failed to clean up tmp file after write error', { tmpPath, error: e2?.message || String(e2) });
+    }
+    throw new PersistenceError(`atomic write failed for ${filePath}: ${error?.message || String(error)}`);
   }
 }
 

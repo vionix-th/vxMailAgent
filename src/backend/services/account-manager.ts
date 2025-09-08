@@ -2,6 +2,7 @@ import { LiveRepos } from '../liveRepos';
 import { UserRequest } from '../middleware/user-context';
 import { beginSpan, endSpan } from './logging';
 import { getMailProvider } from '../providers/mail';
+import logger from './logger';
 
 export interface AccountContext {
   account: any;
@@ -48,30 +49,24 @@ export class AccountManager {
       }
       const refreshResult = await provider.ensureValidAccessToken(account);
 
-      if (refreshResult.error) {
-        endSpan(traceId, sRefresh, { 
-          status: 'error', 
-          error: refreshResult.error 
-        }, userReq);
-
-        this.logFetch({
-          timestamp: new Date().toISOString(),
-          level: 'error',
-          provider: account.provider,
-          accountId: account.id,
-          event: 'oauth_refresh_failed',
-          message: 'Failed to refresh OAuth token',
-          detail: refreshResult.error
-        });
-
-        return {
-          success: false,
-          updated: false,
-          error: refreshResult.error
-        };
-      }
-
       if (refreshResult.updated) {
+        // Mutate in-memory account tokens immediately so the current fetch cycle
+        // uses the fresh access token without requiring a second run
+        try {
+          account.tokens = {
+            ...account.tokens,
+            accessToken: refreshResult.accessToken,
+            expiry: refreshResult.expiry,
+            refreshToken: refreshResult.refreshToken || account.tokens.refreshToken,
+          };
+        } catch (e: any) {
+          logger.warn('ACCOUNT_MANAGER failed to update in-memory tokens', {
+            error: e?.message || String(e),
+            accountId: account?.id,
+            provider: account?.provider,
+          });
+        }
+
         await this.persistTokenUpdate(account, refreshResult, userReq);
         
         this.logFetch({

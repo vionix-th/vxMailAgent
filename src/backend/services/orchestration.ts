@@ -1,5 +1,6 @@
 import { Agent, Director, Filter, Prompt, ConversationThread } from '../../shared/types';
 import { beginSpan, endSpan } from './logging';
+import logger from './logger';
 import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
 import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
@@ -34,7 +35,14 @@ export function evaluateFilters(filters: Filter[], ctx: EmailContext): FilterEva
         default: fieldValue = '';
       }
       match = new RegExp(f.regex, 'i').test(fieldValue);
-    } catch {}
+    } catch (e: any) {
+      logger.warn('ORCHESTRATION evaluateFilters regex error', {
+        error: e?.message || String(e),
+        filterId: f.id,
+        field: f.field,
+        regex: f.regex,
+      });
+    }
     return { filter: f, match, fieldValue };
   });
 }
@@ -235,7 +243,12 @@ export async function runAgentConversation(
             } : undefined,
             payload: result.response,
           });
-        } catch {}
+        } catch (e: any) {
+          logger.warn('ORCHESTRATION provider event logging failed', {
+            error: e?.message || String(e),
+            conversationId: agentThread.id,
+          });
+        }
       }
 
       const assistant = result.assistantMessage;
@@ -244,6 +257,14 @@ export async function runAgentConversation(
       updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, assistant);
       setConversations(updatedConversations);
       if (!result.toolCalls || result.toolCalls.length === 0) {
+        // No more tool calls -> finalize agent thread as completed
+        const endedAt = new Date().toISOString();
+        updatedConversations = updatedConversations.map(c =>
+          c.id === agentThread.id
+            ? { ...c, status: 'completed', endedAt, lastActiveAt: endedAt }
+            : c
+        );
+        setConversations(updatedConversations);
         break;
       }
       for (const tc of result.toolCalls) {
@@ -327,6 +348,21 @@ export async function runAgentConversation(
       success: true,
     };
   } catch (e: any) {
+    // On error, mark agent thread as failed
+    try {
+      const endedAt = new Date().toISOString();
+      updatedConversations = updatedConversations.map(c =>
+        c.id === agentThread.id
+          ? { ...c, status: 'failed', endedAt, lastActiveAt: endedAt }
+          : c
+      );
+      setConversations(updatedConversations);
+    } catch (e2: any) {
+      logger.warn('ORCHESTRATION failed to persist agent failed status', {
+        error: e2?.message || String(e2),
+        conversationId: agentThread.id,
+      });
+    }
     if (logProviderEvent) {
       try {
         const now = new Date().toISOString();
@@ -338,9 +374,13 @@ export async function runAgentConversation(
           timestamp: now,
           error: String(e?.message || e),
         });
-      } catch {}
+      } catch (e3: any) {
+        logger.warn('ORCHESTRATION provider error-event logging failed', {
+          error: e3?.message || String(e3),
+          conversationId: agentThread.id,
+        });
+      }
     }
-
     return {
       finalMessages: currentMessages,
       finalAssistantMessage: lastAssistant,

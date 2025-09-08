@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs/promises';
+import logger from './logger';
 import { clampText, ContextPackName } from '../utils/prompt-helpers';
 
 // Simple in-memory cache with TTL
@@ -16,7 +17,8 @@ async function readFileCached(p: string): Promise<string> {
     const data = await fs.readFile(p, 'utf8');
     fileCache.set(p, { ts: now, data });
     return data;
-  } catch {
+  } catch (e: any) {
+    logger.warn('promptContext: readFileCached failed', { path: p, error: e?.message || String(e) });
     return '';
   }
 }
@@ -89,7 +91,9 @@ export async function buildRoutesLite(root: string): Promise<string> {
         entries.push({ method: m[1].toUpperCase(), path: m[2], file: f });
       }
     });
-  } catch {}
+  } catch (e: any) {
+    logger.warn('promptContext: routes-lite scan failed', { dir: routesDir, error: e?.message || String(e) });
+  }
   entries = entries.sort((a, b) => a.path.localeCompare(b.path)).slice(0, 80);
   const lines = entries.map(e => `${e.method} ${e.path} (${e.file})`);
   return ['=== Backend Routes (lite) ===', clampText(lines.join('\n'), 1500)].filter(Boolean).join('\n');
@@ -100,13 +104,15 @@ export async function buildExamples(root: string): Promise<string> {
   try {
     const st = await fs.stat(dir);
     if (!st.isDirectory()) return '';
-  } catch {
+  } catch (e: any) {
+    logger.warn('promptContext: examples dir stat failed', { dir, error: e?.message || String(e) });
     return '';
   }
   let files: string[] = [];
   try {
     files = (await fs.readdir(dir)).filter(f => f.endsWith('.md') || f.endsWith('.txt')).slice(0, 8);
-  } catch {
+  } catch (e: any) {
+    logger.warn('promptContext: readdir examples failed', { dir, error: e?.message || String(e) });
     return '';
   }
   const chunks: string[] = [];

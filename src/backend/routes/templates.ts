@@ -52,15 +52,9 @@ async function loadTemplates(req?: ReqLike): Promise<TemplateItem[]> {
     }
     return arr as TemplateItem[];
   } catch (e) {
-    logger.warn('Failed to load prompt templates', { err: e });
-    // Attempt to recreate with seed to maintain invariant
-    try {
-      const ureq = requireReq(req);
-      const seeded = seedTemplates();
-      await repoSetAll<TemplateItem>(ureq, 'templates', seeded);
-      return seeded;
-    } catch {}
-    return [];
+    // Strict escalation: propagate repository errors; do not seed on error
+    logger.error('Failed to load prompt templates (escalating)', { err: e });
+    throw e;
   }
 }
 
