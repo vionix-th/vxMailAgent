@@ -33,8 +33,6 @@ import { WORKSPACE_ITEM_TYPES, WorkspaceItemTypeUI } from './constants/workspace
 import { useTranslation } from 'react-i18next';
 import { apiFetch } from './utils/http';
 
-// No explicit finalization concept; use status only
-
 // Infer a display kind for a WorkspaceItem (MIME/tags-first, mirrors Results.tsx)
 const getItemKind = (it: WorkspaceItem): string => {
   const mt = String(it.mimeType || '').toLowerCase();
@@ -57,15 +55,10 @@ export default function Conversations() {
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ thread: ConversationThread; children?: ConversationThread[] } | null>(null);
 
-  // Workspace UI state (display-only per design)
-
-  // Filters removed: canonical conversations have no filtering or sorting in UI
-
-  // Workspace wiring state
+  
   const [wsItems, setWsItems] = useState<WorkspaceItem[]>([]);
   const [wsLoading, setWsLoading] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
-  // Workspace item creation inputs are managed per edit dialog only
   const [agents, setAgents] = useState<Agent[]>([]);
   const [directors, setDirectors] = useState<Director[]>([]);
   const [busy, setBusy] = useState(false);
@@ -100,10 +93,8 @@ export default function Conversations() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // No client-side filtering
   const displayItems = items;
 
-  // selection removed; deletion UI mirrors diagnostics (active or all visible)
 
   async function deleteOne(id: string) {
     const ok = window.confirm(t('conversations.confirm.deleteOne', { id }));
@@ -150,7 +141,6 @@ export default function Conversations() {
     try {
       const json = await apiFetch<ConversationThread>(`/api/conversations/${encodeURIComponent(id)}`);
       setDetail({ thread: json });
-      // Load workspace items from canonical endpoint for both director and agent threads
       const thread = json;
       await loadWorkspaceItems(thread.id);
     } catch (e: any) {
@@ -175,9 +165,7 @@ export default function Conversations() {
       setWsLoading(false);
     }
   }
-
-  // REMOVED: Direct workspace item creation
-  // Only agents can create workspace items via tool calls during orchestration
+  
 
   function openEdit(item: WorkspaceItem) {
     setEditTarget(item);
@@ -212,7 +200,7 @@ export default function Conversations() {
     }
   }
 
-  // No status field in canonical WorkspaceItem; updates are metadata-only via saveEdit().
+  
 
   async function deleteWorkspaceItem(item: WorkspaceItem, hard = false) {
     if (!detail || detail.thread.kind !== 'director') return;
@@ -226,9 +214,7 @@ export default function Conversations() {
     }
   }
 
-  // Finalize action removed – completion is implicit when loops end
-
-  // Deprecated orchestration delete handlers removed; canonical API has no delete.
+  
 
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
@@ -260,7 +246,7 @@ export default function Conversations() {
       </Stack>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      {/* Filter bar removed: canonical conversations list has no filtering/sorting */}
+      
 
       <TableContainer sx={{ mb: 3 }}>
         <Table size="small">
@@ -448,7 +434,7 @@ export default function Conversations() {
             </Table>
           </TableContainer>
 
-          {/* Edit metadata dialog */}
+          
           <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
             <DialogTitle>{t('conversations.workspace.editTitle')}</DialogTitle>
             <DialogContent sx={{ pt: 1 }}>

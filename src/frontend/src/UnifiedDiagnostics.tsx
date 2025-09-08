@@ -176,9 +176,9 @@ const NodeDetailView: React.FC<{ node: DiagnosticNode | null }> = ({ node }) => 
               <Typography variant="subtitle2">Metadata</Typography>
               <Typography variant="body2">ID: {conversation.id}</Typography>
               <Typography variant="body2">Kind: {conversation.kind}</Typography>
-              <Typography variant="body2">Created: {conversation.createdAt}</Typography>
-              <Typography variant="body2">Messages: {conversation.messages?.length || 0}</Typography>
-              <Typography variant="body2">Status: {conversation.finalized ? 'Finalized' : 'Active'}</Typography>
+              <Typography variant="body2">Started: {conversation.startedAt || conversation.createdAt}</Typography>
+              <Typography variant="body2">Messages: {(conversation.messages && conversation.messages.length) || 0}</Typography>
+              <Typography variant="body2">Status: {conversation.status || 'unknown'}</Typography>
             </CardContent>
           </Card>
 

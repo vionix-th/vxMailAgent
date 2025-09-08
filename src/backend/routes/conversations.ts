@@ -29,7 +29,7 @@ export default function registerConversationsRoutes(
     return res.json({ total: list.length, items: paged });
   }));
 
-  // GET single conversation by id (canonical)
+  // GET single conversation by id
   app.get('/api/conversations/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const list = await repos.getConversations(req as any as ReqLike);
@@ -75,21 +75,18 @@ export default function registerConversationsRoutes(
     return res.json({ success: true });
   }));
 
-  // POST /api/conversations/:id/assistant -> trigger assistant response via provider
+  // POST /api/conversations/:id/assistant
   app.post('/api/conversations/:id/assistant', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const conversations = await repos.getConversations(req as any as ReqLike);
     const idx = conversations.findIndex((c) => c.id === id);
     if (idx === -1) throw new NotFoundError('Conversation not found');
     const t = conversations[idx];
-    if ((t as any).status === 'finalized' || t.finalized === true) {
-      throw new ValidationError('Conversation is finalized');
-    }
 
     const api = (await repos.getSettings(requireReq(req as any as ReqLike))).apiConfigs.find((c: any) => c.id === t.apiConfigId);
     if (!api) throw new NotFoundError('API config not found');
 
-    // Use existing transcript as-is (OpenAI-aligned)
+    // Use existing transcript as-is
     const messages = t.messages.map((m) => {
       const base: any = { role: m.role as any, content: (m as any).content ?? null };
       if ((m as any).name) base.name = (m as any).name;

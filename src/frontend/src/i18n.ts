@@ -745,8 +745,7 @@ const resources = {
           statusOptions: {
             ongoing: 'ongoing',
             completed: 'completed',
-            failed: 'failed',
-            finalized: 'finalized'
+            failed: 'failed'
           },
           kindOptions: {
             director: 'director',
@@ -765,8 +764,6 @@ const resources = {
         empty: 'No conversations',
         detail: {
           title: 'Conversation: {{id}}',
-          finalize: 'Finalize Workspace',
-          finalizing: 'Finalizing…',
           transcript: 'Transcript',
           noMessages: 'No messages',
           labels: {

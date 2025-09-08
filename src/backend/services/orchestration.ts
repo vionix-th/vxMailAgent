@@ -93,7 +93,7 @@ export function ensureAgentThread(
   newIdFn: () => string,
   traceId?: string,
   req?: ReqLike,
-): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'finalized' | 'invalid' } {
+): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'invalid' } {
   const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }, req) : '';
 
   let agentThread = undefined as ConversationThread | undefined;
@@ -121,7 +121,7 @@ export function ensureAgentThread(
   if (!agentThread) {
     const agentThreadId = newIdFn();
     const nowIso2 = nowIso;
-    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [], finalized: false } as ConversationThread;
+    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [] } as ConversationThread;
     conversations = [...conversations, agentThread];
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, agentThreadId } }, req);
     return { conversations, agentThread, isNew };

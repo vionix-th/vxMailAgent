@@ -214,7 +214,6 @@ export class EmailProcessor {
       lastActiveAt: nowIso,
       messages: directorPrompt.messages ? [...directorPrompt.messages] : [],
       errors: [],
-      finalized: false,
     } as ConversationThread;
 
     // Add email context message
