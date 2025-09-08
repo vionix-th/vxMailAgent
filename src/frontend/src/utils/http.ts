@@ -13,7 +13,9 @@ export interface FetchOptions extends RequestInit {
  * Automatically detects JSON responses or returns undefined for empty bodies.
  */
 export async function apiFetch<T = any>(url: string, options: FetchOptions = {}): Promise<T> {
-  const { expectJson, ...init } = options;
+  const { expectJson, ...rest } = options;
+  // Always include credentials (cookies) by default for authenticated endpoints; allow override via options
+  const init: RequestInit = { ...rest, credentials: rest.credentials ?? 'include' };
   
   const res = await fetch(url, init);
   
@@ -47,6 +49,50 @@ export async function apiFetch<T = any>(url: string, options: FetchOptions = {})
 }
 
 /**
+ * Like apiFetch but returns both the parsed data and the raw Response object.
+ * Useful for reading response headers while retaining uniform error handling.
+ */
+export async function apiFetchWithResponse<T = any>(url: string, options: FetchOptions = {}): Promise<{ data: T; response: Response }> {
+  const { expectJson, ...rest } = options;
+  const init: RequestInit = { ...rest, credentials: rest.credentials ?? 'include' };
+
+  const res = await fetch(url, init);
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`${res.status} ${res.statusText}${text ? `: ${text}` : ''}`);
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  const contentLength = res.headers.get('content-length');
+  const hasJsonContent = contentType.includes('application/json');
+  if (res.status === 204 || (contentLength !== null && Number(contentLength) === 0)) {
+    return { data: undefined as unknown as T, response: res };
+  }
+
+  if (expectJson === true || (expectJson !== false && hasJsonContent)) {
+    try {
+      const data = await res.json();
+      return { data, response: res };
+    } catch (e: any) {
+      if (e instanceof SyntaxError) return { data: undefined as unknown as T, response: res };
+      throw e;
+    }
+  }
+
+  return { data: undefined as unknown as T, response: res };
+}
+
+/**
  * Alias for apiFetch - maintains compatibility with existing fetchJSON usage
  */
 export const fetchJSON = apiFetch;
+
+/**
+ * Low-level helper that mirrors window.fetch but defaults credentials to 'include'.
+ * Does not throw on non-OK. Returns the raw Response.
+ */
+export async function apiFetchRaw(url: string, options: RequestInit = {}): Promise<Response> {
+  const init: RequestInit = { ...options, credentials: options.credentials ?? 'include' };
+  return fetch(url, init);
+}

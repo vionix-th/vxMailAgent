@@ -15,6 +15,7 @@ import AgentsPanel from './Agents';
 import { useCrudResource } from './hooks/useCrudResource';
 import { randomId } from './utils/randomId';
 import { Prompt } from '../../shared/types';
+import { apiFetch } from './utils/http';
 
 interface Director {
   id: string;
@@ -69,8 +70,7 @@ export default function Directors() {
   const [tab, setTab] = useState(0);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.json())
+    apiFetch<{ apiConfigs?: { id: string; name: string }[] }>('/api/settings')
       .then(data => setApiConfigs(data.apiConfigs || []))
       .catch(() => setApiConfigs([]));
   }, []);

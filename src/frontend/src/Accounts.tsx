@@ -8,7 +8,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { Account } from '../../shared/types';
 import FetcherControl from './FetcherControl';
 import { useTranslation } from 'react-i18next';
-import { apiFetch } from './utils/http';
+import { apiFetch, apiFetchWithResponse } from './utils/http';
 
 export default function Accounts({ showFetcher = true }: { showFetcher?: boolean }) {
   const { t } = useTranslation();
@@ -111,14 +111,9 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
     setLoading(true);
     setError(undefined);
     try {
-      const res = await fetch('/api/accounts');
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`${res.status} ${res.statusText}${text ? `: ${text}` : ''}`);
-      }
-      const warn = res.headers.get('x-vx-mailagent-warning');
+      const { data, response } = await apiFetchWithResponse<Account[]>('/api/accounts');
+      const warn = response.headers.get('x-vx-mailagent-warning');
       if (warn) setError(warn);
-      const data = await res.json();
       setAccounts(data);
     } catch (e: any) {
       setError(e.message || (t('accounts.errors.failedLoad') as string));

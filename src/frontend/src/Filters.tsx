@@ -9,6 +9,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { useTranslation } from 'react-i18next';
 import { useCrudResource } from './hooks/useCrudResource';
 import { randomId } from './utils/randomId';
+import { apiFetch } from './utils/http';
 
 export type FilterField = 'from' | 'to' | 'cc' | 'bcc' | 'subject' | 'body' | 'date';
 
@@ -50,13 +51,12 @@ export default function Filters() {
   };
 
   const persistReorder = (ordered: Filter[]) => {
-    fetch('/api/filters/reorder', {
+    apiFetch('/api/filters/reorder', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderedIds: ordered.map(f => f.id) }),
     })
-      .then(r => {
-        if (!r.ok) throw new Error('Failed');
+      .then(() => {
         void refresh();
         setSuccess(t('filters.messages.orderUpdated'));
       })

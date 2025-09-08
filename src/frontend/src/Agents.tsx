@@ -13,6 +13,7 @@ import { Agent, Prompt } from '../../shared/types';
 import { OPTIONAL_TOOL_NAMES, CORE_TOOL_NAMES } from '../../shared/tools';
 import { useCrudResource } from './hooks/useCrudResource';
 import { randomId } from './utils/randomId';
+import { apiFetch } from './utils/http';
 
 
 
@@ -50,8 +51,7 @@ export default function Agents() {
   const [tab, setTab] = useState(0);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.json())
+    apiFetch<{ apiConfigs?: { id: string; name: string }[] }>('/api/settings')
       .then(data => setApiConfigs(data.apiConfigs || []))
       .catch(() => setApiConfigs([]));
   }, []);

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { ApiConfig } from '../../shared/types';
 import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats } from './utils/api';
 import log from './utils/log';
+import { apiFetch } from './utils/http';
 
 interface SettingsData {
   virtualRoot?: string;
@@ -27,9 +28,8 @@ export default function Settings() {
     setTestError(null);
     setTestOpen(true);
     try {
-      const res = await fetch(`/api/test/apiconfig/${id}`);
-      const data = await res.json();
-      if (!res.ok || data.success === false) {
+      const data = await apiFetch<any>(`/api/test/apiconfig/${id}`);
+      if (data.success === false) {
         setTestError(data.error || 'Test failed');
         setTestResult(data);
       } else {
@@ -54,7 +54,7 @@ export default function Settings() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      fetch('/api/settings').then(r => r.json()),
+      apiFetch('/api/settings'),
       getCleanupStats()
     ])
       .then(([settingsData, stats]) => {
@@ -79,12 +79,11 @@ export default function Settings() {
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch('/api/settings', {
+      await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
       });
-      if (!res.ok) throw new Error(t('settings.errors.failedSave'));
       setSuccess(t('settings.messages.saved'));
     } catch (e: any) {
       setError(e.message || t('settings.errors.failedSave'));
@@ -119,12 +118,11 @@ export default function Settings() {
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch('/api/settings', {
+      await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(nextSettings),
       });
-      if (!res.ok) throw new Error(t('settings.errors.failedSave'));
       setSuccess(t('settings.apiConfigs.messages.deletedSaved'));
     } catch (e: any) {
       setError(e.message || t('settings.errors.failedSave'));
@@ -153,12 +151,11 @@ export default function Settings() {
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch('/api/settings', {
+      await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(nextSettings),
       });
-      if (!res.ok) throw new Error(t('settings.errors.failedSave'));
       setSuccess(t('settings.apiConfigs.messages.savedUpdated'));
     } catch (e: any) {
       setError(e.message || t('settings.errors.failedSave'));

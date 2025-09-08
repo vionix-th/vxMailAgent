@@ -8,6 +8,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { FetcherLogEntry, FetcherLogLevel, AccountProvider } from '../../shared/types';
 import { useTranslation } from 'react-i18next';
 import { useCookieState } from './hooks/useCookieState';
+import { apiFetch } from './utils/http';
 
 interface FetcherStatus {
   active: boolean;
@@ -57,9 +58,8 @@ const FetcherControl: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/fetcher/status');
-      if (!res.ok) throw new Error(await res.text());
-      setStatus(await res.json());
+      const data = await apiFetch<FetcherStatus>('/api/fetcher/status');
+      setStatus(data);
     } catch (e: any) {
       setError(e.message || String(e));
       setSnackbarOpen(true);
@@ -135,8 +135,7 @@ const FetcherControl: React.FC = () => {
       setLoading(true);
       setError(null);
       const endpoint = action === 'trigger' ? 'run' : action;
-      const res = await fetch(`/api/fetcher/${endpoint}`, { method: 'POST' });
-      if (!res.ok) throw new Error(await res.text());
+      await apiFetch(`/api/fetcher/${endpoint}`, { method: 'POST' });
       await fetchStatus();
     } catch (e: any) {
       setError(e.message || String(e));
@@ -149,9 +148,7 @@ const FetcherControl: React.FC = () => {
   const fetchLogs = async () => {
     try {
       // keep UI responsive; don't block status polling
-      const res = await fetch('/api/fetcher/logs');
-      if (!res.ok) throw new Error(await res.text());
-      const data: FetcherLogEntry[] = await res.json();
+      const data = await apiFetch<FetcherLogEntry[]>('/api/fetcher/logs');
       setEntries(data);
       // Preserve active selection by id
       const stillExists = data.find(e => e.id === activeId);
@@ -177,8 +174,7 @@ const FetcherControl: React.FC = () => {
     const ok = window.confirm(t('fetcher.confirm.deleteOne', { timestamp: timestamp || id }));
     if (!ok) return;
     try {
-      const res = await fetch(`/api/fetcher/logs/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Delete failed');
+      await apiFetch(`/api/fetcher/logs/${encodeURIComponent(id)}`, { method: 'DELETE' });
       await fetchLogs();
     } catch (e: any) {
       setError(t('fetcher.errors.deleteFailed'));
@@ -191,12 +187,11 @@ const FetcherControl: React.FC = () => {
     const ok = window.confirm(t('fetcher.confirm.deleteSelected', { count: selected.size }));
     if (!ok) return;
     try {
-      const res = await fetch('/api/fetcher/logs', {
+      await apiFetch('/api/fetcher/logs', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selected) })
       });
-      if (!res.ok) throw new Error('Bulk delete failed');
       await fetchLogs();
     } catch (e: any) {
       setError(t('fetcher.errors.bulkDeleteFailed'));
@@ -215,12 +210,11 @@ const FetcherControl: React.FC = () => {
     const ok = window.confirm(t('fetcher.confirm.deleteAll', { count: entries.length }));
     if (!ok) return;
     try {
-      const res = await fetch('/api/fetcher/logs', {
+      await apiFetch('/api/fetcher/logs', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: entries.map(e => e.id!).filter(Boolean) })
       });
-      if (!res.ok) throw new Error('Bulk delete failed');
       await fetchLogs();
     } catch (e: any) {
       setError(t('fetcher.errors.bulkDeleteFailed'));

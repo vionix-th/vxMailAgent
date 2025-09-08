@@ -31,6 +31,7 @@ import ReactMarkdown from 'react-markdown';
 import { ConversationThread, ConversationStatus, WorkspaceItem, Agent, Director } from '../../shared/types';
 import { WORKSPACE_ITEM_TYPES, WorkspaceItemTypeUI } from './constants/workspace';
 import { useTranslation } from 'react-i18next';
+import { apiFetch } from './utils/http';
 
 const isThreadFinalized = (t?: ConversationThread | null) => {
   if (!t) return false;
@@ -88,9 +89,7 @@ export default function Conversations() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/conversations`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to fetch conversations');
+      const json = await apiFetch<{ items: ConversationThread[] }>(`/api/conversations`);
       setItems(json.items || []);
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -102,8 +101,8 @@ export default function Conversations() {
   useEffect(() => {
     load();
     // Load agents and directors for display names
-    fetch('/api/agents').then(r => r.json()).then(setAgents).catch(() => {});
-    fetch('/api/directors').then(r => r.json()).then(setDirectors).catch(() => {});
+    apiFetch<Agent[]>('/api/agents').then(setAgents).catch(() => {});
+    apiFetch<Director[]>('/api/directors').then(setDirectors).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -118,9 +117,7 @@ export default function Conversations() {
     setError(null);
     setBusy(true);
     try {
-      const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to delete conversation');
+      await apiFetch(`/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' });
       setItems(prev => prev.filter(c => c.id !== id && c.parentId !== id));
       if (detail && (detail.thread.id === id || (detail.thread as any).parentId === id)) setDetail(null);
     } catch (e: any) {
@@ -138,13 +135,11 @@ export default function Conversations() {
     setBusy(true);
     try {
       const ids = items.map(c => c.id);
-      const res = await fetch('/api/conversations', {
+      await apiFetch('/api/conversations', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids })
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to delete conversations');
       const idSet = new Set(ids);
       setItems(prev => prev.filter(c => !idSet.has(c.id) && !(c.parentId && idSet.has(c.parentId as any))));
       if (detail && (idSet.has(detail.thread.id) || (detail.thread as any).parentId && idSet.has((detail.thread as any).parentId))) setDetail(null);
@@ -159,9 +154,7 @@ export default function Conversations() {
   async function viewDetail(id: string) {
     setError(null);
     try {
-      const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to fetch conversation');
+      const json = await apiFetch<ConversationThread>(`/api/conversations/${encodeURIComponent(id)}`);
       setDetail({ thread: json });
       // After loading detail, refresh workspace items from canonical endpoint if director
       const thread = json;
@@ -184,9 +177,7 @@ export default function Conversations() {
     setWsLoading(true);
     setWsError(null);
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/items`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to fetch workspace items');
+      const json = await apiFetch<WorkspaceItem[]>(`/api/workspaces/${encodeURIComponent(workspaceId)}/items`);
       setWsItems(json || []);
     } catch (e: any) {
       setWsError(e?.message || String(e));
@@ -211,7 +202,7 @@ export default function Conversations() {
   async function saveEdit() {
     if (!detail || detail.thread.kind !== 'director' || !editTarget) return;
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/items/${encodeURIComponent(editTarget.id)}`, {
+      await apiFetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/items/${encodeURIComponent(editTarget.id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -223,8 +214,6 @@ export default function Conversations() {
           data: editData || undefined,
         })
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to update item');
       setEditOpen(false);
       setEditTarget(null);
       await loadWorkspaceItems(detail.thread.id);
@@ -238,11 +227,9 @@ export default function Conversations() {
   async function deleteWorkspaceItem(item: WorkspaceItem, hard = false) {
     if (!detail || detail.thread.kind !== 'director') return;
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/items/${encodeURIComponent(item.id)}?hard=${hard}`, {
+      await apiFetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/items/${encodeURIComponent(item.id)}?hard=${hard}`, {
         method: 'DELETE'
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to delete item');
       await loadWorkspaceItems(detail.thread.id);
     } catch (e: any) {
       setWsError(e?.message || String(e));
@@ -253,9 +240,7 @@ export default function Conversations() {
     if (!detail || detail.thread.kind !== 'director') return;
     setFinalizing(true);
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/finalize`, { method: 'POST' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to finalize workspace');
+      await apiFetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/finalize`, { method: 'POST' });
       await refreshDetail();
     } catch (e: any) {
       setWsError(e?.message || String(e));
