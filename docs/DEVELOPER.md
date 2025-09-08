@@ -309,10 +309,9 @@ Location: `src/backend/routes/helpers.ts`
 
 - Provider (Gmail) OAuth client — used for linking Gmail accounts and refreshing tokens.
   - Env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
-  - Redirect URI (local dev): `http://localhost:3000/oauth/callback` (frontend receives code).
+  - Redirect URI (local dev): `http://localhost:3001/api/accounts/oauth/google/callback` (backend handles callback and persists account).
 - Login (OIDC) OAuth client — used ONLY for app login sessions.
-  - Env vars: `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`, `GOOGLE_LOGIN_REDIRECT_URI`.
-  - Redirect URI (local dev): `http://localhost:3001/api/auth/google/callback` (backend handles callback).
+  - Env vars: `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`, `GOOGLE_LOGIN_REDIRECT_URI` (default: empty). Local dev redirect should be `http://localhost:3001/api/auth/google/callback` (backend handles code).
   - URL builder: `src/backend/oauth/googleLogin.ts::buildGoogleLoginAuthUrl()` (scopes: `openid email profile`, `access_type=online`, `prompt=select_account`).
 
 ## Workspace API
@@ -331,23 +330,6 @@ GET /api/workspaces/:id/items?includeDeleted=true
 - Lists all items in the workspace
 - `includeDeleted`: Optional, includes soft-deleted items
 - Returns: `{ items: WorkspaceItem[] }`
-
-#### Create Item
-```
-POST /api/workspaces/:id/items
-Content-Type: application/json
-
-{
-  "label": "Example",
-  "mimeType": "text/plain",
-  "data": "SGVsbG8gd29ybGQh",
-  "encoding": "base64",
-  "tags": ["example"]
-}
-```
-- Creates a new workspace item
-- Required fields: `mimeType`, `data`
-- Returns: `WorkspaceItem`
 
 #### Get Item
 ```
@@ -429,8 +411,10 @@ GET /api/accounts/oauth/outlook/callback?code=<code>&state=<state>
 ```
 
 Notes:
-- Redirect URI for provider accounts (local dev) should be `http://localhost:3000/oauth/callback`, handled by `src/frontend/src/OAuthCallback.tsx`.
-- On success, the backend persists or updates the account in the per-user repository and returns it; no additional `POST /api/accounts` is required.
+- Redirect URIs for provider accounts (local dev) should be backend callbacks:
+  - `http://localhost:3001/api/accounts/oauth/google/callback`
+  - `http://localhost:3001/api/accounts/oauth/outlook/callback`
+- The backend handles the code exchange and persists/updates the account for the authenticated user; no additional `POST /api/accounts` is required.
 - On missing/invalid refresh tokens, certain endpoints may return `{ ok: false, reauthUrl }` to trigger re-authorization.
 
 ### Prompts
@@ -666,8 +650,7 @@ Response shape:
 - Tracks last access time and evicts idle instances based on `FETCHER_MANAGER_TTL_MINUTES` with a cap of `FETCHER_MANAGER_MAX_FETCHERS`.
 - Orchestration integration: fetchers can trigger orchestration runs via the `runOrchestration` callback.
 
-### Cleanup Service
+### Cleanup Routes
 
-- Module: `src/backend/services/cleanup.ts`
-- Exposes `createCleanupService()` which returns operations to remove logs, conversations, traces, and workspace items by id.
-- Backed by a `RepositoryHub` accessor that abstracts underlying persistence.
+- Cleanup endpoints are backed directly by per-user repositories via `LiveRepos`; there is no CleanupService or RepositoryHub abstraction.
+- Canonical endpoints are listed under Cleanup (Admin); they remove logs, conversations, traces, and workspace items by id.

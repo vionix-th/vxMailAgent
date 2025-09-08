@@ -126,9 +126,11 @@ Frontend (`src/frontend`)
 
 ## OAuth Flow (Gmail/Outlook)
 
-- From the UI, start an OAuth flow → provider redirects to `http://localhost:3000/oauth/callback` (handled by `src/frontend/src/OAuthCallback.tsx`).
-- The frontend calls `/api/accounts/oauth/{google|outlook}/callback` to exchange the `code`. The backend verifies the JWT‑signed state, exchanges tokens, persists the account for the authenticated user, and returns the created/updated `account` JSON. No additional POST is required.
-- If a Gmail/Outlook refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with a `reauthUrl` for re-auth. The UI should redirect the user to that URL to restore tokens.
+- From the UI, start an OAuth flow → provider redirects directly to backend callbacks:
+  - `http://localhost:3001/api/accounts/oauth/google/callback`
+  - `http://localhost:3001/api/accounts/oauth/outlook/callback`
+- The backend verifies the JWT‑signed state, exchanges tokens, persists the account for the authenticated user, and returns the created/updated `account` JSON (or redirects to the frontend, per deployment).
+- If a Gmail/Outlook refresh token is missing/invalid (e.g., after revocation), backend endpoints may respond with `{ ok: false, error, reauthUrl }` to trigger re‑authorization; the UI should redirect to `reauthUrl`.
 - To verify provider access in development, call `GET /api/accounts/:id/gmail-test` or `GET /api/accounts/:id/outlook-test`.
 
 ## API Overview (Implemented)
@@ -190,12 +192,13 @@ See `docs/DEVELOPER.md` for details.
 
 ## UI Overview
 
-- Results (Workspace): user‑facing deliverables for processed emails
-- Memory: global/shared/local knowledge management
+- Results (Workspace Items): primary user‑facing deliverables for processed emails; MIME‑aware previews and provenance
+- Conversations (Debug): hierarchical director → agent threads; detail shows transcript and director‑thread workspace items for debugging
+- Memory: global/local knowledge management
 - Prompts: system/user/assistant messages; optimizer endpoint available
 - Directors / Agents: orchestration roles and provider configs
 - Filters: regex routing rules for incoming emails
-- Admin Console: diagnostics, fetcher control, health
+- Admin Console (Diagnostics): diagnostics, fetcher control, health; does not re‑render result view
 
 ## Operational Notes
 
@@ -203,7 +206,7 @@ See `docs/DEVELOPER.md` for details.
 - **CORS (dev)**: `cors()` is permissive for local dev. In production, restrict origins or co‑host UI and API.
 - **Env & secrets**: Load via `.env`; do not commit secrets. Tokens are never logged.
 - **Data dir**: `VX_MAILAGENT_DATA_DIR` overrides `data/` location. Ensure write permissions.
-- **OAuth pattern**: Frontend receives `code` → calls backend callbacks. Redirect URIs should point to `/oauth/callback` on the frontend for provider accounts; login callback handled by backend.
+- **OAuth pattern**: Provider accounts redirect directly to backend callbacks (`/api/accounts/oauth/{google|outlook}/callback`), where the backend exchanges codes and persists accounts. App login (OIDC) also uses a backend callback (`/api/auth/google/callback`).
 - **Tokens in responses**: Account linking responses include tokens for client‑side persistence in dev. For multi‑user/remote deployments, persist tokens only server‑side and avoid exposing to the browser.
 - **Diagnostics visibility**: Provider/orchestration logs may contain sensitive content; surface only in admin views.
 - **Production hardening**: Enforce HTTPS, HSTS, strict CORS. Note: CSRF protection and rate limiting are not implemented in the backend; enforce them at a reverse proxy/API gateway or add Express middleware per deployment needs. Session cookies use `HttpOnly`, `SameSite=Lax`, and `Secure` (prod), which mitigates CSRF for same-site deployments.
@@ -212,7 +215,9 @@ See `docs/DEVELOPER.md` for details.
 ## Troubleshooting
 
 - Health check: `GET /api/health` (backend must be running)
-- OAuth redirect mismatch: confirm provider console redirect URIs are `http://localhost:3000/oauth/callback`
+- OAuth redirect mismatch (provider accounts): confirm provider console redirect URIs are backend callbacks:
+  - `http://localhost:3001/api/accounts/oauth/google/callback`
+  - `http://localhost:3001/api/accounts/oauth/outlook/callback`
 - Data path issues: set `VX_MAILAGENT_DATA_DIR` to an absolute path and ensure the process has write permissions
 - Encryption key errors: ensure `VX_MAILAGENT_KEY` is exactly 64 hex characters
 - Proxy issues: frontend requests to `/api` should reach the backend at `http://localhost:3001` (see `src/frontend/vite.config.ts`)

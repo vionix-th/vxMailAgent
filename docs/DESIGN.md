@@ -339,32 +339,37 @@ data/
   - Ensures full compatibility with OpenAI ChatML and future multi-turn conversational models.
 
   - **File System**: Search/retrieve files by name/content within virtual root (e.g., `/home/jane/client_docs`), using Node.js `fs` (e.g., `readdir`, `readFile`).
-  - **Memory**: Search/add/edit semi-structured memories (see `MemoryEntry` in `src/shared/types.ts`: `{ id, scope, content, created, updated, tags?, relatedEmailId?, owner?, metadata? }`); search cascades (local→shared→global), additions specify scope.
-- **Output**: Text (plain, markdown, rich text) or images; tool outputs (e.g., file content, memory entries) included only if agent specifies (e.g., in reply text or as attachments).
-- **Configuration**: Agent objects use `{ id, name, type: 'openai', promptId, apiConfigId, enabledToolCalls?: string[] }`.
-- **Implementation**: Uses OpenAI’s function-calling API for tasks/tools. Tool outputs are processed by the agent’s prompt logic.
+  - **Memory**: Search/add/edit semi-structured memories (see `MemoryEntry` in `src/shared/types.ts`: `{ id, scope, content, created, updated, tags?, relatedEmailId?, owner?, metadata? }`); search cascades (local→global), additions specify scope.
+  - **Output**: Text (plain, markdown, rich text) or images; tool outputs (e.g., file content, memory entries) included only if agent specifies (e.g., in reply text or as attachments).
+  - **Configuration**: Agent objects use `{ id, name, type: 'openai', promptId, apiConfigId, enabledToolCalls?: string[] }`.
+  - **Implementation**: Uses OpenAI’s function-calling API for tasks/tools. Tool outputs are processed by the agent’s prompt logic.
 
 #### 3.2.5 Processing Pipeline
 - **Functionality**: Fetcher queues emails, processed in parallel across accounts/directors. Directors pass emails/outputs to agents, collecting results. Tool calls validated (e.g., file access within virtual root) with transparent logging (e.g., `console.log("File access denied")`).
 - **Implementation**: Uses Node.js async (e.g., `Promise.all`) for parallel processing, respects external provider API rate limits (OpenAI, Gmail, Microsoft Graph). Errors trigger UI alerts and are logged via the backend logger (`src/backend/services/logger.ts`).
 
 #### 3.2.6 UI
- - **Layout**: Conversations view with a table of threads and a detail panel. The detail shows transcript and the director-thread-scoped workspace items. Diagnostics is a separate admin panel focused on the audit/process trail and must not re‑render the user result view.
+ - **Layout**: The Results page is the primary user-facing view and renders the director-thread-scoped Workspace Items. A separate Conversations view exists as a debug tool to inspect director/agent transcripts and tool calls. Diagnostics is a separate admin panel focused on the audit/process trail and must not re‑render the user result view.
   - **Components**:
   - **Accounts**: Modal for OAuth, signature preview/edit (text area showing provider default or custom).
   - **API Settings**: Form to add/edit OpenAI keys/models.
   - **Directors/Agents**: Forms for prompts, imprints, tool selection; drag-and-drop for agent ordering.
   - **Filters**: Dropdown for fields, regex input, help link with examples (e.g., `from:client.*@domain\.com`, `Subject: urgent.*`).
-  - **Memory**: Searchable table for global/shared/local entries, with edit/delete/scope-switching buttons.
+  - **Memory**: Searchable table for global/local entries, with edit/delete/scope-switching buttons.
   - **Settings**: Text field for virtual root (e.g., `/home/jane/client_docs`).
   - **Results (Workspace-centric)**:
     - Left navigation tree: emails → directors → workspace items.
-      - Selecting an email: right pane shows the aggregated workspace view for that email (summary list/grid of its `WorkspaceItem`s).
-      - Selecting a director: right pane may show the chat thread with that director under the selected email (when enabled). Tool-call messages are rendered with structured visualization (chips + formatted payloads); no empty bubbles.
+      - Selecting an email: right pane shows the aggregated workspace view for that email (summary list/grid of its `WorkspaceItem`s). This is the canonical user result.
+      - Selecting a director: right pane may show the chat thread with that director under the selected email (when enabled) for debugging. Tool-call messages are rendered with structured visualization (chips + formatted payloads); no empty bubbles.
       - Selecting a workspace item: right pane shows a MIME-aware preview (markdown/HTML for text, image previews, file chips, formatted JSON for structured content). Chat is hidden in this mode.
     - The original email panel is collapsed by default; it can be toggled to show snippet/body/attachments.
     - Toolbar: Refresh, Delete active, Delete selected/all; per-row delete with confirmation. Wired to existing backend endpoints. Diagnostics/admin controls remain separate.
     - Canonical component: `src/frontend/src/Conversations.tsx`.
+
+  - **Conversations (Debug tool)**:
+    - Hierarchical presentation associating a director thread with its agent threads.
+    - Detail panel shows the OpenAI-aligned transcript and tool-call visualizations to help users debug the director/agent actions.
+    - This view is auxiliary and not the canonical user result display; Workspace Items on the Results page are the primary deliverables.
   - **Diagnostics (Admin/Debug)**:
     - Two-pane layout with resizable splitter. Left: grouped/flat tree of cycles and threads. Right: detail tabs (see below).
     - Grouping and attribution are strictly canonical, using only: `fetchCycleId`, `dirThreadId`, `agentThreadId` (and `phase` for labeling). No heuristic fix-ups.
@@ -473,3 +478,161 @@ data/
 5. Results displayed (text inline, images with previews); tool outputs included if agent specifies.
 6. Notification alerts user, who copies or sends reply with signature.
 7. User manages memories via UI table.
+
+## Appendix A — Configuration Defaults (Final Product)
+
+The following are system defaults and are configurable via environment variables. Source of truth: `src/backend/config.ts`.
+
+- Timeouts (milliseconds)
+  - `OPENAI_REQUEST_TIMEOUT_MS`: 30000
+  - `GRAPH_REQUEST_TIMEOUT_MS`: 15000
+  - `PROVIDER_REQUEST_TIMEOUT_MS`: 30000
+  - `CONVERSATION_STEP_TIMEOUT_MS`: 45000
+  - `TOOL_EXEC_TIMEOUT_MS`: 30000
+
+- Retention (days)
+  - `TRACE_TTL_DAYS`: 7
+  - `PROVIDER_TTL_DAYS`: 7
+  - `FETCHER_TTL_DAYS`: 7
+  - `ORCHESTRATION_TTL_DAYS`: 7
+
+- Trace payload controls
+  - `TRACE_MAX_PAYLOAD`: 32768 bytes per payload
+  - `TRACE_MAX_SPANS`: 1000
+  - `TRACE_REDACT_FIELDS` (default list): authorization, api_key, access_token, refresh_token, set-cookie, cookie
+
+- Limits and multi-user caps
+  - `USER_MAX_FILE_SIZE_MB`: 50
+  - `USER_MAX_CONVERSATIONS`: 10000
+  - `USER_MAX_LOGS_PER_TYPE`: 10000
+
+- Encryption at rest
+  - `VX_MAILAGENT_KEY` (64-char hex) enables AES-256-GCM. If missing/invalid, plaintext mode is used (logged warning) for development.
+
+Notes:
+- All values above are per-user where applicable (logs, conversations). There are no global data caps beyond the user registry.
+- Director thread lifecycle statuses are `ongoing | completed | failed | cancelled | timeout` (no finalize flag, no expired status).
+
+## Appendix B — Canonical Examples
+
+These examples illustrate final, unambiguous shapes. Field omissions are intentional when optional.
+
+### Director
+```json
+{
+  "id": "dir-123",
+  "name": "Client Manager",
+  "promptId": "prm-director-001",
+  "apiConfigId": "cfg-openai-001",
+  "agentIds": ["ag-reply", "ag-analysis"],
+  "enabledToolCalls": [
+    "workspace_add_item",
+    "workspace_update_item",
+    "memory_search",
+    "memory_add"
+  ]
+}
+```
+
+### Agent
+```json
+{
+  "id": "ag-reply",
+  "name": "Reply Writer",
+  "type": "openai",
+  "promptId": "prm-agent-reply",
+  "apiConfigId": "cfg-openai-001",
+  "enabledToolCalls": [
+    "filesystem_search",
+    "workspace_add_item",
+    "memory_search"
+  ]
+}
+```
+
+### ApiConfig
+```json
+{
+  "id": "cfg-openai-001",
+  "name": "OpenAI Default",
+  "model": "gpt-4o-mini",
+  "apiKey": "sk-...",
+  "maxOutputTokens": 1024
+}
+```
+
+### Filter
+```json
+{
+  "id": "flt-urgent",
+  "field": "subject",
+  "regex": "urgent|asap|immediately",
+  "duplicateAllowed": false,
+  "directorId": "dir-123"
+}
+```
+
+### MemoryEntry (global)
+```json
+{
+  "id": "mem-1",
+  "scope": "global",
+  "content": "ACME escalation policy v2",
+  "tags": ["policy", "acme"],
+  "created": "2025-09-08T10:00:00Z",
+  "updated": "2025-09-08T10:00:00Z"
+}
+```
+
+### MemoryEntry (local — agent-owned)
+```json
+{
+  "id": "mem-2",
+  "scope": "local",
+  "owner": { "type": "agent", "id": "ag-reply" },
+  "content": "Tone: courteous but concise",
+  "tags": ["style"],
+  "relatedEmailId": "gmail:1789a...",
+  "created": "2025-09-08T10:05:00Z",
+  "updated": "2025-09-08T10:05:00Z",
+  "metadata": { "source": "guidelines-v3" }
+}
+```
+
+### WorkspaceItem (director-thread scoped)
+```json
+{
+  "id": "ws-77",
+  "label": "Draft reply to ACME",
+  "description": "First-pass response",
+  "mimeType": "text/markdown",
+  "encoding": "utf8",
+  "data": "## Re: ACME Support\n...",
+  "tags": ["draft_reply"],
+  "revision": 3,
+  "deleted": false,
+  "created": "2025-09-08T10:10:00Z",
+  "updated": "2025-09-08T10:11:00Z",
+  "context": {
+    "email": { "id": "gmail:1789a...", "subject": "Escalation", "from": "ops@acme.com", "date": "2025-09-08T09:57:00Z" },
+    "director": { "id": "dir-123" },
+    "agent": { "id": "ag-reply" },
+    "createdBy": "agent",
+    "tool": "workspace_add_item",
+    "conversationId": "thread-dir-abc"
+  }
+}
+```
+
+### Tool Result Shapes (transcript tool messages)
+```json
+{ "ok": true, "item": { /* WorkspaceItem */ } }
+```
+```json
+{ "ok": true, "items": [ /* WorkspaceItem[] */ ] }
+```
+```json
+{ "ok": false, "error": "message" }
+```
+```json
+{ "status": "completed", "agentThreadId": "agt-123" }
