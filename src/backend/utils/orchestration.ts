@@ -2,7 +2,9 @@ import { OrchestrationDiagnosticEntry, EmailEnvelope, ConversationThread, Worksp
 import * as persistence from '../persistence';
 import { newId } from './id';
 
-/** Minimal base input required to build an orchestration diagnostic envelope. */
+/**
+ * Minimal base input used to construct an orchestration diagnostic entry.
+ */
 export type OrchBaseInput = {
   director: string;
   directorName?: string;
@@ -17,8 +19,8 @@ export type OrchBaseInput = {
 };
 
 /**
- * Constructs a consistent base for an orchestration diagnostic entry.
- * Consumers can spread the result and add { detail, result, error, phase } as needed.
+ * Build the fixed portion of an orchestration diagnostic entry.
+ * Consumers typically spread this into the final object and add { detail, result, error, phase }.
  */
 export function buildOrchBase(
   input: OrchBaseInput
@@ -38,7 +40,9 @@ export function buildOrchBase(
   };
 }
 
-/** Finds a director thread by id or throws if it does not exist. */
+/**
+ * Resolve a director thread by id or throw when it does not exist.
+ */
 export function resolveDirThread(
   conversations: ConversationThread[],
   dirThreadId: string
@@ -48,27 +52,30 @@ export function resolveDirThread(
   return { index, thread: conversations[index] };
 }
 
-export function getWorkspace(thread: ConversationThread): WorkspaceItem[] {
-  return thread.workspaceItems ?? [];
+/**
+ * Deprecated embedding: returns an empty list. Workspace items live in the Workspaces repository.
+ */
+export function getWorkspace(_thread: ConversationThread): WorkspaceItem[] {
+  return [];
 }
 
 /**
- * Replaces the workspace items for a conversation and persists the updated list.
+ * No-op setter retained for compatibility with historical call sites. Conversations do not carry workspace items.
  */
 export async function setWorkspace(
   conversations: ConversationThread[],
-  index: number,
-  items: WorkspaceItem[],
+  _index: number,
+  _items: WorkspaceItem[],
   conversationsFilePath: string
 ): Promise<void> {
-  const current = conversations[index];
-  conversations[index] = { ...current, workspaceItems: items } as ConversationThread;
   try {
     await persistence.encryptAndPersist(conversations, conversationsFilePath);
   } catch {}
 }
 
-/** Normalizes any thrown value into a structured error suitable for diagnostics. */
+/**
+ * Normalize an unknown error into a structured object suitable for diagnostics.
+ */
 export function normalizeError(e: any, detail?: any) {
   const asAny = e as any;
   return {
@@ -78,12 +85,12 @@ export function normalizeError(e: any, detail?: any) {
   };
 }
 
-/** Logger interface used for orchestration diagnostics. */
+/** Callback used to emit orchestration diagnostic entries. */
 export type OrchLogger = (entry: OrchestrationDiagnosticEntry) => void;
 
 /**
- * Wraps a tool operation with standardized diagnostics logging for start, success and error.
- * The `run` callback may return a result, extra detail, and an output value.
+ * Run an async tool operation with standardized diagnostics for start/success/error.
+ * The `run` callback may return `{ result, detail, output }`.
  */
 export async function withOrchToolLogging<TOutput = any>(
   logger: OrchLogger,
@@ -117,11 +124,11 @@ export async function withOrchToolLogging<TOutput = any>(
   }
 }
 
-/** Supported workspace operations. */
+/** Supported workspace operation kinds. */
 export type WorkspaceOp = 'add_item' | 'list_items' | 'get_item' | 'update_item' | 'remove_item';
 
 /**
- * Executes a workspace operation with diagnostic logging and transcript streaming.
+ * Execute a workspace operation with diagnostic logging. Appends a tool message via the provided callback.
  */
 export async function runWorkspaceOp<TOut = any>(
   logger: OrchLogger,

@@ -33,12 +33,7 @@ import { WORKSPACE_ITEM_TYPES, WorkspaceItemTypeUI } from './constants/workspace
 import { useTranslation } from 'react-i18next';
 import { apiFetch } from './utils/http';
 
-const isThreadFinalized = (t?: ConversationThread | null) => {
-  if (!t) return false;
-  if ((t as any).finalized === true) return true;
-  const st = (t as any).status;
-  return st === 'finalized';
-};
+// No explicit finalization concept; use status only
 
 // Infer a display kind for a WorkspaceItem (MIME/tags-first, mirrors Results.tsx)
 const getItemKind = (it: WorkspaceItem): string => {
@@ -70,8 +65,7 @@ export default function Conversations() {
   const [wsItems, setWsItems] = useState<WorkspaceItem[]>([]);
   const [wsLoading, setWsLoading] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
-  // REMOVED: Workspace item creation state variables - no longer needed
-  const [finalizing, setFinalizing] = useState(false);
+  // Workspace item creation inputs are managed per edit dialog only
   const [agents, setAgents] = useState<Agent[]>([]);
   const [directors, setDirectors] = useState<Director[]>([]);
   const [busy, setBusy] = useState(false);
@@ -156,13 +150,9 @@ export default function Conversations() {
     try {
       const json = await apiFetch<ConversationThread>(`/api/conversations/${encodeURIComponent(id)}`);
       setDetail({ thread: json });
-      // After loading detail, refresh workspace items from canonical endpoint if director
+      // Load workspace items from canonical endpoint for both director and agent threads
       const thread = json;
-      if (thread?.kind === 'director') {
-        await loadWorkspaceItems(thread.id);
-      } else {
-        setWsItems(thread?.workspaceItems || []);
-      }
+      await loadWorkspaceItems(thread.id);
     } catch (e: any) {
       setError(e?.message || String(e));
     }
@@ -236,18 +226,7 @@ export default function Conversations() {
     }
   }
 
-  async function finalizeWorkspace() {
-    if (!detail || detail.thread.kind !== 'director') return;
-    setFinalizing(true);
-    try {
-      await apiFetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/finalize`, { method: 'POST' });
-      await refreshDetail();
-    } catch (e: any) {
-      setWsError(e?.message || String(e));
-    } finally {
-      setFinalizing(false);
-    }
-  }
+  // Finalize action removed – completion is implicit when loops end
 
   // Deprecated orchestration delete handlers removed; canonical API has no delete.
 
@@ -306,7 +285,6 @@ export default function Conversations() {
                     label={t(`conversations.filters.statusOptions.${c.status}` as any)}
                     color={
                       c.status === 'failed' ? 'error' :
-                      isThreadFinalized(c) ? 'success' :
                       c.status === 'ongoing' ? 'warning' :
                       'success'
                     }
@@ -370,25 +348,12 @@ export default function Conversations() {
               <Chip
                 size="small"
                 label={t(`conversations.filters.statusOptions.${detail.thread.status}` as any)}
-                color={
-                  detail.thread.status === 'failed' ? 'error' :
-                  isThreadFinalized(detail.thread) ? 'success' :
-                  detail.thread.status === 'ongoing' ? 'warning' :
-                  'success'
-                }
+                color={detail.thread.status === 'failed' ? 'error' : detail.thread.status === 'ongoing' ? 'warning' : 'success'}
               />
-              {detail.thread.kind === 'director' && !isThreadFinalized(detail.thread) && (
-                <Button size="small" variant="contained" onClick={finalizeWorkspace} disabled={finalizing}>
-                  {finalizing ? t('conversations.detail.finalizing') : t('conversations.detail.finalize')}
-                </Button>
-              )}
             </Stack>
           </Stack>
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-            {t(`conversations.filters.kindOptions.${detail.thread.kind}` as any)}
-            {' '}• {t('conversations.table.director')}={directors.find(d => d.id === detail.thread.directorId)?.name || detail.thread.directorId} ({detail.thread.directorId})
-            {' '}• {t('conversations.table.agent')}={detail.thread.agentId ? `${(agents.find(a => a.id === detail.thread.agentId)?.name || detail.thread.agentId)} (${detail.thread.agentId})` : '-'}
-            {' '}• {t('conversations.table.started')}={detail.thread.startedAt}
+            {t(`conversations.filters.kindOptions.${detail.thread.kind}` as any)} • {t('conversations.table.director')}={directors.find(d => d.id === detail.thread.directorId)?.name || detail.thread.directorId} ({detail.thread.directorId}) • {t('conversations.table.agent')}={detail.thread.agentId ? `${(agents.find(a => a.id === detail.thread.agentId)?.name || detail.thread.agentId)} (${detail.thread.agentId})` : '-'} • {t('conversations.table.started')}={detail.thread.startedAt}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
             {detail.thread.lastActiveAt ? `${t('conversations.detail.labels.lastActive')}=${detail.thread.lastActiveAt} • ` : ''}
@@ -411,7 +376,6 @@ export default function Conversations() {
           <Divider sx={{ my: 2 }} />
           <Typography variant="subtitle1" gutterBottom>{t('conversations.workspace.title')}</Typography>
           {wsError && <Alert severity="error" sx={{ mb: 1 }}>{wsError}</Alert>}
-          {/* REMOVED: Manual workspace item creation UI - only agents create items via tool calls */}
           <TableContainer>
             <Table size="small">
               <TableHead>
@@ -428,7 +392,7 @@ export default function Conversations() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {(detail.thread.kind === 'director' ? wsItems : (detail.thread.workspaceItems || [])).map((a: WorkspaceItem) => (
+                {wsItems.map((a: WorkspaceItem) => (
                   <TableRow key={a.id}>
                     <TableCell><Chip size="small" label={getItemKind(a)} /></TableCell>
                     <TableCell>
@@ -475,7 +439,7 @@ export default function Conversations() {
                     )}
                   </TableRow>
                 ))}
-                {!(detail.thread.kind === 'director' ? wsItems : (detail.thread.workspaceItems || [])).length && (
+                {!wsItems.length && (
                   <TableRow>
                     <TableCell colSpan={detail.thread.kind === 'director' ? 12 : 11}><Typography variant="body2" color="text.secondary">{t('conversations.workspace.empty')}</Typography></TableCell>
                   </TableRow>
@@ -506,8 +470,6 @@ export default function Conversations() {
               <Button variant="contained" onClick={saveEdit}>{t('actions.save')}</Button>
             </DialogActions>
           </Dialog>
-
-          {/* Diagnostics and child agent threads removed in canonical view */}
         </>
       )}
     </Paper>

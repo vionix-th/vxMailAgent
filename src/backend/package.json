@@ -5,9 +5,11 @@
   "type": "commonjs",
   "license": "GPL-3.0-or-later",
   "scripts": {
+    "clean": "rm -rf dist",
     "generate-testdata": "npx ts-node generate-testdata.ts",
     "dev": "ts-node index.ts",
     "start": "node dist/backend/index.js",
+    "prebuild": "npm run clean",
     "build": "tsc",
     "test": "node --test -r ts-node/register **/*.test.ts"
   },

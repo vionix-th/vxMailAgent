@@ -4,7 +4,7 @@ import { UserRequest } from '../middleware/user-context';
 import { evaluateFilters, selectDirectorTriggers } from './orchestration';
 import { ConversationOrchestrator } from './conversation-orchestrator';
 import { newId } from '../utils/id';
-import { beginSpan, endSpan, logOrch, logProviderEvent } from './logging';
+import { beginSpan, endSpan, logOrch } from './logging';
 
 export interface EmailEnvelope {
   id: string;
@@ -214,7 +214,6 @@ export class EmailProcessor {
       lastActiveAt: nowIso,
       messages: directorPrompt.messages ? [...directorPrompt.messages] : [],
       errors: [],
-      workspaceItems: [],
       finalized: false,
     } as ConversationThread;
 
@@ -258,7 +257,6 @@ export class EmailProcessor {
     // Trigger orchestration for the newly created director thread
     const orchestrator = new ConversationOrchestrator(
       this.repos,
-      logProviderEvent,
       logOrch,
       userReq
     );
@@ -266,13 +264,14 @@ export class EmailProcessor {
     // Start orchestration asynchronously - don't block email processing
     setImmediate(async () => {
       try {
-        await orchestrator.runConversationStep({
+        await orchestrator.runConversationLoop({
           thread: dirThread,
+          director,
           traceId,
           agents: context.agents,
           apiConfigs: context.apiConfigs,
           prompts: context.prompts
-        }, userReq);
+        }, userReq, 6);
       } catch (error: any) {
         this.logFetch({
           timestamp: new Date().toISOString(),

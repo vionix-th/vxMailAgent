@@ -1,14 +1,16 @@
-import { ConversationThread, Agent, Director } from '../../shared/types';
+import { ConversationThread, Agent, Director, WorkspaceItem } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
 import { UserRequest } from '../middleware/user-context';
 import { conversationEngine } from './engine';
 import { beginSpan, endSpan } from './logging';
 import { newId } from '../utils/id';
 import { CONVERSATION_STEP_TIMEOUT_MS } from '../config';
-import { TOOL_REGISTRY } from '../../shared/tools';
+import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { logConversationStepDiagnostic } from './orchestration';
 import { ConversationStepLogger, ProviderEventLogger } from './logging-handlers';
 import type { ReqLike } from '../interfaces';
+import { ensureAgentThread, appendMessageToThread, runAgentConversation } from './orchestration';
+import { repoGetAll, repoSetAll } from '../utils/repo-access';
 
 export interface ConversationContext {
   thread: ConversationThread;
@@ -31,6 +33,10 @@ export interface OrchestrationResult {
  * Handles conversation orchestration for both director and agent threads.
  * Separated from fetcher service for better testability and maintainability.
  */
+/**
+ * Orchestrates Director and Agent thread execution: drives steps, processes Director tool calls,
+ * spawns Agent threads, and persists transcripts and provider diagnostics.
+ */
 export class ConversationOrchestrator {
   private activeSteps = new Map<string, { timeoutId: NodeJS.Timeout; startTime: number }>();
   private stepLogger: ConversationStepLogger;
@@ -38,7 +44,6 @@ export class ConversationOrchestrator {
 
   constructor(
     private repos: LiveRepos,
-    private logProviderEvent: (event: any) => void,
     private logOrch: (entry: any) => void,
     private req?: ReqLike
   ) {
@@ -47,7 +52,8 @@ export class ConversationOrchestrator {
   }
 
   /**
-   * Run a single conversation step with timeout and error handling.
+   * Run a single step for the current thread with timeout/error handling.
+   * Returns the updated thread and a continuation flag.
    */
   async runConversationStep(
     context: ConversationContext,
@@ -56,7 +62,6 @@ export class ConversationOrchestrator {
     const { thread } = context;
     const stepStartTime = Date.now();
     
-    // Log step start
     this.stepLogger.logStepStart(thread.id, thread.kind);
     
     try {
@@ -79,18 +84,23 @@ export class ConversationOrchestrator {
         };
       }
 
-      // Update thread with new messages
-      const updatedThread = await this.updateThreadMessages(
+      let updatedThread = await this.updateThreadMessages(
         thread,
         stepResult.messages,
         userReq
       );
 
-      // Process tool calls if any
-      const shouldContinue = !!(stepResult.toolCalls && stepResult.toolCalls.length > 0);
+      let shouldContinue = !!(stepResult.toolCalls && stepResult.toolCalls.length > 0);
+      if (shouldContinue && thread.kind === 'director') {
+        updatedThread = await this.processDirectorToolCalls(
+          { ...context, thread: updatedThread },
+          userReq,
+          stepResult.toolCalls as any
+        );
+        shouldContinue = true;
+      }
       const stepDuration = Date.now() - stepStartTime;
 
-      // Log step completion
       this.stepLogger.logStepComplete(
         thread.id,
         thread.kind,
@@ -120,7 +130,7 @@ export class ConversationOrchestrator {
   }
 
   /**
-   * Execute the actual LLM conversation step.
+   * Execute a single provider call for the given thread and return assistant message + tool calls.
    */
   private async executeConversationStep(
     context: ConversationContext,
@@ -145,6 +155,33 @@ export class ConversationOrchestrator {
     const role = thread.kind === 'director' ? 'director' : 'agent';
     const roleCaps = thread.kind === 'director' ? { canSpawnAgents: true } : {};
 
+    // Compute effective tool registry: mandatory + enabled optionals per role
+    const baseDescriptors = TOOL_DESCRIPTORS;
+    let enabledNames: string[] = [];
+    if (role === 'agent') {
+      const ag = (context.agents || []).find(a => a.id === thread.agentId);
+      enabledNames = ag?.enabledToolCalls || [];
+    } else {
+      enabledNames = context.director?.enabledToolCalls || [];
+    }
+    const filteredDescriptors = baseDescriptors.filter(d => d.flags?.mandatory || enabledNames.includes(d.name));
+    // Dynamic agent__<id> tools for directors, restricted to assigned agents when available
+    let dynamicAgentTools: any[] = [];
+    if (role === 'director') {
+      const allowedAgentIds = context.director?.agentIds && Array.isArray(context.director.agentIds) && context.director.agentIds.length
+        ? new Set(context.director.agentIds)
+        : null;
+      dynamicAgentTools = (context.agents || [])
+        .filter(a => !allowedAgentIds || allowedAgentIds.has(a.id))
+        .map(a => ({
+          name: `agent__${a.id}`,
+          description: `Run agent ${a.name || a.id} with input text` as const,
+          inputSchema: { type: 'object', properties: { input: { type: 'string' } }, required: ['input'] },
+          flags: { mandatory: true },
+        }));
+    }
+    const toolRegistry = role === 'director' ? [...filteredDescriptors, ...dynamicAgentTools] : filteredDescriptors;
+
     logConversationStepDiagnostic(
       `${role}_llm` as any,
       thread.id,
@@ -164,7 +201,6 @@ export class ConversationOrchestrator {
     }, userReq);
 
     try {
-      // Log engine call start
       this.stepLogger.logEngineStart(thread.id, thread.kind, thread.messages.length);
 
       const stepPromise = conversationEngine.run({
@@ -172,7 +208,7 @@ export class ConversationOrchestrator {
         apiConfig: apiConfig as any,
         role: role as any,
         roleCaps: { canSpawnAgents: roleCaps?.canSpawnAgents ?? false },
-        toolRegistry: TOOL_REGISTRY,
+        toolRegistry,
         context: { 
           conversationId: thread.id, 
           traceId, 
@@ -198,7 +234,6 @@ export class ConversationOrchestrator {
       const engineOut = await Promise.race([stepPromise, stepTimeoutPromise]) as any;
       const latencyMs = Date.now() - t0;
 
-      // Clean up active step tracking on successful completion
       const activeStep = this.activeSteps.get(thread.id);
       if (activeStep) {
         clearTimeout(activeStep.timeoutId);
@@ -207,7 +242,6 @@ export class ConversationOrchestrator {
 
       endSpan(traceId, sLlm, { status: 'ok', response: { latencyMs } }, userReq);
 
-      // Log provider events
       this.logProviderEvents(thread.id, engineOut, latencyMs);
 
       return {
@@ -219,7 +253,6 @@ export class ConversationOrchestrator {
     } catch (error: any) {
       const latencyMs = Date.now() - t0;
       
-      // Clean up active step tracking on error
       const activeStep = this.activeSteps.get(thread.id);
       if (activeStep) {
         clearTimeout(activeStep.timeoutId);
@@ -239,7 +272,7 @@ export class ConversationOrchestrator {
   }
 
   /**
-   * Update conversation thread with new messages.
+   * Append new messages to the thread and persist the conversations list.
    */
   private async updateThreadMessages(
     thread: ConversationThread,
@@ -268,46 +301,180 @@ export class ConversationOrchestrator {
     return updatedThread;
   }
 
-  /**
-   * Log provider events for request/response tracking.
-   */
+  /** Log provider request/response events for diagnostics. */
   private logProviderEvents(conversationId: string, engineOut: any, latencyMs: number): void {
     try {
-      const now = new Date().toISOString();
-      
+      // Use ProviderEventLogger to ensure user request context is applied
       if (engineOut.request) {
-        this.logProviderEvent({
-          id: newId(),
-          conversationId,
-          provider: 'openai',
-          type: 'request',
-          timestamp: now,
-          payload: engineOut.request
-        });
+        this.providerLogger.logRequest(conversationId, engineOut.request);
       }
 
       const usage = engineOut.response?.usage;
-      this.logProviderEvent({
-        id: newId(),
-        conversationId,
-        provider: 'openai',
-        type: 'response',
-        timestamp: now,
-        latencyMs,
-        usage: usage ? {
-          promptTokens: usage.prompt_tokens,
-          completionTokens: usage.completion_tokens,
-          totalTokens: usage.total_tokens
-        } : undefined,
-        payload: engineOut.response
-      });
+      this.providerLogger.logResponse(conversationId, latencyMs, engineOut.response, usage);
     } catch (error) {
       // Swallow logging errors to prevent disrupting main flow
     }
   }
 
   /**
-   * Run complete conversation loop with step limit.
+   * Process Director tool calls (e.g., agent__<id>), ensuring Agent threads and running Agent loops.
+   * Returns the updated Director thread after injecting tool results.
+   */
+  private async processDirectorToolCalls(
+    context: ConversationContext,
+    userReq: UserRequest,
+    toolCalls: Array<{ id: string; name: string; arguments: string }> | undefined
+  ): Promise<ConversationThread> {
+    if (!toolCalls || toolCalls.length === 0) return context.thread;
+
+    const { thread, agents, apiConfigs, prompts, traceId } = context;
+
+    let conversations = await this.repos.getConversations(userReq);
+
+    // For each agent__ tool call, ensure agent thread and run the agent conversation
+    for (const tc of toolCalls) {
+      if (!tc?.name) continue;
+      if (!tc.name.startsWith('agent__')) continue;
+
+      const agentId = tc.name.slice('agent__'.length);
+      const agent = agents.find(a => a.id === agentId);
+      if (!agent) {
+        // Inject tool error into director thread
+        const toolErrorMsg = {
+          role: 'tool',
+          name: tc.name,
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: 'unknown_agent', details: { agentId } })
+        };
+        conversations = appendMessageToThread(conversations, thread.id, toolErrorMsg);
+        await this.repos.setConversations(userReq, conversations);
+        continue;
+      }
+
+      const nowIso = new Date().toISOString();
+      const ensured = ensureAgentThread(
+        conversations,
+        thread.id,
+        { id: thread.directorId, name: undefined, promptId: thread.promptId, apiConfigId: thread.apiConfigId } as any,
+        agent,
+        thread.email,
+        prompts as any,
+        apiConfigs as any,
+        nowIso,
+        () => newId(),
+        traceId,
+        this.req
+      );
+
+      if ('error' in ensured) {
+        const toolErrorMsg = {
+          role: 'tool',
+          name: tc.name,
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: ensured.error, reason: ensured.reason })
+        };
+        conversations = appendMessageToThread(conversations, thread.id, toolErrorMsg);
+        await this.repos.setConversations(userReq, conversations);
+        continue;
+      }
+
+      conversations = ensured.conversations;
+      const agentThread = ensured.agentThread;
+
+      await this.repos.setConversations(userReq, conversations);
+
+      let agentInput = '';
+      try {
+        const parsed = tc.arguments ? JSON.parse(tc.arguments) : {};
+        agentInput = String(parsed.input || '').trim();
+      } catch {}
+
+      const handleTool = async (name: string, params: any): Promise<any> => {
+        switch (name) {
+          case 'workspace_add_item': {
+            // Force director-scoped workspace: use parent director thread id
+            const targetId = thread.id;
+            const convs = await this.repos.getConversations(userReq);
+            const t = convs.find(c => c.id === targetId);
+            if (!t) return { ok: false, error: 'conversation_not_found', conversationId: targetId };
+
+            const item: WorkspaceItem = {
+              id: newId(),
+              label: params?.label,
+              description: params?.description,
+              mimeType: params?.mimeType,
+              encoding: params?.encoding,
+              data: params?.data,
+              tags: Array.isArray(params?.tags) ? params.tags : undefined,
+              created: new Date().toISOString(),
+              updated: new Date().toISOString(),
+              context: params?.context || {
+                email: { id: t.email.id, subject: t.email.subject, from: t.email.from, date: t.email.date },
+                director: { id: thread.directorId },
+                agent: { id: agentThread.agentId },
+                createdBy: 'agent',
+                agentId: agentThread.agentId,
+                tool: 'workspace_add_item',
+                conversationId: targetId,
+              },
+            };
+            const items = await repoGetAll<WorkspaceItem>(this.req as any, 'workspaceItems');
+            await repoSetAll<WorkspaceItem>(this.req as any, 'workspaceItems', [...items, item]);
+            return { ok: true, item };
+          }
+          case 'workspace_list_items': {
+            const targetId = thread.id;
+            const items = await repoGetAll<WorkspaceItem>(this.req as any, 'workspaceItems');
+            const filtered = items.filter(i => !i.deleted && i.context?.conversationId === targetId);
+            return { ok: true, items: filtered };
+          }
+          default:
+            return { ok: false, error: 'unsupported_tool', name };
+        }
+      };
+
+      const setConversations = async (next: ConversationThread[]) => {
+        await this.repos.setConversations(userReq, next);
+      };
+
+      const logProvider = (ev: any) => {
+        try {
+          if (!ev || !ev.type) return;
+          if (ev.type === 'request') this.providerLogger.logRequest(ev.conversationId, ev.payload);
+          else if (ev.type === 'response') this.providerLogger.logResponse(ev.conversationId, ev.latencyMs || 0, ev.payload, ev.usage);
+          else if (ev.type === 'error') this.providerLogger.logError(ev.conversationId, ev.error || 'unknown_error', ev.latencyMs);
+        } catch {}
+      };
+
+      const agentApi = apiConfigs.find(c => c.id === agent.apiConfigId) as any;
+      const result = await runAgentConversation(
+        agentThread,
+        agentInput,
+        conversations,
+        agentApi,
+        TOOL_DESCRIPTORS as any,
+        setConversations,
+        handleTool,
+        traceId,
+        logProvider
+      );
+
+      const dirToolMsg = {
+        role: 'tool',
+        name: tc.name,
+        tool_call_id: tc.id,
+        content: JSON.stringify({ status: result.success ? 'completed' : 'failed', agentThreadId: agentThread.id, lastAssistant: result.finalAssistantMessage?.content ?? null })
+      };
+      conversations = appendMessageToThread(conversations, thread.id, dirToolMsg);
+      await this.repos.setConversations(userReq, conversations);
+    }
+
+    const updated = (await this.repos.getConversations(userReq)).find(c => c.id === context.thread.id) as ConversationThread;
+    return updated || context.thread;
+  }
+
+  /**
+   * Run the conversation loop for the thread, respecting the provided step limit.
    */
   async runConversationLoop(
     context: ConversationContext,
@@ -334,9 +501,7 @@ export class ConversationOrchestrator {
     return currentThread;
   }
 
-  /**
-   * Cancel any active conversation step for a thread.
-   */
+  /** Cancel an active step for the given thread id, if present. */
   cancelActiveStep(threadId: string): boolean {
     const activeStep = this.activeSteps.get(threadId);
     if (activeStep) {
@@ -350,9 +515,7 @@ export class ConversationOrchestrator {
     return false;
   }
 
-  /**
-   * Get status of active conversation steps.
-   */
+  /** Return a snapshot of all active steps with durations. */
   getActiveSteps(): Array<{ threadId: string; startTime: number; durationMs: number }> {
     const now = Date.now();
     return Array.from(this.activeSteps.entries()).map(([threadId, step]) => ({
@@ -362,9 +525,7 @@ export class ConversationOrchestrator {
     }));
   }
 
-  /**
-   * Cancel all active steps (for cleanup on shutdown).
-   */
+  /** Cancel all active steps and return the count of cancelled steps. */
   cancelAllActiveSteps(): number {
     const count = this.activeSteps.size;
     for (const [threadId, step] of this.activeSteps.entries()) {

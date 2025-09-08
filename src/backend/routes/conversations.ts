@@ -61,9 +61,6 @@ export default function registerConversationsRoutes(
     const idx = conversations.findIndex((c) => c.id === id);
     if (idx === -1) throw new NotFoundError('Conversation not found');
     const t = conversations[idx];
-    if ((t as any).status === 'finalized' || t.finalized === true) {
-      throw new ValidationError('Conversation is finalized');
-    }
     const now = new Date().toISOString();
     const msg: PromptMessage = { role: 'user', content };
     const updated: ConversationThread = {

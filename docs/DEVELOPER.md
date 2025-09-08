@@ -1,3 +1,62 @@
+## Orchestrator Contract (Authoritative)
+
+This section is the operational contract the backend must uphold. It is used as acceptance criteria after refactors.
+
+1) Director turn execution
+
+- Call the provider chat API with:
+  - Messages = full OpenAI-compatible transcript
+  - Tools = effective tool registry:
+    - Mandatory tools are always available.
+    - Optional tools are included only when enabled on the Director (`director.enabledToolCalls`).
+    - Dynamic `agent__<id>` tools are exposed only for the Director’s assigned `agentIds` (when provided).
+- Append the assistant message (may contain `tool_calls`).
+- If assistant contains `tool_calls[]`, execute each call and then immediately run another director turn unless the step limit is reached.
+
+2) Tool-call execution semantics
+
+- For each `tool_call` in order:
+  - `agent__<id>`: ensure or create an agent child conversation under the director (`parentId = directorThread.id`), then run the agent loop (bounded steps). Return a director `tool` message matching `tool_call_id` with a brief result summary (e.g., `{ status, agentThreadId }`).
+  - Workspace/Memory/Calendar/Todo: validate parameters, execute handler, persist through the appropriate repository (e.g., Workspaces via `workspaceItems` repo), and emit a `tool` message with the result (OpenAI schema).
+
+3) Agent loop
+
+- Up to LOOP_MAX steps:
+  - Call the provider chat API with agent messages and tools.
+    - Tools = effective tool registry for the Agent: mandatory + optional from `agent.enabledToolCalls` only.
+  - Append assistant; if assistant has no `tool_calls`, break.
+  - For each `tool_call`, execute tool, append `tool` message, and continue.
+
+4) Provider events
+
+- Log request/response/error for both director and agents via `ProviderEventLogger(req)` so that records persist to the per-user `logs/provider-events.json`.
+
+5) Transcript invariants
+
+- The canonical transcript must always preserve the OpenAI sequence:
+  - assistant (with `tool_calls[]`) → tool (one per call, matching `tool_call_id`) → assistant → ...
+- Conversations are the sole source of truth for chat content; provider events are persisted separately.
+
+6) Workspace persistence
+
+- Scope is Director-thread scoped. Each email × director pair has its own workspace bucket identified by the Director thread id.
+- Workspace items are persisted via the Workspaces repository (no direct embedding into `ConversationThread`).
+- Tool handlers must write to `workspaceItems` via repository functions with `ReqLike` context, using `conversationId = <directorThreadId>`.
+
+### Acceptance checks (post‑change)
+
+- Director assistant messages that contain `tool_calls` are always followed by `tool` messages and then another director assistant turn (unless step limit reached).
+- `agent__*` calls create or reuse agent threads under the director; agent transcripts grow; agent runs can include their own tool calls. Dynamic agent tools are limited to the Director’s assigned agents.
+- Provider events exist for director and agents for each model call.
+- Workspace items created by tools are persisted under the user’s `workspaceItems` repo and visible via Workspaces routes, under the parent Director thread id.
+
+## Terminology (Authoritative)
+
+- Thread — Canonical API object representing the persisted chat transcript and metadata. This repository uses `ConversationThread` for the same concept.
+- Conversation — Informal synonym for Thread in docs.
+- Session — Transient usage window (not a persisted API object). We create Threads, not Sessions.
+- Turn — A single exchange: one user message and the assistant’s reply. In this codebase, a Director step may include tool execution followed by the subsequent assistant turn.
+
 # vxMailAgent Developer Guide
 
 ## System Architecture

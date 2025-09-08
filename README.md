@@ -40,6 +40,26 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 
 See `docs/DEVELOPER.md` for usage patterns and options.
 
+## Orchestration Contract (Short Form)
+
+- Directors and agents are conversations against the OpenAI Chat API. The canonical transcript is OpenAI-compatible and strictly preserves assistant → tool → assistant cadence.
+- Director turn:
+  - Run chat with `TOOL_DESCRIPTORS` plus dynamic `agent__<id>` tools.
+  - If assistant emits `tool_calls[]`, execute each call, append matching `tool` messages, then run another director turn (bounded by step limit).
+- Agent loop:
+  - Run chat. If `tool_calls[]` present, execute and append `tool` messages; continue until assistant content or step limit.
+- Provider events:
+  - Persist request/response/error for both director and agents via req-scoped logger to `logs/provider-events.json`.
+- Workspace items:
+  - Persist via Workspaces repository (`workspaceItems`) with req context; do not embed items into `ConversationThread`.
+
+### Acceptance Checks (Smoke)
+
+- Director assistant with `tool_calls` is followed by `tool` messages and a subsequent director assistant turn.
+- `agent__*` calls create/reuse agent child threads and agent transcripts grow.
+- Provider events exist for both director and agents for each model call.
+- Workspace items created by tools are persisted and listable via Workspaces routes.
+
 ## Environment Variables (Backend)
 
 - `VX_MAILAGENT_KEY` — required for encryption: 64‑char hex key to encrypt `data/` at rest. If missing/invalid, data is written in plaintext (dev‑only).

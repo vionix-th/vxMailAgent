@@ -39,7 +39,7 @@ export function evaluateFilters(filters: Filter[], ctx: EmailContext): FilterEva
   });
 }
 
-/** Derives director ids that should trigger based on filter evaluations. */
+/** Derive director ids that should trigger based on filter evaluations. */
 export function selectDirectorTriggers(evals: FilterEvaluation[]): string[] {
   const directorTriggers: string[] = [];
   const nonDupSeen = new Set<string>();
@@ -52,15 +52,9 @@ export function selectDirectorTriggers(evals: FilterEvaluation[]): string[] {
   return directorTriggers;
 }
 
-/**
- * Determines whether a director conversation should be finalized.
- * Currently finalizes after the tool-call loop; extracted for future configurability.
- */
-export function shouldFinalizeDirector(): boolean {
-  return true;
-}
+// Finalization removed; completion is implicit when loops end
 
-/** Enhanced logging for conversation step diagnostics */
+/** Enhanced logging hook for conversation step diagnostics. */
 export function logConversationStepDiagnostic(
   stepType: 'director_start' | 'director_llm' | 'director_tool' | 'director_finalize' | 'agent_start' | 'agent_llm' | 'agent_tool' | 'agent_finalize',
   conversationId: string,
@@ -84,7 +78,8 @@ export function logConversationStepDiagnostic(
 
 
 /**
- * Ensures an agent thread exists for the director conversation, creating or reusing one.
+ * Ensure an agent thread exists under a director thread, creating or reusing one.
+ * Returns either { conversations, agentThread, isNew } or an { error, reason } result.
  */
 export function ensureAgentThread(
   conversations: ConversationThread[],
@@ -107,8 +102,7 @@ export function ensureAgentThread(
       c.kind === 'agent' &&
       c.parentId === dirThreadId &&
       c.agentId === agent.id &&
-      c.status === 'ongoing' &&
-      !c.finalized
+      c.status === 'ongoing'
     );
     if (reusable) {
       agentThread = reusable;
@@ -127,7 +121,7 @@ export function ensureAgentThread(
   if (!agentThread) {
     const agentThreadId = newIdFn();
     const nowIso2 = nowIso;
-    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [], workspaceItems: [], finalized: false } as ConversationThread;
+    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [], finalized: false } as ConversationThread;
     conversations = [...conversations, agentThread];
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, agentThreadId } }, req);
     return { conversations, agentThread, isNew };
@@ -164,7 +158,8 @@ export interface AgentConversationResult {
 }
 
 /**
- * Runs the agent's conversation loop, handling tool calls and optional provider logging.
+ * Run the Agent conversation loop, handling tool calls and optional provider logging.
+ * Returns the final assistant message, updated conversations snapshot, and success status.
  */
 export async function runAgentConversation(
   agentThread: ConversationThread,
