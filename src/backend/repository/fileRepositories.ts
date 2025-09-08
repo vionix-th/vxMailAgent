@@ -133,32 +133,31 @@ export class FileJsonRepository<T> extends PrunableFileRepo<T> implements Reposi
     }
   }
   
-  async setAll(next: T[]): Promise<void> {
+  /** Internal write that assumes caller coordinates locking. */
+  private async writeAllUnlocked(next: T[]): Promise<void> {
     const items = this.pruneList(next);
-    
     try {
       await persistence.encryptAndPersist(items, this.filePath, this.containerPath);
-
-      // Log successful write operation
       const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : null;
       this.logFileOperation('write', true, undefined, fileStats?.size);
-
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('write', false, error.message);
-      
-      // Use error handler for consistent error processing
       if (error.message.includes('Security violation') || error.message.includes('Unsafe path')) {
         throw new SecurityError(`Path security violation: ${this.filePath}`);
       }
-      
       if (error.message.includes('size exceeds limit')) {
         throw new SecurityError(`File size limit exceeded: ${this.filePath}`);
       }
-
       logger.error('FileJsonRepository.setAll failed', { filePath: this.filePath, error });
       throw error;
     }
+  }
+
+  async setAll(next: T[]): Promise<void> {
+    await withFileLock(this.filePath, async () => {
+      await this.writeAllUnlocked(next);
+    });
   }
 }
 
@@ -199,7 +198,8 @@ export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> 
     }
   }
 
-  async setAll(next: FetcherLogEntry[]): Promise<void> {
+  /** Internal write that assumes caller coordinates locking. */
+  private async writeAllUnlocked(next: FetcherLogEntry[]): Promise<void> {
     const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
@@ -213,11 +213,17 @@ export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> 
     }
   }
 
+  async setAll(next: FetcherLogEntry[]): Promise<void> {
+    await withFileLock(this.filePath, async () => {
+      await this.writeAllUnlocked(next);
+    });
+  }
+
   async append(e: FetcherLogEntry): Promise<void> {
     await withFileLock(this.filePath, async () => {
       const list = await this.getAll();
       list.push(e);
-      await this.setAll(list);
+      await this.writeAllUnlocked(list);
     });
   }
 }
@@ -259,7 +265,8 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
     }
   }
 
-  async setAll(next: OrchestrationDiagnosticEntry[]): Promise<void> {
+  /** Internal write that assumes caller coordinates locking. */
+  private async writeAllUnlocked(next: OrchestrationDiagnosticEntry[]): Promise<void> {
     const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
@@ -273,11 +280,17 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
     }
   }
 
+  async setAll(next: OrchestrationDiagnosticEntry[]): Promise<void> {
+    await withFileLock(this.filePath, async () => {
+      await this.writeAllUnlocked(next);
+    });
+  }
+
   async append(e: OrchestrationDiagnosticEntry): Promise<void> {
     await withFileLock(this.filePath, async () => {
       const list = await this.getAll();
       list.push(e);
-      await this.setAll(list);
+      await this.writeAllUnlocked(list);
     });
   }
 }
@@ -319,7 +332,8 @@ export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent
     }
   }
 
-  async setAll(next: ProviderEvent[]): Promise<void> {
+  /** Internal write that assumes caller coordinates locking. */
+  private async writeAllUnlocked(next: ProviderEvent[]): Promise<void> {
     const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
@@ -333,11 +347,17 @@ export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent
     }
   }
 
+  async setAll(next: ProviderEvent[]): Promise<void> {
+    await withFileLock(this.filePath, async () => {
+      await this.writeAllUnlocked(next);
+    });
+  }
+
   async append(ev: ProviderEvent): Promise<void> {
     await withFileLock(this.filePath, async () => {
       const list = await this.getAll();
       list.push(ev);
-      await this.setAll(list);
+      await this.writeAllUnlocked(list);
     });
   }
 }
@@ -380,7 +400,8 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
     }
   }
 
-  async setAll(next: Trace[]): Promise<void> {
+  /** Internal write that assumes caller coordinates locking. */
+  private async writeAllUnlocked(next: Trace[]): Promise<void> {
     const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
@@ -394,11 +415,17 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
     }
   }
 
+  async setAll(next: Trace[]): Promise<void> {
+    await withFileLock(this.filePath, async () => {
+      await this.writeAllUnlocked(next);
+    });
+  }
+
   async append(t: Trace): Promise<void> {
     await withFileLock(this.filePath, async () => {
       const list = await this.getAll();
       list.push(t);
-      await this.setAll(list);
+      await this.writeAllUnlocked(list);
     });
   }
 
@@ -410,7 +437,7 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
         const cur = list[idx];
         const result = updater(cur);
         if (result) list[idx] = result;
-        await this.setAll(list);
+        await this.writeAllUnlocked(list);
       }
     });
   }
