@@ -42,10 +42,23 @@ trigger: always_on
   `/docs/DESIGN.md` describes the general application design
   Read the documentation before implementing changes to the architecture to ensure alignment.
 
-  <!-- Error handling -->
-  Always add proper error handling and reporting and never silently swollow errors and
-  exceptions.
-  Validate all external inputs early and fail fast with descriptive errors.
+    <!-- Error handling -->
+    Always add proper error handling and reporting and never silently swollow errors and
+    exceptions.
+    Validate all external inputs early and fail fast with descriptive errors.
+
+    <!-- Defaults and validation -->
+    No Defaults For Invariants: Required inputs/config must error loudly when missing or invalid (startup fails with actionable message).
+    Allowlisted Defaults Only: Use a default only if spec-approved, neutral, documented inline, covered by tests, and emits a one-time WARN with key + value.
+    Fail Closed, Not Open: Prefer explicit errors to silent fallbacks; escalate to caller instead of masking issues.
+    Validate At Boundaries: Parse and validate all external inputs (env, request bodies) with a schema; reject on failure.
+    Safe Defaulting Semantics: Use `??` only for typed optionals; never use `||` for defaulting (avoids 0/'' bugs); no implicit coercions.
+    Layered Behavior: Backend enforces invariants strictly; UI may degrade gracefully while surfacing the underlying cause.
+    PR Checklist: For every default, state why it’s safe, where it’s documented, and link tests covering both missing-value and normal paths.
+    Telemetry: Log and count default activations; alert on unexpected increases.
+
+    <!-- Tooling enforcement -->
+    ESLint/TS: Enable `@typescript-eslint/strict-boolean-expressions`, `no-unnecessary-condition`, `no-implicit-coercion`; add a rule to ban `||` defaulting; prefer `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`.
 
   <!-- Code comments -->
   Only add comments where they provide actual value and never commment self explaining code.
