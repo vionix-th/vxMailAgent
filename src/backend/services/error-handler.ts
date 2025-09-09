@@ -120,6 +120,17 @@ export class NotFoundError extends Error {
   }
 }
 
+export class ConflictError extends Error {
+  constructor(
+    message: string,
+    public code: string = 'CONFLICT',
+    public statusCode: number = 409
+  ) {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}
+
 class ErrorHandlerService {
   /**
    * Sanitizes error messages to prevent information leakage.
@@ -131,6 +142,7 @@ class ErrorHandlerService {
         error instanceof AuthenticationError || 
         error instanceof AuthorizationError ||
         error instanceof NotFoundError ||
+        error instanceof ConflictError ||
         error instanceof PersistenceError ||
         error instanceof RepositoryError ||
         error instanceof OrchestrationError ||

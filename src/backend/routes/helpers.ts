@@ -1,7 +1,7 @@
 import express from 'express';
 import { ReqLike } from '../utils/repo-access';
 import logger from '../services/logger';
-import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
+import { errorHandler, ValidationError, NotFoundError, ConflictError } from '../services/error-handler';
 
 export interface CrudRepoFunctions<T> {
   getAll: (req?: ReqLike) => Promise<T[]>;
@@ -83,11 +83,21 @@ export function createCrudRoutes<T extends Record<string, any>>(
     }
 
     const current = await repoFns.getAll(req as ReqLike);
+    const newId = item[idField] as any;
+    if (newId === undefined || newId === null || String(newId).length === 0) {
+      throw new ValidationError(`${itemName} ${String(idField)} is required`);
+    }
+    if (current.some(existing => existing[idField] === newId)) {
+      throw new ConflictError(`${itemName} with ${String(idField)} '${String(newId)}' already exists`);
+    }
+
     const next = [...current, item];
     await repoFns.setAll(req as ReqLike, next);
 
-    logger.info(`POST ${basePath}: added ${itemName}`, { id: item[idField] });
-    res.json({ success: true });
+    logger.info(`POST ${basePath}: added ${itemName}`, { id: newId });
+    res.status(201)
+      .location(`${basePath}/${encodeURIComponent(String(newId))}`)
+      .json(item);
   }));
 
   // PUT /api/{resource}/:id
@@ -129,20 +139,24 @@ export function createCrudRoutes<T extends Record<string, any>>(
     await repoFns.setAll(req as ReqLike, next);
 
     logger.info(`PUT ${basePath}/:id updated`, { id });
-    res.json({ success: true });
+    res.json(item);
   }));
 
   // DELETE /api/{resource}/:id
   app.delete(`${basePath}/:id`, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const current = await repoFns.getAll(req as ReqLike);
-    const before = current.length;
-    const next = current.filter(item => item[idField] !== id);
+    const idx = current.findIndex(item => item[idField] === id);
+    if (idx === -1) {
+      logger.warn(`DELETE ${basePath}/:id not found`, { id });
+      throw new NotFoundError(`${itemName} not found`);
+    }
+    const next = current.slice();
+    next.splice(idx, 1);
     await repoFns.setAll(req as ReqLike, next);
-    const after = next.length;
 
-    logger.info(`DELETE ${basePath}/:id deleted`, { id, deleted: before - after });
-    res.json({ success: true });
+    logger.info(`DELETE ${basePath}/:id deleted`, { id, deleted: 1 });
+    res.status(204).send();
   }));
 
   // PUT /api/{resource}/reorder (optional)
