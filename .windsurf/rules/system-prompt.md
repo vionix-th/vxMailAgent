@@ -33,6 +33,9 @@ trigger: always_on
 
   <!-- Clean code -->
   Follow S.O.L.I.D. design principles.
+  Design modules with narrow responsibilities; avoid monolithic orchestrators.
+  Separate workspace management, logging, and agent coordination into dedicated services.
+  Ensure strict typing and explicit identifiers; avoid optional IDs and ambiguous types.
 
   <!-- Documentation -->
   `/docs/DEVELOPER.md` documents the ongoing development
@@ -40,8 +43,9 @@ trigger: always_on
   Read the documentation before implementing changes to the architecture to ensure alignment.
 
   <!-- Error handling -->
-  Always add proper error handling and reporting and never silently swollow errors and 
+  Always add proper error handling and reporting and never silently swollow errors and
   exceptions.
+  Validate all external inputs early and fail fast with descriptive errors.
 
   <!-- Code comments -->
   Only add comments where they provide actual value and never commment self explaining code.
@@ -57,6 +61,7 @@ trigger: always_on
   <!-- Quality control -->
   Warn explicitly on non-idiomatic or suboptimal practices.
   Present original vs corrected code with concise reasoning.
+  Keep commits focused on a single concern and run lint, type-check, and tests before committing.
 
   <!-- Alternatives and trade-offs -->
   When multiple valid solutions exist:
