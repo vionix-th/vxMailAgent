@@ -79,6 +79,48 @@ export abstract class UserFileRepoBase {
   }
 }
 
+/** Shared prune utility for TTL and max-items logic. */
+export function pruneItems<T>(list: T[], options?: {
+  ttlMs?: number | (() => number);
+  maxItems?: number | (() => number);
+  getTimestamp?: (item: T) => string | number | Date | undefined;
+}): T[] {
+  try {
+    let next = list;
+    // TTL pruning
+    const ttlVal = options?.ttlMs;
+    const ttlMs = typeof ttlVal === 'function' ? ttlVal() : ttlVal;
+    if (ttlMs && ttlMs > 0) {
+      const now = Date.now();
+      const getTs = options?.getTimestamp;
+      if (getTs) {
+        next = next.filter((item) => {
+          const raw = getTs(item);
+          let ts: number | undefined;
+          if (raw instanceof Date) ts = raw.getTime();
+          else if (typeof raw === 'number') ts = raw;
+          else if (typeof raw === 'string') {
+            const parsed = Date.parse(raw);
+            ts = isNaN(parsed) ? undefined : parsed;
+          }
+          return ts === undefined ? true : (now - ts) <= ttlMs;
+        });
+      }
+    }
+
+    // Max items capping (keep most recent by list order)
+    const maxVal = options?.maxItems;
+    const maxItems = typeof maxVal === 'function' ? maxVal() : maxVal;
+    if (maxItems && maxItems > 0 && next.length > maxItems) {
+      next = next.slice(Math.max(0, next.length - maxItems));
+    }
+
+    return next;
+  } catch {
+    return list;
+  }
+}
+
 /**
  * Generic pruning base that encapsulates TTL and max-items logic.
  * - Keeps logging and security via FileRepoBase.
@@ -99,41 +141,7 @@ export abstract class PrunableFileRepo<T> extends UserFileRepoBase {
   }
 
   protected pruneList(list: T[]): T[] {
-    try {
-      let next = list;
-
-      // TTL pruning
-      const ttlVal = this.pruneOptions?.ttlMs;
-      const ttlMs = typeof ttlVal === 'function' ? ttlVal() : ttlVal;
-      if (ttlMs && ttlMs > 0) {
-        const now = Date.now();
-        const getTs = this.pruneOptions?.getTimestamp;
-        if (getTs) {
-          next = next.filter((item) => {
-            const raw = getTs(item);
-            let ts: number | undefined;
-            if (raw instanceof Date) ts = raw.getTime();
-            else if (typeof raw === 'number') ts = raw;
-            else if (typeof raw === 'string') {
-              const parsed = Date.parse(raw);
-              ts = isNaN(parsed) ? undefined : parsed;
-            }
-            return ts === undefined ? true : (now - ts) <= ttlMs;
-          });
-        }
-      }
-
-      // Max items capping (keep most recent by list order)
-      const maxVal = this.pruneOptions?.maxItems;
-      const maxItems = typeof maxVal === 'function' ? maxVal() : maxVal;
-      if (maxItems && maxItems > 0 && next.length > maxItems) {
-        next = next.slice(Math.max(0, next.length - maxItems));
-      }
-
-      return next;
-    } catch {
-      return list;
-    }
+    return pruneItems(list, this.pruneOptions);
   }
 }
 
@@ -524,36 +532,7 @@ abstract class SystemPrunableFileRepo<T> extends SystemFileRepoBase {
   }
 
   protected pruneList(list: T[]): T[] {
-    try {
-      let next = list;
-      const ttlVal = this.pruneOptions?.ttlMs;
-      const ttlMs = typeof ttlVal === 'function' ? ttlVal() : ttlVal;
-      if (ttlMs && ttlMs > 0) {
-        const now = Date.now();
-        const getTs = this.pruneOptions?.getTimestamp;
-        if (getTs) {
-          next = next.filter((item) => {
-            const raw = getTs(item);
-            let ts: number | undefined;
-            if (raw instanceof Date) ts = raw.getTime();
-            else if (typeof raw === 'number') ts = raw;
-            else if (typeof raw === 'string') {
-              const parsed = Date.parse(raw);
-              ts = isNaN(parsed) ? undefined : parsed;
-            }
-            return ts === undefined ? true : (now - ts) <= ttlMs;
-          });
-        }
-      }
-      const maxVal = this.pruneOptions?.maxItems;
-      const maxItems = typeof maxVal === 'function' ? maxVal() : maxVal;
-      if (maxItems && maxItems > 0 && next.length > maxItems) {
-        next = next.slice(Math.max(0, next.length - maxItems));
-      }
-      return next;
-    } catch {
-      return list;
-    }
+    return pruneItems(list, this.pruneOptions);
   }
 }
 
