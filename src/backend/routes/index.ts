@@ -21,6 +21,8 @@ import registerUnifiedDiagnosticsRoutes from './unified-diagnostics';
 import registerCleanupRoutes from './cleanup';
 import { FetcherManager } from '../services/fetcher-manager';
 import { LiveRepos } from '../liveRepos';
+import { isProd, ENABLE_TEST_ROUTES } from '../config';
+import logger from '../services/logger';
 
 export default function registerRoutes(
   app: express.Express, 
@@ -34,7 +36,13 @@ export default function registerRoutes(
   }
 ) {
   registerAuthSessionRoutes(app);
-  registerTestRoutes(app, repos);
+  // Test routes are disabled in production by default; enable only with explicit override
+  if (!isProd || ENABLE_TEST_ROUTES) {
+    if (isProd && ENABLE_TEST_ROUTES) {
+      logger.warn('Enabling test routes in production by explicit override ENABLE_TEST_ROUTES=true');
+    }
+    registerTestRoutes(app, repos);
+  }
   registerMemoryRoutes(app, {});
   registerOrchestrationRoutes(app, repos, services);
   registerSettingsRoutes(app, {});

@@ -22,6 +22,8 @@ export const PORT: number = getOptionalIntEnv('PORT', 3001);
 export const HOST = getOptionalEnv('HOST', '172.0.0.1');
 export const CORS_ORIGIN = getOptionalEnv('CORS_ORIGIN', '*');
 export const isProd = getOptionalEnv('NODE_ENV', 'development') === 'production';
+// Feature flags
+export const ENABLE_TEST_ROUTES = /^true$/i.test(getOptionalEnv('ENABLE_TEST_ROUTES', ''));
 
 // OAuth: Google - allow empty for optional configuration
 export const GOOGLE_CLIENT_ID = getOptionalEnv('GOOGLE_CLIENT_ID', '');
