@@ -1,6 +1,5 @@
 import express from 'express';
 import { ConversationThread, PromptMessage, ProviderEvent } from '../../shared/types';
-import { conversationEngine } from '../services/engine';
 import { runAgentConversation } from '../services/orchestration-agent';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { createToolHandler } from '../toolCalls';
@@ -10,7 +9,8 @@ import { requireReq, requireRepos } from '../utils/repo-access';
 import type { ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
-import { transformMessagesForEngine, extractLastUserContent } from '../utils/message-transformers';
+import { extractLastUserContent } from '../utils/message-transformers';
+import { ConversationOrchestrator, createUserRequest } from '../services/conversation-orchestrator';
 
 interface ConversationResult {
   assistantMessage: PromptMessage | null;
@@ -31,50 +31,6 @@ async function validateConversationRequest(
   if (!apiConfig) throw new NotFoundError('API config not found');
 
   return { thread, apiConfig };
-}
-
-
-async function processDirectorConversation(
-  thread: ConversationThread,
-  messages: any[],
-  apiConfig: any,
-  req: ReqLike,
-  repos: LiveRepos,
-): Promise<ConversationResult> {
-  const t0 = Date.now();
-  const provLogger = new ProviderEventLogger(req as any);
-  const engineOut = await conversationEngine.run({
-    messages: messages as any,
-    apiConfig: apiConfig as any,
-    role: 'director',
-    roleCaps: { canSpawnAgents: true },
-    toolRegistry: TOOL_DESCRIPTORS,
-    context: { conversationId: thread.id, agents: await repos.getAgents(req) },
-  });
-  
-  const result = {
-    assistantMessage: engineOut.assistantMessage,
-    toolCalls: engineOut.toolCalls,
-    content: engineOut.content,
-    request: engineOut.request,
-    response: engineOut.response,
-  } as any;
-  
-  const latencyMs = Date.now() - t0;
-  await updateDirectorThread(thread, result.assistantMessage, req, repos);
-  // Centralized provider-event logging via ProviderEventLogger
-  if (result.request) {
-    provLogger.logRequest(thread.id, result.request);
-  }
-  if (result.response) {
-    provLogger.logResponse(thread.id, latencyMs, result.response, result.response?.usage);
-  }
-
-  return {
-    assistantMessage: result.assistantMessage,
-    content: result.content,
-    toolCalls: result.toolCalls
-  };
 }
 
 async function processAgentConversation(
@@ -136,28 +92,6 @@ async function processAgentConversation(
   };
 }
 
-async function updateDirectorThread(
-  thread: ConversationThread,
-  assistantMessage: PromptMessage,
-  req: ReqLike,
-  repos: LiveRepos
-): Promise<void> {
-  const now = new Date().toISOString();
-  const updated: ConversationThread = {
-    ...thread,
-    messages: [...thread.messages, assistantMessage],
-    lastActiveAt: now,
-    provider: 'openai',
-  } as any;
-  
-  const conversations = await repos.getConversations(req);
-  const idx = conversations.findIndex((c) => c.id === thread.id);
-  if (idx !== -1) {
-    const next = conversations.slice();
-    next[idx] = updated;
-    await repos.setConversations(req, next);
-  }
-}
 export default function registerConversationsRoutes(
   app: express.Express, 
   repos: LiveRepos,
@@ -225,13 +159,38 @@ export default function registerConversationsRoutes(
     const reqLike = req as any as ReqLike;
     
     const { thread, apiConfig } = await validateConversationRequest(id, reqLike, repos);
-    const messages = transformMessagesForEngine(thread.messages);
-    
+
     let result: ConversationResult;
     if (thread.kind === 'director') {
-      result = await processDirectorConversation(thread, messages, apiConfig, reqLike, repos);
+      // Delegate director orchestration to ConversationOrchestrator to ensure contract adherence
+      const orchestrator = new ConversationOrchestrator(reqLike);
+      const userReq = createUserRequest(req as any, repos);
+      const agents = await repos.getAgents(reqLike);
+      const directors = await repos.getDirectors(reqLike);
+      const prompts = await repos.getPrompts(reqLike);
+      const settings = await repos.getSettings(reqLike);
+      const director = directors.find((d: any) => d.id === thread.directorId);
+      if (!director) throw new NotFoundError('Director not found for thread');
+
+      const finalThread = await orchestrator.runConversationLoop({
+        thread,
+        director,
+        agents,
+        apiConfigs: settings.apiConfigs,
+        prompts,
+        traceId: thread.traceId || ''
+      }, userReq, 6);
+
+      // Determine the last assistant message for response payload
+      const lastAssistant = [...finalThread.messages].reverse().find(m => (m as any).role === 'assistant') as PromptMessage | undefined;
+      result = {
+        assistantMessage: lastAssistant || null,
+        content: (typeof lastAssistant?.content === 'string') ? lastAssistant.content : undefined,
+        toolCalls: Array.isArray((lastAssistant as any)?.tool_calls) ? (lastAssistant as any).tool_calls : undefined
+      };
     } else {
-      result = await processAgentConversation(thread, messages, apiConfig, reqLike, repos);
+      // Agent path: use the agent loop helper to honor tool execution semantics
+      result = await processAgentConversation(thread, thread.messages as any, apiConfig, reqLike, repos);
     }
 
     logger.info('POST /api/conversations/:id/assistant replied', { id, length: String(result.content || '').length });
