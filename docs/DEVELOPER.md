@@ -57,6 +57,18 @@ This section is the operational contract the backend must uphold. It is used as 
 - `agent__*` calls create or reuse agent threads under the director; agent transcripts grow; agent runs can include their own tool calls. Dynamic agent tools are limited to the Director’s assigned agents.
 - Provider events exist for director and agents for each model call.
 - Workspace items created by tools are persisted under the user’s `workspaceItems` repo and visible via Workspaces routes, under the parent Director thread id.
+ 
+### Route delegation to ConversationOrchestrator
+
+- All conversation-step logic is centralized in `src/backend/services/conversation-orchestrator.ts`.
+- The conversations route (`src/backend/routes/conversations.ts`) now delegates both branches to the orchestrator:
+  - Director threads: `orchestrator.runConversationLoop({ ...context }, userReq, maxSteps)`
+  - Agent threads: `orchestrator.runAgentAssistant(thread, userReq)`
+- The orchestrator encapsulates:
+  - Provider event logging for both roles via `ProviderEventLogger`.
+  - Director tool-call processing (e.g., `workspace_add_item`, `workspace_list_items`).
+  - Agent tool gating (mandatory + `agent.enabledToolCalls`) and agent loop execution.
+- Rationale: single source of truth for conversation behavior, thinner routes, and consistent diagnostics/persistence.
 
 ## Terminology (Authoritative)
 

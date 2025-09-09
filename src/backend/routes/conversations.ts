@@ -1,17 +1,13 @@
 import express from 'express';
-import { ConversationThread, PromptMessage, ProviderEvent } from '../../shared/types';
-import { runAgentConversation } from '../services/orchestration-agent';
-import { TOOL_DESCRIPTORS } from '../../shared/tools';
-import { createToolHandler } from '../toolCalls';
+import { PromptMessage } from '../../shared/types';
 import logger from '../services/logger';
-import { ProviderEventLogger } from '../services/logging-handlers';
-import { requireReq, requireRepos } from '../utils/repo-access';
+import { requireReq } from '../utils/repo-access';
 import type { ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
-import { extractLastUserContent } from '../utils/message-transformers';
 import { ConversationOrchestrator, createUserRequest } from '../services/conversation-orchestrator';
 import { repoAppendMessage } from '../services/conversation-mutations';
+import type { ConversationThread } from '../../shared/types';
 
 interface ConversationResult {
   assistantMessage: PromptMessage | null;
@@ -23,80 +19,15 @@ async function validateConversationRequest(
   id: string, 
   req: ReqLike, 
   repos: LiveRepos
-): Promise<{ thread: ConversationThread; apiConfig: any }> {
+): Promise<{ thread: ConversationThread }> {
   const conversations = await repos.getConversations(req);
   const thread = conversations.find((c) => c.id === id);
   if (!thread) throw new NotFoundError('Conversation not found');
 
-  const apiConfig = (await repos.getSettings(requireReq(req))).apiConfigs.find((c: any) => c.id === thread.apiConfigId);
-  if (!apiConfig) throw new NotFoundError('API config not found');
-
-  return { thread, apiConfig };
+  return { thread };
 }
 
-async function processAgentConversation(
-  thread: ConversationThread,
-  messages: any[],
-  apiConfig: any,
-  req: ReqLike,
-  repos: LiveRepos,
-): Promise<ConversationResult> {
-  const userContent = extractLastUserContent(messages);
-  const provLogger = new ProviderEventLogger(req as any);
-  // Compute gated tool registry for this agent: mandatory + explicitly enabled optional tools
-  const agentList = await repos.getAgents(req);
-  const agent = agentList.find((a: any) => a.id === thread.agentId);
-  const enabled = Array.isArray((agent as any)?.enabledToolCalls) ? new Set<string>((agent as any).enabledToolCalls) : new Set<string>();
-  const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => (d.flags && d.flags.mandatory) || enabled.has(d.name));
-  
-  const agentResult = await runAgentConversation(
-    thread,
-    userContent,
-    await repos.getConversations(req),
-    apiConfig,
-    gatedToolDescriptors,
-    async (next: ConversationThread[]) => { await repos.setConversations(req, next); },
-    createToolHandler(requireRepos(requireReq(req))),
-    undefined,
-    async (ev: ProviderEvent) => {
-      try {
-        const t = (ev as any).type;
-        if (t === 'request') {
-          provLogger.logRequest(thread.id, (ev as any).payload);
-        } else if (t === 'response') {
-          provLogger.logResponse(
-            thread.id,
-            (ev as any).latencyMs,
-            (ev as any).payload,
-            (ev as any).usage
-          );
-        } else if (t === 'error') {
-          provLogger.logError(
-            thread.id,
-            String((ev as any).error),
-            (ev as any).latencyMs
-          );
-        } else {
-          logger.warn('Unknown provider event type', { type: t, conversationId: thread.id });
-        }
-      } catch (e: any) {
-        logger.warn('Provider event logging failed in conversations route', {
-          error: e?.message || String(e),
-          conversationId: thread.id,
-        });
-      }
-    }
-  );
-  
-  if (!agentResult.success) {
-    throw new Error(agentResult.error || 'Agent conversation failed');
-  }
-  
-  return {
-    assistantMessage: agentResult.finalAssistantMessage,
-    content: agentResult.finalAssistantMessage?.content
-  };
-}
+// Agent processing moved under ConversationOrchestrator.runAgentAssistant
 
 export default function registerConversationsRoutes(
   app: express.Express, 
@@ -155,13 +86,14 @@ export default function registerConversationsRoutes(
     const id = req.params.id;
     const reqLike = req as any as ReqLike;
     
-    const { thread, apiConfig } = await validateConversationRequest(id, reqLike, repos);
+    const { thread } = await validateConversationRequest(id, reqLike, repos);
 
     let result: ConversationResult;
+    // Use a single orchestrator instance for both branches
+    const orchestrator = new ConversationOrchestrator(reqLike);
+    const userReq = createUserRequest(req as any, repos);
     if (thread.kind === 'director') {
       // Delegate director orchestration to ConversationOrchestrator to ensure contract adherence
-      const orchestrator = new ConversationOrchestrator(reqLike);
-      const userReq = createUserRequest(req as any, repos);
       const agents = await repos.getAgents(reqLike);
       const directors = await repos.getDirectors(reqLike);
       const prompts = await repos.getPrompts(reqLike);
@@ -186,8 +118,12 @@ export default function registerConversationsRoutes(
         toolCalls: Array.isArray((lastAssistant as any)?.tool_calls) ? (lastAssistant as any).tool_calls : undefined
       };
     } else {
-      // Agent path: use the agent loop helper to honor tool execution semantics
-      result = await processAgentConversation(thread, thread.messages as any, apiConfig, reqLike, repos);
+      // Agent path: delegate to orchestrator to centralize behavior
+      const agentOut = await orchestrator.runAgentAssistant(thread, userReq);
+      result = {
+        assistantMessage: agentOut.assistantMessage,
+        content: agentOut.content,
+      };
     }
 
     logger.info('POST /api/conversations/:id/assistant replied', { id, length: String(result.content || '').length });

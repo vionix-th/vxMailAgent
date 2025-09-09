@@ -12,6 +12,7 @@ import type { UserRequest as MiddlewareUserRequest } from '../middleware/user-co
 import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import { repoAppendMessage, repoAppendMessages, repoFinalizeThreadStatus, repoGetThreadById } from './conversation-mutations';
+import { extractLastUserContent } from '../utils/message-transformers';
 
 export interface ConversationContext {
   thread: ConversationThread;
@@ -37,7 +38,7 @@ export function createUserRequest(middlewareReq: MiddlewareUserRequest, repos: L
   };
 }
 
-export interface OrchestrationResult {
+export interface ConversationStepResult {
   updatedThread: ConversationThread;
   success: boolean;
   shouldContinue: boolean;
@@ -71,7 +72,7 @@ export class ConversationOrchestrator {
   async runConversationStep(
     context: ConversationContext,
     userReq: UserRequest
-  ): Promise<OrchestrationResult> {
+  ): Promise<ConversationStepResult> {
     const threadId = context.thread.id;
     const emailId = context.thread.email?.id;
     if (!emailId) {
@@ -174,6 +175,78 @@ export class ConversationOrchestrator {
     }
 
     return currentThread;
+  }
+
+  /**
+   * Run the agent assistant for an agent thread, mirroring route semantics.
+   */
+  async runAgentAssistant(
+    thread: ConversationThread,
+    userReq: UserRequest
+  ): Promise<{ assistantMessage: PromptMessage | null; content?: string }> {
+    // Resolve API config for this agent thread
+    const apiConfigs = (await userReq.repos.getSettings(requireReq(userReq.reqLike))).apiConfigs;
+    const apiConfig = apiConfigs.find((c: any) => c.id === thread.apiConfigId);
+    if (!apiConfig) {
+      throw new Error('API config not found');
+    }
+
+    // Gate tool registry for this agent: mandatory + explicitly enabled optional tools
+    const allAgents = await userReq.repos.getAgents(userReq.reqLike);
+    const agentCfg = allAgents.find((a: Agent) => a.id === thread.agentId);
+    const enabledSet = new Set<string>(Array.isArray(agentCfg?.enabledToolCalls) ? agentCfg!.enabledToolCalls! : []);
+    const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => (d.flags && d.flags.mandatory) || enabledSet.has(d.name));
+
+    const userContent = extractLastUserContent(thread.messages as any);
+
+    const agentResult = await runAgentConversation(
+      thread,
+      userContent,
+      await userReq.repos.getConversations(userReq.reqLike),
+      apiConfig,
+      gatedToolDescriptors,
+      async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
+      createToolHandler(requireRepos(requireReq(userReq.reqLike))),
+      userReq.traceId,
+      async (ev: ProviderEvent) => {
+        try {
+          const t = (ev as any).type;
+          if (t === 'request') {
+            this.providerLogger.logRequest(thread.id, (ev as any).payload);
+          } else if (t === 'response') {
+            this.providerLogger.logResponse(
+              thread.id,
+              (ev as any).latencyMs,
+              (ev as any).payload,
+              (ev as any).usage
+            );
+          } else if (t === 'error') {
+            this.providerLogger.logError(
+              thread.id,
+              String((ev as any).error),
+              (ev as any).latencyMs
+            );
+          } else {
+            logger.warn('Unknown provider event type', { type: t, conversationId: thread.id });
+          }
+        } catch (e: any) {
+          logger.warn('Provider event logging failed', {
+            error: e?.message || String(e),
+            conversationId: thread.id,
+          });
+        }
+      }
+    );
+
+    if (!agentResult.success) {
+      throw new Error(agentResult.error || 'Agent conversation failed');
+    }
+
+    const lastAssistant = agentResult.finalAssistantMessage as PromptMessage | undefined;
+    return {
+      assistantMessage: lastAssistant || null,
+      content: (typeof lastAssistant?.content === 'string') ? lastAssistant.content : undefined,
+    };
   }
 
   /**
