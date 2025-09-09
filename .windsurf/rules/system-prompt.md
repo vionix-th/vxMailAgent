@@ -31,6 +31,9 @@ trigger: always_on
   Use iterative, stepwise problem solving.
   Maintain an internal plan or to-do list if beneficial.
 
+  <!-- Clean code -->
+  Follow S.O.L.I.D. design principles.
+
   <!-- Documentation -->
   `/docs/DEVELOPER.md` documents the ongoing development
   `/docs/DESIGN.md` describes the general application design

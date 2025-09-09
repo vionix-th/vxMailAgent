@@ -1,4 +1,4 @@
-import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent } from '../../shared/types';
+import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem } from '../../shared/types';
 import { runAgentConversation, ensureAgentThread } from './orchestration-agent';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { createToolHandler } from '../toolCalls';
@@ -260,7 +260,22 @@ export class ConversationOrchestrator {
     const agentThread = ensure.agentThread;
     await userReq.repos.setConversations(userReq.reqLike, conversations);
 
-    await this.createWorkspaceItem(args, agentId, agentThread.id, userReq);
+    // Persist workspace item via helper (validates schema and writes to repo)
+    const addedItem = await this.createWorkspaceItem(context, args, agentId, agentThread.id, userReq, { id: toolCall.id, name: toolCall.name });
+    if (!addedItem) {
+      await this.injectAgentErrorMessage(context.thread, toolCall.id, 'Failed to add workspace item', userReq);
+      return;
+    }
+
+    // Inject tool response back into director thread for continuity
+    const toolResponse: PromptMessage = {
+      role: 'tool',
+      tool_call_id: toolCall.id,
+      content: JSON.stringify({ added: true, itemId: addedItem.id, label: addedItem.label }),
+    };
+    await this.appendMessageToThread(context.thread, toolResponse, userReq);
+
+    // Run the agent conversation after item creation
     await this.executeAgentConversation(context.thread, agentThread, args, toolCall, userReq);
   }
 
@@ -270,35 +285,32 @@ export class ConversationOrchestrator {
     toolCall: { id: string; name: string; arguments: string },
     args: any
   ): Promise<void> {
-    // Explicitly return empty list in absence of workspace repository integration
-    const items: any[] = [];
-    
-    const agentId = args.agent_id;
-    const filteredItems = agentId ? items.filter((item: any) => item.agentId === agentId) : items;
-    
+    const handleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)) as any);
+    const listResult = await handleTool('workspace_list_items', {});
+    if (!listResult.success) {
+      await this.injectAgentErrorMessage(context.thread, toolCall.id, listResult.error || 'Failed to list workspace items', userReq);
+      return;
+    }
+
+    let items: WorkspaceItem[] = Array.isArray(listResult.result) ? (listResult.result as WorkspaceItem[]) : [];
+    const agentId = args.agent_id ? String(args.agent_id) : undefined;
+    if (agentId) {
+      items = items.filter((it) => String((it as any).context?.agentId || (it as any).agentId) === agentId);
+    }
+
     const toolResponse: PromptMessage = {
       role: 'tool',
       tool_call_id: toolCall.id,
-      content: JSON.stringify({
-        items: filteredItems.map((item: any) => ({
-          id: item.id,
-          type: item.type,
-          title: item.title,
-          content: item.content,
-          agentId: item.agentId,
-          status: item.status,
-          createdAt: item.createdAt
-        }))
-      })
+      content: JSON.stringify({ items }),
     };
-    
+
     await this.appendMessageToThread(context.thread, toolResponse, userReq);
-    
-    logger.info('Listed workspace items', { 
-      toolCallId: toolCall.id, 
-      totalItems: items.length, 
-      filteredItems: filteredItems.length,
-      agentFilter: agentId 
+
+    logger.info('Listed workspace items', {
+      toolCallId: toolCall.id,
+      totalItems: Array.isArray(listResult.result) ? (listResult.result as any[]).length : 0,
+      filteredItems: items.length,
+      agentFilter: agentId,
     });
   }
 
@@ -310,33 +322,45 @@ export class ConversationOrchestrator {
   // Removed local ensure/create agent thread logic; using ensureAgentThread() from services/orchestration.ts
 
   private async createWorkspaceItem(
+    context: ConversationContext,
     args: any,
     agentId: string,
     conversationId: string,
-    _userReq: UserRequest
-  ): Promise<any> {
-    const item = {
-      id: newId(),
-      type: args.type || 'task',
-      title: args.title || 'Untitled',
-      content: args.content || '',
-      agentId: agentId,
-      conversationId: conversationId,
-      createdAt: new Date().toISOString(),
-      status: 'pending'
+    userReq: UserRequest,
+    toolCall?: { id: string; name: string }
+  ): Promise<WorkspaceItem | null> {
+    const handleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)) as any);
+    const payload: any = {
+      label: typeof args.label === 'string' ? args.label : (typeof args.title === 'string' ? args.title : 'Untitled'),
+      description: typeof args.description === 'string' ? args.description : undefined,
+      mimeType: typeof args.mimeType === 'string' ? args.mimeType : (typeof args.content === 'string' && !args.mimeType ? 'text/plain' : args.mimeType),
+      encoding: typeof args.encoding === 'string' ? args.encoding : 'utf8',
+      data: typeof args.data === 'string' ? args.data : (typeof args.content === 'string' ? args.content : undefined),
+      tags: Array.isArray(args.tags) ? args.tags : (args.type ? [String(args.type)] : undefined),
+      context: {
+        email: {
+          id: String(context.thread.email?.id || ''),
+          subject: context.thread.email?.subject,
+          from: context.thread.email?.from,
+          date: context.thread.email?.date,
+        },
+        director: { id: context.director?.id || context.thread.directorId, name: context.director?.name },
+        agent: { id: agentId, name: context.agents.find(a => a.id === agentId)?.name },
+        createdBy: 'director',
+        agentId,
+        tool: toolCall?.name || 'workspace_add_item',
+        conversationId,
+      },
     };
 
-    // Note: Workspace persistence would be implemented here
-    logger.info('Workspace item would be persisted', { itemId: item.id });
-    
-    logger.info('Added workspace item', { 
-      itemId: item.id, 
-      agentId, 
-      type: item.type, 
-      title: item.title 
-    });
-    
-    return item;
+    const addResult = await handleTool('workspace_add_item', payload);
+    if (!addResult.success) {
+      logger.warn('Workspace add failed', { error: addResult.error });
+      return null;
+    }
+    const added: { item?: WorkspaceItem } = (addResult.result || {}) as any;
+    logger.info('Added workspace item', { itemId: added?.item?.id, agentId, label: added?.item?.label });
+    return (added?.item as WorkspaceItem) || null;
   }
 
   private async executeAgentConversation(
