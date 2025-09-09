@@ -11,6 +11,7 @@ import type { LiveRepos } from '../liveRepos';
 import type { UserRequest as MiddlewareUserRequest } from '../middleware/user-context';
 import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
+import { repoAppendMessage, repoAppendMessages, repoFinalizeThreadStatus, repoGetThreadById } from './conversation-mutations';
 
 export interface ConversationContext {
   thread: ConversationThread;
@@ -111,7 +112,7 @@ export class ConversationOrchestrator {
 
       // Update thread with new messages
       const newMessages = result.assistantMessage ? [result.assistantMessage] : [];
-      const updatedThread = await this.updateThreadMessages(context.thread, newMessages, userReq);
+      const updatedThread = (await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, newMessages)) || context.thread;
 
       // Process any director tool calls and determine continuation
       const shouldContinue = this.decideShouldContinue(result.toolCalls);
@@ -120,7 +121,7 @@ export class ConversationOrchestrator {
         await this.processDirectorToolCalls({ ...context, thread: updatedThread }, userReq, toolCalls);
       }
 
-      const finalThread = await this.getUpdatedThread(threadId, userReq.repos, userReq.reqLike);
+      const finalThread = (await repoGetThreadById(userReq.repos, userReq.reqLike, threadId)) || updatedThread;
       
       return {
         updatedThread: finalThread,
@@ -163,11 +164,11 @@ export class ConversationOrchestrator {
       stepCount++;
 
       if (!stepResult.success) {
-        await this.finalizeThreadStatus(currentThread.id, 'failed', userReq);
+        await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, currentThread.id, 'failed');
         break;
       }
       if (!stepResult.shouldContinue) {
-        await this.finalizeThreadStatus(currentThread.id, 'completed', userReq);
+        await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, currentThread.id, 'completed');
         break;
       }
     }
@@ -189,7 +190,10 @@ export class ConversationOrchestrator {
       await this.processIndividualToolCall(context, userReq, toolCall);
     }
 
-    return await this.getUpdatedThread(context.thread.id, userReq.repos, userReq.reqLike);
+    return (
+      (await repoGetThreadById(userReq.repos, userReq.reqLike, context.thread.id)) ||
+      context.thread
+    );
   }
 
   private async processIndividualToolCall(
@@ -278,7 +282,7 @@ export class ConversationOrchestrator {
       tool_call_id: toolCall.id,
       content: JSON.stringify({ added: true, itemId: addedItem.id, label: addedItem.label }),
     };
-    await this.appendMessageToThread(context.thread, toolResponse, userReq);
+    await repoAppendMessage(userReq.repos, userReq.reqLike, context.thread.id, toolResponse);
 
     // Run the agent conversation after item creation
     await this.executeAgentConversation(context.thread, agentThread, args, toolCall, userReq);
@@ -309,7 +313,7 @@ export class ConversationOrchestrator {
       content: JSON.stringify({ items }),
     };
 
-    await this.appendMessageToThread(context.thread, toolResponse, userReq);
+    await repoAppendMessage(userReq.repos, userReq.reqLike, context.thread.id, toolResponse);
 
     logger.info('Listed workspace items', {
       toolCallId: toolCall.id,
@@ -463,81 +467,10 @@ export class ConversationOrchestrator {
       content: `Agent conversation failed: ${error || 'Unknown error'}`
     };
     
-    await this.appendMessageToThread(thread, errorMessage, userReq);
+    await repoAppendMessage(userReq.repos, userReq.reqLike, thread.id, errorMessage);
   }
 
-  private async appendMessageToThread(
-    thread: ConversationThread,
-    message: PromptMessage,
-    userReq: UserRequest
-  ): Promise<void> {
-    const updatedThread = {
-      ...thread,
-      messages: [...thread.messages, message],
-      lastActiveAt: new Date().toISOString()
-    };
-    
-    const conversations = await userReq.repos.getConversations(userReq.reqLike);
-    const threadIndex = conversations.findIndex((c: ConversationThread) => c.id === thread.id);
-    if (threadIndex !== -1) {
-      const next = conversations.slice();
-      next[threadIndex] = updatedThread;
-      await userReq.repos.setConversations(userReq.reqLike, next);
-    }
-  }
-
-  private async updateThreadMessages(
-    thread: ConversationThread,
-    newMessages: any[],
-    userReq: UserRequest
-  ): Promise<ConversationThread> {
-    const updatedThread = {
-      ...thread,
-      messages: [...thread.messages, ...newMessages],
-      lastActiveAt: new Date().toISOString()
-    };
-
-    const conversations = await userReq.repos.getConversations(userReq.reqLike);
-    const threadIndex = conversations.findIndex((c: ConversationThread) => c.id === thread.id);
-    
-    if (threadIndex !== -1) {
-      const updatedConversations = [
-        ...conversations.slice(0, threadIndex),
-        updatedThread,
-        ...conversations.slice(threadIndex + 1)
-      ];
-      
-      await userReq.repos.setConversations(userReq.reqLike, updatedConversations);
-    }
-
-    return updatedThread;
-  }
-
-  /** Finalize a thread with a terminal status and endedAt timestamp. */
-  private async finalizeThreadStatus(
-    threadId: string,
-    status: 'completed' | 'failed',
-    userReq: UserRequest
-  ): Promise<void> {
-    const conversations = await userReq.repos.getConversations(userReq.reqLike);
-    const idx = conversations.findIndex((c: ConversationThread) => c.id === threadId);
-    if (idx === -1) return;
-    const now = new Date().toISOString();
-    const updated = { ...conversations[idx], status, endedAt: now, lastActiveAt: now } as ConversationThread;
-    const next = conversations.slice();
-    next[idx] = updated;
-    await userReq.repos.setConversations(userReq.reqLike, next);
-  }
-
-  private async getUpdatedThread(
-    threadId: string,
-    repos: LiveRepos,
-    reqLike: ReqLike
-  ): Promise<ConversationThread> {
-    const conversations = await repos.getConversations(reqLike);
-    const updatedThread = conversations.find((c: ConversationThread) => c.id === threadId);
-    return updatedThread || conversations.find((c: ConversationThread) => c.id === threadId)!;
-  }
+  // thread mutation helpers centralized in services/conversation-mutations.ts
 
   /** Cancel an active step for the given thread id, if present. */
   cancelActiveStep(threadId: string): boolean {

@@ -37,6 +37,13 @@ This section is the operational contract the backend must uphold. It is used as 
   - assistant (with `tool_calls[]`) → tool (one per call, matching `tool_call_id`) → assistant → ...
 - Conversations are the sole source of truth for chat content; provider events are persisted separately.
 
+#### Conversation mutations (canonical)
+- All thread message appends and status changes MUST use helpers in `src/backend/services/conversation-mutations.ts`.
+- In-memory helpers (pure): `appendMessageToThread()`, `appendMessagesToThread()`, `finalizeThreadStatus()`.
+- Repo-backed helpers (persisted): `repoAppendMessage()`, `repoAppendMessages()`, `repoFinalizeThreadStatus()`, `repoGetThreadById()`.
+- Do not mutate `messages`, `lastActiveAt`, or `endedAt` directly; use the helpers to preserve invariants and timestamps consistently.
+ - ESLint enforces this rule for backend sources via `src/backend/.eslintrc.cjs` using `no-restricted-syntax` selectors; CI runs lint in `.github/workflows/tests.yml`.
+
 6) Workspace persistence
 
 - Scope is Director-thread scoped. Each email × director pair has its own workspace bucket identified by the Director thread id.

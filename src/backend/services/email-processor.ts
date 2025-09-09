@@ -228,6 +228,13 @@ export class EmailProcessor {
     const dirThreadId = newId();
     const nowIso = new Date().toISOString();
 
+    // Initial transcript = prompt messages + email context as user message
+    const emailContextContent = `Email context\nsubject: ${envelope.subject}\nfrom: ${envelope.from}\ndate: ${envelope.date}\nsnippet: ${envelope.snippet}`;
+    const initialMessages = [
+      ...directorPrompt.messages,
+      { role: 'user', content: emailContextContent } as any,
+    ];
+
     const dirThread: ConversationThread = {
       id: dirThreadId,
       kind: 'director',
@@ -239,16 +246,9 @@ export class EmailProcessor {
       startedAt: nowIso,
       status: 'ongoing',
       lastActiveAt: nowIso,
-      messages: [...directorPrompt.messages],
+      messages: initialMessages,
       errors: [],
     } as ConversationThread;
-
-    // Add email context message
-    const emailContextContent = `Email context\nsubject: ${envelope.subject}\nfrom: ${envelope.from}\ndate: ${envelope.date}\nsnippet: ${envelope.snippet}`;
-    dirThread.messages.push({
-      role: 'user',
-      content: emailContextContent
-    });
 
     return dirThread;
   }

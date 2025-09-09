@@ -6,6 +6,7 @@ import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import type { ReqLike } from '../interfaces';
 import { InvalidAgentConfigError } from './error-handler';
+import { appendMessageToThread, finalizeThreadStatus } from './conversation-mutations';
 
 export interface AgentConversationResult {
   finalMessages: any[];
@@ -74,20 +75,7 @@ export function ensureAgentThread(
 /**
  * Appends a message to the specified conversation thread.
  */
-function appendMessageToThread(
-  conversations: ConversationThread[],
-  threadId: string,
-  message: any,
-): ConversationThread[] {
-  const idx = conversations.findIndex(c => c.id === threadId);
-  if (idx === -1) return conversations;
-  const updated = {
-    ...conversations[idx],
-    lastActiveAt: new Date().toISOString(),
-    messages: [...conversations[idx].messages, message],
-  } as any;
-  return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
-}
+// moved to services/conversation-mutations.ts
 
 /**
  * Run the Agent conversation loop, handling tool calls and optional provider logging.
@@ -181,12 +169,7 @@ export async function runAgentConversation(
       setConversations(updatedConversations);
       if (!result.toolCalls || result.toolCalls.length === 0) {
         // No more tool calls -> finalize agent thread as completed
-        const endedAt = new Date().toISOString();
-        updatedConversations = updatedConversations.map(c =>
-          c.id === agentThread.id
-            ? { ...c, status: 'completed', endedAt, lastActiveAt: endedAt }
-            : c
-        );
+        updatedConversations = finalizeThreadStatus(updatedConversations, agentThread.id, 'completed');
         setConversations(updatedConversations);
         break;
       }
@@ -273,12 +256,7 @@ export async function runAgentConversation(
   } catch (e: any) {
     // On error, mark agent thread as failed
     try {
-      const endedAt = new Date().toISOString();
-      updatedConversations = updatedConversations.map(c =>
-        c.id === agentThread.id
-          ? { ...c, status: 'failed', endedAt, lastActiveAt: endedAt }
-          : c
-      );
+      updatedConversations = finalizeThreadStatus(updatedConversations, agentThread.id, 'failed');
       setConversations(updatedConversations);
     } catch (e2: any) {
       logger.warn('ORCHESTRATION failed to persist agent failed status', {

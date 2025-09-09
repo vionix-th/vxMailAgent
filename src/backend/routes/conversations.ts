@@ -11,6 +11,7 @@ import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 import { extractLastUserContent } from '../utils/message-transformers';
 import { ConversationOrchestrator, createUserRequest } from '../services/conversation-orchestrator';
+import { repoAppendMessage } from '../services/conversation-mutations';
 
 interface ConversationResult {
   assistantMessage: PromptMessage | null;
@@ -141,19 +142,10 @@ export default function registerConversationsRoutes(
     const content = String(req.body?.content || '');
     if (!content.trim()) throw new ValidationError('Message content is required');
     const conversations = await repos.getConversations(req as any as ReqLike);
-    const idx = conversations.findIndex((c) => c.id === id);
-    if (idx === -1) throw new NotFoundError('Conversation not found');
-    const t = conversations[idx];
-    const now = new Date().toISOString();
+    const exists = conversations.some((c) => c.id === id);
+    if (!exists) throw new NotFoundError('Conversation not found');
     const msg: PromptMessage = { role: 'user', content };
-    const updated: ConversationThread = {
-      ...t,
-      messages: [...t.messages, msg],
-      lastActiveAt: now,
-    };
-    const next = conversations.slice();
-    next[idx] = updated;
-    await repos.setConversations(req as any as ReqLike, next);
+    await repoAppendMessage(repos, req as any as ReqLike, id, msg);
     logger.info('POST /api/conversations/:id/messages appended user message', { id, length: content.length });
     return res.json({ success: true });
   }));
