@@ -9,6 +9,53 @@ export interface WorkspacesRoutesDeps {
   setConversations: (req: ReqLike, next: ConversationThread[]) => Promise<void>;
 }
 
+/** Update conversation workspace association. */
+async function updateConversationWorkspace(
+  itemId: string, 
+  workspaceId: string, 
+  deps: WorkspacesRoutesDeps, 
+  req: ReqLike
+): Promise<void> {
+  const conversations = await deps.getConversations(req);
+  const idx = conversations.findIndex(c => c.id === itemId);
+  if (idx === -1) throw new NotFoundError('Conversation not found');
+  
+  const updated = { ...conversations[idx], workspaceId };
+  const next = conversations.slice();
+  next[idx] = updated;
+  await deps.setConversations(req, next);
+}
+
+/** Permanently remove workspace item. */
+async function performHardDelete(itemId: string, req: ReqLike): Promise<void> {
+  const ureq = requireReq(req);
+  const items = await repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
+  const nextItems = items.filter(i => i.id !== itemId);
+  await repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', nextItems);
+}
+
+/** Mark workspace item as deleted with revision bump. */
+async function performSoftDelete(itemId: string, req: ReqLike): Promise<WorkspaceItem> {
+  const ureq = requireReq(req);
+  const items = await repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
+  const itemIdx = items.findIndex(i => i.id === itemId);
+  if (itemIdx === -1) throw new NotFoundError('Item not found');
+  
+  const current = items[itemIdx];
+  const now = new Date().toISOString();
+  const nextItem: WorkspaceItem = {
+    ...current,
+    deleted: true,
+    updated: now,
+    revision: (current.revision ?? 0) + 1,
+  };
+  
+  const nextItems = items.slice();
+  nextItems[itemIdx] = nextItem;
+  await repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', nextItems);
+  return nextItem;
+}
+
 export default function registerWorkspacesRoutes(app: express.Express, deps: WorkspacesRoutesDeps) {
   // List all workspace items
   app.get('/api/workspaces/:id/items', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
@@ -36,8 +83,9 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const itemIdx = items.findIndex(i => i.id === itemId);
     if (itemIdx === -1) throw new NotFoundError('Item not found');
     const current = items[itemIdx];
-    if (typeof expectedRevision === 'number' && (current.revision || 0) !== expectedRevision) {
-      throw new ValidationError(`Revision conflict (current=${current.revision || 0})`);
+    const currentRevision = current.revision ?? 0;
+    if (typeof expectedRevision === 'number' && currentRevision !== expectedRevision) {
+      throw new ValidationError(`Revision conflict (current=${currentRevision})`);
     }
     // Lightweight validations on provided fields
     if (typeof encoding !== 'undefined' && !['utf8','base64','binary'].includes(encoding)) {
@@ -56,7 +104,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
       ...current,
       ...partial,
       updated: now,
-      revision: (current.revision || 1) + 1,
+      revision: (current.revision ?? 0) + 1,
     };
     const nextItems = items.slice();
     nextItems[itemIdx] = nextItem;
@@ -67,38 +115,19 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
 
   app.delete('/api/workspaces/:id/items/:itemId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { itemId } = req.params as { id: string; itemId: string };
-    const hard = String(req.query.hard || 'false').toLowerCase() === 'true';
-    const conversations = await deps.getConversations(req as ReqLike);
-    const idx = conversations.findIndex(c => c.id === itemId);
-    if (idx === -1) throw new NotFoundError('Conversation not found');
-    const updated = { ...conversations[idx], workspaceId: req.params.id };
-    const next = conversations.slice();
-    next[idx] = updated;
-    await deps.setConversations(req as ReqLike, next);
-    const ureq = requireReq(req as ReqLike);
-    const items = await repoGetAll<WorkspaceItem>(ureq, 'workspaceItems');
-    const itemIdx = items.findIndex(i => i.id === itemId);
-    if (itemIdx === -1) throw new NotFoundError('Item not found');
-    const now = new Date().toISOString();
-    if (hard) {
-      const nextItems = items.filter(i => i.id !== itemId);
-      await repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', nextItems);
+    const isHardDelete = String(req.query.hard).toLowerCase() === 'true';
+    
+    await updateConversationWorkspace(itemId, req.params.id, deps, req as ReqLike);
+    
+    if (isHardDelete) {
+      await performHardDelete(itemId, req as ReqLike);
       logger.info('DELETE /api/workspaces/:id/items/:itemId removed', { itemId, hard: true });
       res.json({ success: true });
+    } else {
+      const updatedItem = await performSoftDelete(itemId, req as ReqLike);
+      logger.info('DELETE /api/workspaces/:id/items/:itemId soft-deleted', { itemId, hard: false, revision: updatedItem.revision });
+      res.json({ success: true, item: updatedItem });
     }
-    // Soft delete -> mark deleted and bump revision
-    const current = items[itemIdx];
-    const nextItem: WorkspaceItem = {
-      ...current,
-      deleted: true,
-      updated: now,
-      revision: (current.revision || 1) + 1,
-    };
-    const nextItems = items.slice();
-    nextItems[itemIdx] = nextItem;
-    await repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', nextItems);
-    logger.info('DELETE /api/workspaces/:id/items/:itemId soft-deleted', { itemId, hard: false, revision: nextItem.revision });
-    res.json({ success: true, item: nextItem });
   }));
 }
 

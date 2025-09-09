@@ -2,9 +2,9 @@ import { ConversationThread, Agent, Director, Filter, Prompt } from '../../share
 import { LiveRepos } from '../liveRepos';
 import { UserRequest } from '../middleware/user-context';
 import { evaluateFilters, selectDirectorTriggers } from './orchestration';
-import { ConversationOrchestrator } from './conversation-orchestrator';
+import { ConversationOrchestrator, createUserRequest } from './conversation-orchestrator';
 import { newId } from '../utils/id';
-import { beginSpan, endSpan, logOrch } from './logging';
+import { beginSpan, endSpan } from './logging';
 
 export interface EmailEnvelope {
   id: string;
@@ -132,10 +132,10 @@ export class EmailProcessor {
     const ctx = {
       from: envelope.from,
       subject: envelope.subject,
-      ...(envelope.bodyPlain ? { bodyPlain: envelope.bodyPlain } : {}),
-      ...(envelope.bodyHtml ? { bodyHtml: envelope.bodyHtml } : {}),
-      ...(envelope.snippet ? { snippet: envelope.snippet } : {}),
-      ...(envelope.date ? { date: envelope.date } : {}),
+      bodyPlain: envelope.bodyPlain ?? undefined,
+      bodyHtml: envelope.bodyHtml ?? undefined,
+      snippet: envelope.snippet ?? undefined,
+      date: envelope.date ?? undefined,
     };
     const filterEvaluations = evaluateFilters(filters, ctx as any);
 
@@ -181,24 +181,49 @@ export class EmailProcessor {
     traceId: string,
     userReq: UserRequest
   ): Promise<string | null> {
+    // Validate director configuration
+    const validation = this.validateDirectorConfig(director, context);
+    if (!validation.isValid) {
+      this.logDirectorConfigError(director.id, context.account, validation.error!);
+      return null;
+    }
+
+    // Create and persist thread
+    const thread = this.buildDirectorThread(director, envelope, context, traceId);
+    await this.persistDirectorThread(thread, traceId, userReq);
+    
+    // Log successful creation
+    this.logDirectorThreadCreated(director.id, thread.id, context.account);
+
+    // Start orchestration asynchronously
+    this.startDirectorOrchestration(thread, director, context, userReq);
+
+    return thread.id;
+  }
+
+  private validateDirectorConfig(director: Director, context: EmailProcessingContext): { isValid: boolean; error?: string } {
     const { prompts, apiConfigs } = context;
     
     const directorPrompt = prompts.find(p => p.id === director.promptId);
     const directorApi = apiConfigs.find(c => c.id === director.apiConfigId);
 
-    if (!directorApi || !directorPrompt) {
-      this.logFetch({
-        timestamp: new Date().toISOString(),
-        level: 'error',
-        provider: context.account.provider,
-        accountId: context.account.id,
-        event: 'director_config_missing',
-        message: 'Missing director apiConfig or prompt',
-        directorId: director.id
-      });
-      return null;
+    if (!directorApi) {
+      return { isValid: false, error: 'Missing director apiConfig' };
     }
+    if (!directorPrompt) {
+      return { isValid: false, error: 'Missing director prompt' };
+    }
+    
+    return { isValid: true };
+  }
 
+  private buildDirectorThread(
+    director: Director,
+    envelope: EmailEnvelope,
+    context: EmailProcessingContext,
+    traceId: string
+  ): ConversationThread {
+    const directorPrompt = context.prompts.find(p => p.id === director.promptId)!;
     const dirThreadId = newId();
     const nowIso = new Date().toISOString();
 
@@ -208,7 +233,7 @@ export class EmailProcessor {
       directorId: director.id,
       traceId,
       email: envelope as any,
-      promptId: director.promptId || '',
+      promptId: director.promptId ?? '',
       apiConfigId: director.apiConfigId,
       startedAt: nowIso,
       status: 'ongoing',
@@ -218,60 +243,79 @@ export class EmailProcessor {
     } as ConversationThread;
 
     // Add email context message
-    const emailContextMsg = {
-      role: 'user',
-      content: `Email context\nsubject: ${envelope.subject}\nfrom: ${envelope.from}\ndate: ${envelope.date}\nsnippet: ${envelope.snippet}`,
-      context: { traceId }
-    };
-
+    const emailContextContent = `Email context\nsubject: ${envelope.subject}\nfrom: ${envelope.from}\ndate: ${envelope.date}\nsnippet: ${envelope.snippet}`;
     dirThread.messages.push({
       role: 'user',
-      content: emailContextMsg.content
+      content: emailContextContent
     });
 
-    // Persist the new thread
+    return dirThread;
+  }
+
+  private async persistDirectorThread(
+    thread: ConversationThread,
+    traceId: string,
+    userReq: UserRequest
+  ): Promise<void> {
     const conversations = await this.repos.getConversations(userReq);
-    const updatedConversations = [...conversations, dirThread];
+    const updatedConversations = [...conversations, thread];
     await this.repos.setConversations(userReq, updatedConversations);
 
     const sConvCreate = beginSpan(traceId, {
       type: 'conversation_update',
       name: 'create_director_thread',
-      emailId: envelope.id,
-      directorId: director.id
+      emailId: thread.email?.id,
+      directorId: thread.directorId
     }, userReq);
 
     endSpan(traceId, sConvCreate, { status: 'ok' }, userReq);
+  }
 
+  private logDirectorConfigError(directorId: string, account: any, error: string): void {
+    this.logFetch({
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      provider: account.provider,
+      accountId: account.id,
+      event: 'director_config_missing',
+      message: error,
+      directorId
+    });
+  }
+
+  private logDirectorThreadCreated(directorId: string, threadId: string, account: any): void {
     this.logFetch({
       timestamp: new Date().toISOString(),
       level: 'info',
-      provider: context.account.provider,
-      accountId: context.account.id,
+      provider: account.provider,
+      accountId: account.id,
       event: 'director_thread_created',
       message: 'Created director conversation thread',
-      directorId: director.id,
-      threadId: dirThreadId
+      directorId,
+      threadId
     });
+  }
 
-    // Trigger orchestration for the newly created director thread
-    const orchestrator = new ConversationOrchestrator(
-      this.repos,
-      logOrch,
-      userReq
-    );
+  private startDirectorOrchestration(
+    thread: ConversationThread,
+    director: Director,
+    context: EmailProcessingContext,
+    userReq: UserRequest
+  ): void {
+    const orchestratorUserReq = createUserRequest(userReq, this.repos);
+    const orchestrator = new ConversationOrchestrator(userReq as any);
     
     // Start orchestration asynchronously - don't block email processing
     setImmediate(async () => {
       try {
         await orchestrator.runConversationLoop({
-          thread: dirThread,
+          thread,
           director,
-          traceId,
+          traceId: thread.traceId!,
           agents: context.agents,
           apiConfigs: context.apiConfigs,
           prompts: context.prompts
-        }, userReq, 6);
+        }, orchestratorUserReq, 6);
       } catch (error: any) {
         this.logFetch({
           timestamp: new Date().toISOString(),
@@ -281,12 +325,10 @@ export class EmailProcessor {
           event: 'orchestration_error',
           message: 'Failed to start director orchestration',
           directorId: director.id,
-          threadId: dirThreadId,
+          threadId: thread.id,
           detail: error.message
         });
       }
     });
-
-    return dirThreadId;
   }
 }

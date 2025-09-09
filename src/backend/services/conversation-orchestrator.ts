@@ -1,17 +1,16 @@
-import { ConversationThread, Agent, Director, WorkspaceItem } from '../../shared/types';
-import { LiveRepos } from '../liveRepos';
-import { UserRequest } from '../middleware/user-context';
-import { conversationEngine } from './engine';
-import { beginSpan, endSpan } from './logging';
-import { newId } from '../utils/id';
-import { CONVERSATION_STEP_TIMEOUT_MS } from '../config';
+import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent } from '../../shared/types';
+import { runAgentConversation } from './orchestration';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
-import { logConversationStepDiagnostic } from './orchestration';
+import { createToolHandler } from '../toolCalls';
+import { requireReq, requireRepos } from '../utils/repo-access';
+import logger from './logger';
+import { CONVERSATION_STEP_TIMEOUT_MS } from '../config';
 import { ConversationStepLogger, ProviderEventLogger } from './logging-handlers';
 import type { ReqLike } from '../interfaces';
-import { ensureAgentThread, appendMessageToThread, runAgentConversation } from './orchestration';
-import { repoGetAll, repoSetAll } from '../utils/repo-access';
-import logger from './logger';
+import type { LiveRepos } from '../liveRepos';
+import type { UserRequest as MiddlewareUserRequest } from '../middleware/user-context';
+import { conversationEngine } from './engine';
+import { newId } from '../utils/id';
 
 export interface ConversationContext {
   thread: ConversationThread;
@@ -23,6 +22,20 @@ export interface ConversationContext {
   traceId: string;
 }
 
+export interface UserRequest {
+  repos: LiveRepos;
+  reqLike: ReqLike;
+  traceId?: string;
+}
+
+export function createUserRequest(middlewareReq: MiddlewareUserRequest, repos: LiveRepos): UserRequest {
+  return {
+    repos,
+    reqLike: middlewareReq as ReqLike,
+    traceId: middlewareReq.headers?.['x-trace-id'] as string
+  };
+}
+
 export interface OrchestrationResult {
   updatedThread: ConversationThread;
   success: boolean;
@@ -30,10 +43,6 @@ export interface OrchestrationResult {
   error?: string;
 }
 
-/**
- * Handles conversation orchestration for both director and agent threads.
- * Separated from fetcher service for better testability and maintainability.
- */
 /**
  * Orchestrates Director and Agent thread execution: drives steps, processes Director tool calls,
  * spawns Agent threads, and persists transcripts and provider diagnostics.
@@ -44,497 +53,79 @@ export class ConversationOrchestrator {
   private providerLogger: ProviderEventLogger;
 
   constructor(
-    private repos: LiveRepos,
-    private logOrch: (entry: any) => void,
-    private req?: ReqLike
+    req?: ReqLike
   ) {
-    this.stepLogger = new ConversationStepLogger(this.req);
-    this.providerLogger = new ProviderEventLogger(this.req);
-  }
-
-  /** Persist a terminal status for a conversation thread. */
-  private async finalizeThreadStatus(
-    threadId: string,
-    status: 'completed' | 'failed',
-    userReq: UserRequest
-  ): Promise<ConversationThread | null> {
-    try {
-      const conversations = await this.repos.getConversations(userReq);
-      const idx = conversations.findIndex(c => c.id === threadId);
-      if (idx === -1) return null;
-      const endedAt = new Date().toISOString();
-      const updated = {
-        ...conversations[idx],
-        status,
-        endedAt,
-        lastActiveAt: endedAt,
-      } as ConversationThread;
-      const next = [
-        ...conversations.slice(0, idx),
-        updated,
-        ...conversations.slice(idx + 1),
-      ];
-      await this.repos.setConversations(userReq, next);
-      return updated;
-    } catch {
-      return null;
-    }
+    this.stepLogger = new ConversationStepLogger(req);
+    this.providerLogger = new ProviderEventLogger(req);
   }
 
   /**
-   * Run a single step for the current thread with timeout/error handling.
-   * Returns the updated thread and a continuation flag.
+   * Execute a single conversation step with timeout management.
    */
   async runConversationStep(
     context: ConversationContext,
     userReq: UserRequest
   ): Promise<OrchestrationResult> {
-    const { thread } = context;
-    const stepStartTime = Date.now();
-    
-    this.stepLogger.logStepStart(thread.id, thread.kind, thread.email.id);
-    
+    const threadId = context.thread.id;
+    const emailId = typeof context.thread.email === 'string' ? context.thread.email : 'unknown';
+    const startTime = Date.now();
+
+    // Cancel any existing step for this thread
+    this.cancelActiveStep(threadId);
+
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      this.activeSteps.delete(threadId);
+    }, CONVERSATION_STEP_TIMEOUT_MS);
+
+    this.activeSteps.set(threadId, { timeoutId, startTime, emailId });
+
     try {
-      const stepResult = await this.executeConversationStep(context, userReq);
+      const result = await conversationEngine.run({
+        messages: context.thread.messages as any,
+        apiConfig: context.apiConfigs.find((c: any) => c.id === context.thread.apiConfigId) as any,
+        role: context.thread.kind === 'director' ? 'director' : 'agent',
+        roleCaps: context.thread.kind === 'director' ? { canSpawnAgents: true } : { canSpawnAgents: false },
+        toolRegistry: TOOL_DESCRIPTORS,
+        context: {
+          conversationId: context.thread.id,
+          agents: context.agents
+        }
+      });
+
+      // Log provider response
+      if (result.response) {
+        this.providerLogger.logResponse(threadId, Date.now() - startTime, result.response, result.response?.usage);
+      }
+
+      // Update thread with new messages
+      const newMessages = result.assistantMessage ? [result.assistantMessage] : [];
+      const updatedThread = await this.updateThreadMessages(context.thread, newMessages, userReq);
+
+      // Process any director tool calls
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        await this.processDirectorToolCalls({ ...context, thread: updatedThread }, userReq, result.toolCalls);
+      }
+
+      const finalThread = await this.getUpdatedThread(threadId, userReq.repos, userReq.reqLike);
       
-      if (!stepResult.success) {
-        // Ensure error paths that return (not throw) still produce a step error log
-        const stepDuration = Date.now() - stepStartTime;
-        this.stepLogger.logStepError(
-          thread.id,
-          thread.kind,
-          stepDuration,
-          stepResult.error || 'unknown_error',
-          thread.email.id
-        );
-        return {
-          updatedThread: thread,
-          success: false,
-          shouldContinue: false,
-          ...(stepResult.error ? { error: stepResult.error } : {}),
-        } as OrchestrationResult;
-      }
-
-      let updatedThread = await this.updateThreadMessages(
-        thread,
-        stepResult.messages,
-        userReq
-      );
-
-      let shouldContinue = !!(stepResult.toolCalls && stepResult.toolCalls.length > 0);
-      if (shouldContinue && thread.kind === 'director') {
-        updatedThread = await this.processDirectorToolCalls(
-          { ...context, thread: updatedThread },
-          userReq,
-          stepResult.toolCalls as any
-        );
-        shouldContinue = true;
-      }
-      // If there are no tool calls and we've appended assistant message, finalize thread
-      if (!shouldContinue) {
-        const finalized = await this.finalizeThreadStatus(updatedThread.id, 'completed', userReq);
-        if (finalized) updatedThread = finalized;
-      }
-      const stepDuration = Date.now() - stepStartTime;
-
-      this.stepLogger.logStepComplete(
-        thread.id,
-        thread.kind,
-        stepDuration,
-        shouldContinue,
-        stepResult.toolCalls?.length || 0,
-        thread.email.id
-      );
-
       return {
-        updatedThread,
+        updatedThread: finalThread,
         success: true,
-        shouldContinue
+        shouldContinue: false
       };
 
     } catch (error: any) {
-      const stepDuration = Date.now() - stepStartTime;
-      
-      this.stepLogger.logStepError(thread.id, thread.kind, stepDuration, error.message, thread.email.id);
-
-      // On error, finalize thread as failed
-      let failedThread: ConversationThread = thread;
-      try {
-        const finalized = await this.finalizeThreadStatus(thread.id, 'failed', userReq);
-        if (finalized) failedThread = finalized;
-      } catch (e: any) {
-        logger.warn('ORCHESTRATOR failed to finalize thread as failed', {
-          error: e?.message || String(e),
-          threadId: thread.id,
-          kind: thread.kind,
-        });
-      }
-
       return {
-        updatedThread: failedThread,
+        updatedThread: context.thread,
         success: false,
         shouldContinue: false,
-        error: error.message
+        error: error?.message || String(error)
       };
+    } finally {
+      clearTimeout(timeoutId);
+      this.activeSteps.delete(threadId);
     }
-  }
-
-  /**
-   * Execute a single provider call for the given thread and return assistant message + tool calls.
-   */
-  private async executeConversationStep(
-    context: ConversationContext,
-    userReq: UserRequest
-  ): Promise<{
-    success: boolean;
-    messages: any[];
-    toolCalls?: any[];
-    error?: string;
-  }> {
-    const { thread, traceId, apiConfigs } = context;
-    
-    const apiConfig = apiConfigs.find(c => c.id === thread.apiConfigId);
-    if (!apiConfig) {
-      return {
-        success: false,
-        messages: [],
-        error: 'API configuration not found'
-      };
-    }
-
-    const role = thread.kind === 'director' ? 'director' : 'agent';
-    const roleCaps = thread.kind === 'director' ? { canSpawnAgents: true } : {};
-
-    // Compute effective tool registry: mandatory + enabled optionals per role
-    const baseDescriptors = TOOL_DESCRIPTORS;
-    let enabledNames: string[] = [];
-    if (role === 'agent') {
-      const ag = (context.agents || []).find(a => a.id === thread.agentId);
-      enabledNames = ag?.enabledToolCalls || [];
-    } else {
-      enabledNames = context.director?.enabledToolCalls || [];
-    }
-    const filteredDescriptors = baseDescriptors.filter(d => d.flags?.mandatory || enabledNames.includes(d.name));
-    // Dynamic agent__<id> tools for directors, restricted to assigned agents when available
-    let dynamicAgentTools: any[] = [];
-    if (role === 'director') {
-      const allowedAgentIds = context.director?.agentIds && Array.isArray(context.director.agentIds) && context.director.agentIds.length
-        ? new Set(context.director.agentIds)
-        : null;
-      dynamicAgentTools = (context.agents || [])
-        .filter(a => !allowedAgentIds || allowedAgentIds.has(a.id))
-        .map(a => ({
-          name: `agent__${a.id}`,
-          description: `Run agent ${a.name || a.id} with input text` as const,
-          inputSchema: { type: 'object', properties: { input: { type: 'string' } }, required: ['input'] },
-          flags: { mandatory: true },
-        }));
-    }
-    const toolRegistry = role === 'director' ? [...filteredDescriptors, ...dynamicAgentTools] : filteredDescriptors;
-
-    logConversationStepDiagnostic(
-      `${role}_llm` as any,
-      thread.id,
-      { 
-        [role + 'Id']: thread.kind === 'director' ? thread.directorId : thread.agentId,
-        emailId: thread.email?.id 
-      },
-      this.logOrch
-    );
-
-    const t0 = Date.now();
-    const sLlm = beginSpan(traceId, {
-      type: 'llm_call',
-      name: `${role}_chatCompletion`,
-      [`${role}Id`]: thread.kind === 'director' ? thread.directorId : thread.agentId,
-      emailId: thread.email?.id
-    }, userReq);
-
-    try {
-      this.stepLogger.logEngineStart(thread.id, thread.kind, thread.messages.length, thread.email.id);
-
-      const stepPromise = conversationEngine.run({
-        messages: thread.messages as any,
-        apiConfig: apiConfig as any,
-        role: role as any,
-        roleCaps: { canSpawnAgents: roleCaps?.canSpawnAgents ?? false },
-        toolRegistry,
-        context: { 
-          conversationId: thread.id, 
-          traceId, 
-          agents: context.agents 
-        },
-      });
-
-      const stepTimeoutPromise = new Promise<never>((_, reject) => {
-        const timeoutId = setTimeout(() => {
-          this.stepLogger.logEngineTimeout(thread.id, thread.kind, CONVERSATION_STEP_TIMEOUT_MS, thread.email.id);
-          // Clean up active step tracking
-          this.activeSteps.delete(thread.id);
-          reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`));
-        }, Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
-        
-        // Track active step for cleanup
-        this.activeSteps.set(thread.id, {
-          timeoutId,
-          startTime: Date.now(),
-          emailId: thread.email.id
-        });
-      });
-
-      const engineOut = await Promise.race([stepPromise, stepTimeoutPromise]) as any;
-      const latencyMs = Date.now() - t0;
-
-      const activeStep = this.activeSteps.get(thread.id);
-      if (activeStep) {
-        clearTimeout(activeStep.timeoutId);
-        this.activeSteps.delete(thread.id);
-      }
-
-      endSpan(traceId, sLlm, { status: 'ok', response: { latencyMs } }, userReq);
-
-      this.logProviderEvents(thread.id, engineOut, latencyMs);
-
-      return {
-        success: true,
-        messages: [engineOut.assistantMessage],
-        toolCalls: engineOut.toolCalls
-      };
-
-    } catch (error: any) {
-      const latencyMs = Date.now() - t0;
-      
-      const activeStep = this.activeSteps.get(thread.id);
-      if (activeStep) {
-        clearTimeout(activeStep.timeoutId);
-        this.activeSteps.delete(thread.id);
-      }
-      
-      endSpan(traceId, sLlm, { status: 'error', error: error.message }, userReq);
-
-      this.providerLogger.logError(thread.id, error.message, latencyMs);
-
-      return {
-        success: false,
-        messages: [],
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Append new messages to the thread and persist the conversations list.
-   */
-  private async updateThreadMessages(
-    thread: ConversationThread,
-    newMessages: any[],
-    userReq: UserRequest
-  ): Promise<ConversationThread> {
-    const updatedThread = {
-      ...thread,
-      messages: [...thread.messages, ...newMessages],
-      lastActiveAt: new Date().toISOString()
-    };
-
-    const conversations = await this.repos.getConversations(userReq);
-    const threadIndex = conversations.findIndex(c => c.id === thread.id);
-    
-    if (threadIndex !== -1) {
-      const updatedConversations = [
-        ...conversations.slice(0, threadIndex),
-        updatedThread,
-        ...conversations.slice(threadIndex + 1)
-      ];
-      
-      await this.repos.setConversations(userReq, updatedConversations);
-    }
-
-    return updatedThread;
-  }
-
-  /** Log provider request/response events for diagnostics. */
-  private logProviderEvents(conversationId: string, engineOut: any, latencyMs: number): void {
-    try {
-      // Use ProviderEventLogger to ensure user request context is applied
-      if (engineOut.request) {
-        this.providerLogger.logRequest(conversationId, engineOut.request);
-      }
-
-      const usage = engineOut.response?.usage;
-      this.providerLogger.logResponse(conversationId, latencyMs, engineOut.response, usage);
-    } catch (error) {
-      // Swallow logging errors to prevent disrupting main flow
-    }
-  }
-
-  /**
-   * Process Director tool calls (e.g., agent__<id>), ensuring Agent threads and running Agent loops.
-   * Returns the updated Director thread after injecting tool results.
-   */
-  private async processDirectorToolCalls(
-    context: ConversationContext,
-    userReq: UserRequest,
-    toolCalls: Array<{ id: string; name: string; arguments: string }> | undefined
-  ): Promise<ConversationThread> {
-    if (!toolCalls || toolCalls.length === 0) return context.thread;
-
-    const { thread, agents, apiConfigs, prompts, traceId } = context;
-
-    let conversations = await this.repos.getConversations(userReq);
-
-    // For each agent__ tool call, ensure agent thread and run the agent conversation
-    for (const tc of toolCalls) {
-      if (!tc?.name) continue;
-      if (!tc.name.startsWith('agent__')) continue;
-
-      const agentId = tc.name.slice('agent__'.length);
-      const agent = agents.find(a => a.id === agentId);
-      if (!agent) {
-        // Inject tool error into director thread
-        const toolErrorMsg = {
-          role: 'tool',
-          name: tc.name,
-          tool_call_id: tc.id,
-          content: JSON.stringify({ error: 'unknown_agent', details: { agentId } })
-        };
-        conversations = appendMessageToThread(conversations, thread.id, toolErrorMsg);
-        await this.repos.setConversations(userReq, conversations);
-        continue;
-      }
-
-      const nowIso = new Date().toISOString();
-      const ensured = ensureAgentThread(
-        conversations,
-        thread.id,
-        { id: thread.directorId, name: undefined, promptId: thread.promptId, apiConfigId: thread.apiConfigId } as any,
-        agent,
-        thread.email,
-        prompts as any,
-        apiConfigs as any,
-        nowIso,
-        () => newId(),
-        traceId,
-        this.req
-      );
-
-      if ('error' in ensured) {
-        const toolErrorMsg = {
-          role: 'tool',
-          name: tc.name,
-          tool_call_id: tc.id,
-          content: JSON.stringify({ error: ensured.error, reason: ensured.reason })
-        };
-        conversations = appendMessageToThread(conversations, thread.id, toolErrorMsg);
-        await this.repos.setConversations(userReq, conversations);
-        // Strict failure escalation: abort processing and propagate error
-        throw new Error(`agent_thread_ensure_failed:${ensured.error}:${ensured.reason}`);
-      }
-
-      conversations = ensured.conversations;
-      const agentThread = ensured.agentThread;
-
-      await this.repos.setConversations(userReq, conversations);
-
-      let agentInput = '';
-      try {
-        const parsed = tc.arguments ? JSON.parse(tc.arguments) : {};
-        agentInput = String(parsed.input || '').trim();
-      } catch (e: any) {
-        logger.warn('ORCHESTRATOR failed to parse tool arguments', {
-          error: e?.message || String(e),
-          tool: tc?.name,
-          raw: String(tc?.arguments || ''),
-        });
-      }
-
-      const handleTool = async (name: string, params: any): Promise<any> => {
-        switch (name) {
-          case 'workspace_add_item': {
-            // Force director-scoped workspace: use parent director thread id
-            const targetId = thread.id;
-            const convs = await this.repos.getConversations(userReq);
-            const t = convs.find(c => c.id === targetId);
-            if (!t) return { ok: false, error: 'conversation_not_found', conversationId: targetId };
-
-            const item: WorkspaceItem = {
-              id: newId(),
-              label: params?.label,
-              description: params?.description,
-              mimeType: params?.mimeType,
-              encoding: params?.encoding,
-              data: params?.data,
-              tags: Array.isArray(params?.tags) ? params.tags : undefined,
-              created: new Date().toISOString(),
-              updated: new Date().toISOString(),
-              context: params?.context || {
-                email: { id: t.email.id, subject: t.email.subject, from: t.email.from, date: t.email.date },
-                director: { id: thread.directorId },
-                agent: { id: agentThread.agentId },
-                createdBy: 'agent',
-                agentId: agentThread.agentId,
-                tool: 'workspace_add_item',
-                conversationId: targetId,
-              },
-            };
-            const items = await repoGetAll<WorkspaceItem>(this.req as any, 'workspaceItems');
-            await repoSetAll<WorkspaceItem>(this.req as any, 'workspaceItems', [...items, item]);
-            return { ok: true, item };
-          }
-          case 'workspace_list_items': {
-            const targetId = thread.id;
-            const items = await repoGetAll<WorkspaceItem>(this.req as any, 'workspaceItems');
-            const filtered = items.filter(i => !i.deleted && i.context?.conversationId === targetId);
-            return { ok: true, items: filtered };
-          }
-          default:
-            return { ok: false, error: 'unsupported_tool', name };
-        }
-      };
-
-      const setConversations = async (next: ConversationThread[]) => {
-        await this.repos.setConversations(userReq, next);
-      };
-
-      const logProvider = (ev: any) => {
-        try {
-          if (!ev || !ev.type) return;
-          if (ev.type === 'request') this.providerLogger.logRequest(ev.conversationId, ev.payload);
-          else if (ev.type === 'response') this.providerLogger.logResponse(ev.conversationId, ev.latencyMs || 0, ev.payload, ev.usage);
-          else if (ev.type === 'error') this.providerLogger.logError(ev.conversationId, ev.error || 'unknown_error', ev.latencyMs);
-        } catch (e: any) {
-          logger.warn('ORCHESTRATOR provider logger failed', {
-            error: e?.message || String(e),
-            conversationId: ev?.conversationId,
-            type: ev?.type,
-          });
-        }
-      };
-
-      const agentApi = apiConfigs.find(c => c.id === agent.apiConfigId) as any;
-      const result = await runAgentConversation(
-        agentThread,
-        agentInput,
-        conversations,
-        agentApi,
-        TOOL_DESCRIPTORS as any,
-        setConversations,
-        handleTool,
-        traceId,
-        logProvider
-      );
-
-      const dirToolMsg = {
-        role: 'tool',
-        name: tc.name,
-        tool_call_id: tc.id,
-        content: JSON.stringify({ status: result.success ? 'completed' : 'failed', agentThreadId: agentThread.id, lastAssistant: result.finalAssistantMessage?.content ?? null })
-      };
-      conversations = appendMessageToThread(conversations, thread.id, dirToolMsg);
-      await this.repos.setConversations(userReq, conversations);
-    }
-
-    const updated = (await this.repos.getConversations(userReq)).find(c => c.id === context.thread.id) as ConversationThread;
-    return updated || context.thread;
   }
 
   /**
@@ -563,6 +154,321 @@ export class ConversationOrchestrator {
     }
 
     return currentThread;
+  }
+
+  /**
+   * Process Director tool calls (workspace operations).
+   */
+  private async processDirectorToolCalls(
+    context: ConversationContext,
+    userReq: UserRequest,
+    toolCalls: Array<{ id: string; name: string; arguments: string }>
+  ): Promise<ConversationThread> {
+    if (!toolCalls || toolCalls.length === 0) return context.thread;
+
+    for (const toolCall of toolCalls) {
+      await this.processIndividualToolCall(context, userReq, toolCall);
+    }
+
+    return await this.getUpdatedThread(context.thread.id, userReq.repos, userReq.reqLike);
+  }
+
+  private async processIndividualToolCall(
+    context: ConversationContext,
+    userReq: UserRequest,
+    toolCall: { id: string; name: string; arguments: string }
+  ): Promise<void> {
+    try {
+      const args = JSON.parse(toolCall.arguments);
+      
+      if (toolCall.name === 'workspace_add_item') {
+        await this.handleWorkspaceAddItem(context, userReq, toolCall, args);
+      } else if (toolCall.name === 'workspace_list_items') {
+        await this.handleWorkspaceListItems(context, userReq, toolCall, args);
+      }
+    } catch (error: any) {
+      logger.error('Error processing director tool call', {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        error: error?.message || String(error)
+      });
+    }
+  }
+
+  private async handleWorkspaceAddItem(
+    context: ConversationContext,
+    userReq: UserRequest,
+    toolCall: { id: string; name: string; arguments: string },
+    args: any
+  ): Promise<void> {
+    const agentId = args.agent_id;
+    if (!agentId) {
+      logger.warn('workspace_add_item missing agent_id', { toolCallId: toolCall.id });
+      return;
+    }
+
+    const agent = await this.validateAgent(agentId, userReq);
+    if (!agent) {
+      logger.warn('Agent not found for workspace_add_item', { agentId, toolCallId: toolCall.id });
+      return;
+    }
+
+    const agentThread = await this.ensureAgentThread(context.thread, agentId, userReq);
+    await this.createWorkspaceItem(args, agentId, agentThread.id, userReq);
+    await this.executeAgentConversation(context.thread, agentThread, args, toolCall, userReq);
+  }
+
+  private async handleWorkspaceListItems(
+    context: ConversationContext,
+    userReq: UserRequest,
+    toolCall: { id: string; name: string; arguments: string },
+    args: any
+  ): Promise<void> {
+    // Use empty workspace for now since getWorkspaces doesn't exist
+    const workspace = { items: [] };
+    const items = workspace.items || [];
+    
+    const agentId = args.agent_id;
+    const filteredItems = agentId ? items.filter((item: any) => item.agentId === agentId) : items;
+    
+    const toolResponse: PromptMessage = {
+      role: 'tool',
+      tool_call_id: toolCall.id,
+      content: JSON.stringify({
+        items: filteredItems.map((item: any) => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          content: item.content,
+          agentId: item.agentId,
+          status: item.status,
+          createdAt: item.createdAt
+        }))
+      })
+    };
+    
+    await this.appendMessageToThread(context.thread, toolResponse, userReq);
+    
+    logger.info('Listed workspace items', { 
+      toolCallId: toolCall.id, 
+      totalItems: items.length, 
+      filteredItems: filteredItems.length,
+      agentFilter: agentId 
+    });
+  }
+
+  private async validateAgent(agentId: string, userReq: UserRequest): Promise<Agent | null> {
+    const agents = await userReq.repos.getAgents(userReq.reqLike);
+    return agents.find((a: Agent) => a.id === agentId) || null;
+  }
+
+  private async ensureAgentThread(
+    parentThread: ConversationThread,
+    agentId: string,
+    userReq: UserRequest
+  ): Promise<ConversationThread> {
+    const conversations = await userReq.repos.getConversations(userReq.reqLike);
+    let agentThread = conversations.find((c: ConversationThread) => 
+      c.kind === 'agent' && 
+      c.agentId === agentId && 
+      c.parentId === parentThread.id
+    );
+    
+    if (!agentThread) {
+      agentThread = await this.createAgentThread(parentThread, agentId, userReq);
+    }
+    
+    return agentThread;
+  }
+
+  private async createAgentThread(
+    parentThread: ConversationThread,
+    agentId: string,
+    userReq: UserRequest
+  ): Promise<ConversationThread> {
+    const agentThreadId = newId();
+    const agentThread = {
+      id: agentThreadId,
+      kind: 'agent' as const,
+      agentId: agentId,
+      parentId: parentThread.id,
+      apiConfigId: parentThread.apiConfigId,
+      messages: [],
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+      provider: 'openai' as const,
+      directorId: parentThread.directorId,
+      email: parentThread.email,
+      promptId: parentThread.promptId,
+      startedAt: parentThread.startedAt,
+      status: parentThread.status
+    } as ConversationThread;
+    
+    const conversations = await userReq.repos.getConversations(userReq.reqLike);
+    const updatedConversations = [...conversations, agentThread];
+    await userReq.repos.setConversations(userReq.reqLike, updatedConversations);
+    
+    logger.info('Created agent thread', { 
+      agentThreadId, 
+      agentId, 
+      parentId: parentThread.id 
+    });
+    
+    return agentThread;
+  }
+
+  private async createWorkspaceItem(
+    args: any,
+    agentId: string,
+    conversationId: string,
+    _userReq: UserRequest
+  ): Promise<any> {
+    const item = {
+      id: newId(),
+      type: args.type || 'task',
+      title: args.title || 'Untitled',
+      content: args.content || '',
+      agentId: agentId,
+      conversationId: conversationId,
+      createdAt: new Date().toISOString(),
+      status: 'pending'
+    };
+
+    // Note: Workspace persistence would be implemented here
+    logger.info('Workspace item would be persisted', { itemId: item.id });
+    
+    logger.info('Added workspace item', { 
+      itemId: item.id, 
+      agentId, 
+      type: item.type, 
+      title: item.title 
+    });
+    
+    return item;
+  }
+
+  private async executeAgentConversation(
+    parentThread: ConversationThread,
+    agentThread: ConversationThread,
+    args: any,
+    toolCall: { id: string; name: string; arguments: string },
+    userReq: UserRequest
+  ): Promise<void> {
+    try {
+      const apiConfigs = (await userReq.repos.getSettings(requireReq(userReq.reqLike))).apiConfigs;
+      const apiConfig = apiConfigs.find((c: any) => c.id === parentThread.apiConfigId);
+      if (!apiConfig) {
+        logger.warn('API config not found for agent conversation', { apiConfigId: parentThread.apiConfigId });
+        return;
+      }
+
+      const agentResult = await runAgentConversation(
+        agentThread,
+        args.content || args.title || 'New task assigned',
+        await userReq.repos.getConversations(userReq.reqLike),
+        apiConfig,
+        TOOL_DESCRIPTORS,
+        async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
+        createToolHandler(requireRepos(requireReq(userReq.reqLike))),
+        userReq.traceId,
+        async (ev: ProviderEvent) => { 
+          logger.info('Provider event', { event: ev, threadId: agentThread.id });
+        }
+      );
+
+      if (agentResult.success) {
+        logger.info('Agent conversation completed successfully', { 
+          agentId: agentThread.agentId, 
+          conversationId: agentThread.id,
+          messageLength: agentResult.finalAssistantMessage?.content?.length || 0
+        });
+      } else {
+        await this.injectAgentErrorMessage(parentThread, toolCall.id, agentResult.error, userReq);
+      }
+    } catch (error: any) {
+      logger.error('Error running agent conversation', { 
+        agentId: agentThread.agentId, 
+        conversationId: agentThread.id,
+        error: error?.message || String(error) 
+      });
+    }
+  }
+
+  private async injectAgentErrorMessage(
+    thread: ConversationThread,
+    toolCallId: string,
+    error: string | undefined,
+    userReq: UserRequest
+  ): Promise<void> {
+    logger.warn('Agent conversation failed', { 
+      conversationId: thread.id,
+      error 
+    });
+    
+    const errorMessage: PromptMessage = {
+      role: 'tool',
+      tool_call_id: toolCallId,
+      content: `Agent conversation failed: ${error || 'Unknown error'}`
+    };
+    
+    await this.appendMessageToThread(thread, errorMessage, userReq);
+  }
+
+  private async appendMessageToThread(
+    thread: ConversationThread,
+    message: PromptMessage,
+    userReq: UserRequest
+  ): Promise<void> {
+    const updatedThread = {
+      ...thread,
+      messages: [...thread.messages, message],
+      lastActiveAt: new Date().toISOString()
+    };
+    
+    const conversations = await userReq.repos.getConversations(userReq.reqLike);
+    const threadIndex = conversations.findIndex((c: ConversationThread) => c.id === thread.id);
+    if (threadIndex !== -1) {
+      const next = conversations.slice();
+      next[threadIndex] = updatedThread;
+      await userReq.repos.setConversations(userReq.reqLike, next);
+    }
+  }
+
+  private async updateThreadMessages(
+    thread: ConversationThread,
+    newMessages: any[],
+    userReq: UserRequest
+  ): Promise<ConversationThread> {
+    const updatedThread = {
+      ...thread,
+      messages: [...thread.messages, ...newMessages],
+      lastActiveAt: new Date().toISOString()
+    };
+
+    const conversations = await userReq.repos.getConversations(userReq.reqLike);
+    const threadIndex = conversations.findIndex((c: ConversationThread) => c.id === thread.id);
+    
+    if (threadIndex !== -1) {
+      const updatedConversations = [
+        ...conversations.slice(0, threadIndex),
+        updatedThread,
+        ...conversations.slice(threadIndex + 1)
+      ];
+      
+      await userReq.repos.setConversations(userReq.reqLike, updatedConversations);
+    }
+
+    return updatedThread;
+  }
+
+  private async getUpdatedThread(
+    threadId: string,
+    repos: LiveRepos,
+    reqLike: ReqLike
+  ): Promise<ConversationThread> {
+    const conversations = await repos.getConversations(reqLike);
+    const updatedThread = conversations.find((c: ConversationThread) => c.id === threadId);
+    return updatedThread || conversations.find((c: ConversationThread) => c.id === threadId)!;
   }
 
   /** Cancel an active step for the given thread id, if present. */

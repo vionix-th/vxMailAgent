@@ -10,10 +10,8 @@ export const outlookProvider: IMailProvider = {
   async ensureValidAccessToken(account: Account) {
     const cfg = getOutlookOAuthConfig();
     const result = await ensureValidOutlookAccessToken(
-      account,
-      cfg.clientId,
-      cfg.clientSecret,
-      cfg.redirectUri,
+      account.tokens,
+      cfg
     );
     return result;
   },

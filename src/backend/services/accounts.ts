@@ -168,10 +168,8 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
     const cfg = getGoogleOAuthConfig();
     try {
       const result = await ensureValidGoogleAccessToken(
-        account,
-        cfg.clientId,
-        cfg.clientSecret,
-        cfg.redirectUri
+        account.tokens,
+        cfg
       );
       if (result.updated) {
         account.tokens.accessToken = result.accessToken;
@@ -203,10 +201,8 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
     catch (e: any) { return { ok: false, error: e?.message || String(e) }; }
     try {
       const result = await ensureValidOutlookAccessToken(
-        account,
-        cfg.clientId,
-        cfg.clientSecret,
-        cfg.redirectUri
+        account.tokens,
+        cfg
       );
       if (result.updated) {
         account.tokens.accessToken = result.accessToken;
@@ -245,10 +241,8 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
   let result: { accessToken: string; expiry: string; refreshToken: string; updated: boolean };
   try {
     result = await ensureValidOutlookAccessToken(
-      account,
-      cfg.clientId,
-      cfg.clientSecret,
-      cfg.redirectUri
+      account.tokens,
+      cfg
     );
   } catch (e: any) {
     const errTxt = String(e?.message || e);
@@ -312,10 +306,8 @@ export async function gmailTest(req: ReqLike, id: string): Promise<any> {
   let result: { accessToken: string; expiry: string; refreshToken: string; updated: boolean };
   try {
     result = await ensureValidGoogleAccessToken(
-      account,
-      cfg.clientId,
-      cfg.clientSecret,
-      cfg.redirectUri
+      account.tokens,
+      cfg
     );
   } catch (e: any) {
     const errTxt = String(e?.message || e);

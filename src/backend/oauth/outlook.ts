@@ -32,10 +32,20 @@ export async function exchangeOutlookCode(cfg: OAuthProviderConfig, code: string
     redirect_uri: cfg.redirectUri,
     scope: SCOPES.join(' '),
   });
-  const accessToken = String(json.access_token || '');
+  
+  if (!json.access_token) {
+    throw new OAuthError('No access token in Outlook response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  }
+  
+  const accessToken = String(json.access_token);
   const refreshToken = json.refresh_token ? String(json.refresh_token) : undefined;
   const expiryISO = typeof json.expires_in === 'number' ? computeExpiryISO(json.expires_in) : computeExpiryISO();
-  return { accessToken, ...(refreshToken ? { refreshToken } : {}), expiryISO, raw: json } as OAuthTokens;
+  
+  if (!refreshToken) {
+    throw new OAuthError('No refresh token in Outlook response', 'OAUTH_NO_REFRESH_TOKEN', 502);
+  }
+  
+  return { accessToken, refreshToken, expiryISO, raw: json };
 }
 
 export async function refreshOutlookToken(cfg: OAuthProviderConfig, refreshToken: string): Promise<OAuthTokens> {
@@ -46,52 +56,52 @@ export async function refreshOutlookToken(cfg: OAuthProviderConfig, refreshToken
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
   });
-  const accessToken = String(json.access_token || '');
+  
+  if (!json.access_token) {
+    throw new OAuthError('No access token in Outlook refresh response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  }
+  
+  const accessToken = String(json.access_token);
   const newRefreshToken = json.refresh_token ? String(json.refresh_token) : undefined;
   const expiryISO = computeExpiryISO(typeof json.expires_in === 'number' ? json.expires_in : undefined);
+  
   return { accessToken, refreshToken: newRefreshToken || refreshToken, expiryISO, raw: json };
 }
 
-// Unify refresh check + refresh behavior; returns normalized shape
-export async function ensureValidOutlookAccessToken(
-  account: any,
-  clientId: string,
-  clientSecret: string,
-  redirectUri: string
-): Promise<{ accessToken: string; expiry: string; refreshToken: string; updated: boolean }>
-{
+/** Check if Outlook access token needs refresh based on expiry time. */
+export function needsOutlookTokenRefresh(tokens: { accessToken?: string; expiry?: string }): boolean {
+  if (!tokens.accessToken) return true;
+  if (!tokens.expiry) return true;
+  
+  const expiryTime = new Date(tokens.expiry).getTime();
   const now = Date.now();
-  const expiryTime = account?.tokens?.expiry ? new Date(account.tokens.expiry).getTime() : 0;
-  const needsRefresh = !account?.tokens?.accessToken || !expiryTime || (expiryTime - now < 2 * 60 * 1000);
+  return expiryTime - now < 2 * 60 * 1000;
+}
 
-  if (!needsRefresh) {
-    return {
-      accessToken: account.tokens.accessToken,
-      expiry: account.tokens.expiry,
-      refreshToken: account.tokens.refreshToken,
-      updated: false,
-    };
+/** Validate and refresh Outlook access token if needed. */
+export async function ensureValidOutlookAccessToken(
+  tokens: { accessToken: string; expiry: string; refreshToken: string },
+  config: OAuthProviderConfig
+): Promise<{ accessToken: string; expiry: string; refreshToken: string; updated: boolean }> {
+  if (!needsOutlookTokenRefresh(tokens)) {
+    return { ...tokens, updated: false };
   }
-  const existingRefresh = account?.tokens?.refreshToken;
-  if (!existingRefresh) {
+
+  if (!tokens.refreshToken) {
     throw new OAuthError('Missing refresh token', 'OAUTH_MISSING_REFRESH_TOKEN', 401);
   }
 
-  try {
-    const tokens = await refreshOutlookToken({ clientId, clientSecret, redirectUri }, existingRefresh);
-    const accessToken = tokens.accessToken;
-    if (!accessToken) {
-      throw new OAuthError('No access token returned from Microsoft', 'OAUTH_NO_ACCESS_TOKEN', 502);
-    }
-    return {
-      accessToken,
-      expiry: tokens.expiryISO,
-      refreshToken: tokens.refreshToken || existingRefresh,
-      updated: true,
-    };
-  } catch (err: any) {
-    throw new OAuthError(err?.message || String(err));
+  const refreshedTokens = await refreshOutlookToken(config, tokens.refreshToken);
+  if (!refreshedTokens.accessToken) {
+    throw new OAuthError('No access token returned from Microsoft', 'OAUTH_NO_ACCESS_TOKEN', 502);
   }
+
+  return {
+    accessToken: refreshedTokens.accessToken,
+    expiry: refreshedTokens.expiryISO,
+    refreshToken: refreshedTokens.refreshToken || tokens.refreshToken,
+    updated: true,
+  };
 }
 
 // Fetch Outlook/Microsoft Graph user profile

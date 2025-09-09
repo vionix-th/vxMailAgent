@@ -13,8 +13,8 @@ const SCOPES = [
 ];
 
 // Provide an OAuth2 client for Google APIs consumers (e.g., Gmail provider)
-export function getGoogleOAuth2Client(clientId: string, clientSecret: string, redirectUri: string) {
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+export function getGoogleOAuth2Client(clientId: string, clientSecret: string) {
+  return new google.auth.OAuth2(clientId, clientSecret);
 }
 
 export function buildGoogleAuthUrl(cfg: OAuthProviderConfig, state: string): string {
@@ -41,10 +41,20 @@ export async function exchangeGoogleCode(cfg: OAuthProviderConfig, code: string)
     code,
     redirect_uri: cfg.redirectUri,
   });
-  const accessToken = String(json.access_token || '');
+  
+  if (!json.access_token) {
+    throw new OAuthError('No access token in Google response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  }
+  
+  const accessToken = String(json.access_token);
   const refreshToken = json.refresh_token ? String(json.refresh_token) : undefined;
   const expiryISO = typeof json.expires_in === 'number' ? computeExpiryISO(json.expires_in) : computeExpiryISO();
-  return { accessToken, ...(refreshToken ? { refreshToken } : {}), expiryISO, raw: json } as OAuthTokens;
+  
+  if (!refreshToken) {
+    throw new OAuthError('No refresh token in Google response', 'OAUTH_NO_REFRESH_TOKEN', 502);
+  }
+  
+  return { accessToken, refreshToken, expiryISO, raw: json };
 }
 
 export async function refreshGoogleToken(cfg: OAuthProviderConfig, refreshToken: string): Promise<OAuthTokens> {
@@ -55,54 +65,52 @@ export async function refreshGoogleToken(cfg: OAuthProviderConfig, refreshToken:
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
   });
-  const accessToken = String(json.access_token || '');
+  
+  if (!json.access_token) {
+    throw new OAuthError('No access token in Google refresh response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  }
+  
+  const accessToken = String(json.access_token);
   const newRefresh = json.refresh_token ? String(json.refresh_token) : undefined;
   const expiryISO = typeof json.expires_in === 'number' ? computeExpiryISO(json.expires_in) : computeExpiryISO();
+  
   return { accessToken, refreshToken: newRefresh || refreshToken, expiryISO, raw: json };
 }
 
-// Unify refresh check + refresh behavior; returns normalized shape
-export async function ensureValidGoogleAccessToken(
-  account: any,
-  clientId: string,
-  clientSecret: string,
-  redirectUri: string
-): Promise<{ accessToken: string; expiry: string; refreshToken: string; updated: boolean }>
-{
+/** Check if access token needs refresh based on expiry time. */
+export function needsTokenRefresh(tokens: { accessToken?: string; expiry?: string }): boolean {
+  if (!tokens.accessToken) return true;
+  if (!tokens.expiry) return true;
+  
+  const expiryTime = new Date(tokens.expiry).getTime();
   const now = Date.now();
-  const expiryTime = account?.tokens?.expiry ? new Date(account.tokens.expiry).getTime() : 0;
-  const needsRefresh = !account?.tokens?.accessToken || !expiryTime || expiryTime - now < 2 * 60 * 1000;
+  return expiryTime - now < 2 * 60 * 1000;
+}
 
-  if (!needsRefresh) {
-    return {
-      accessToken: account.tokens.accessToken,
-      expiry: account.tokens.expiry,
-      refreshToken: account.tokens.refreshToken,
-      updated: false,
-    };
+/** Validate and refresh Google access token if needed. */
+export async function ensureValidGoogleAccessToken(
+  tokens: { accessToken: string; expiry: string; refreshToken: string },
+  config: OAuthProviderConfig
+): Promise<{ accessToken: string; expiry: string; refreshToken: string; updated: boolean }> {
+  if (!needsTokenRefresh(tokens)) {
+    return { ...tokens, updated: false };
   }
 
-  const existingRefresh = account?.tokens?.refreshToken;
-  if (!existingRefresh) throw new OAuthError('Missing refresh token', 'OAUTH_MISSING_REFRESH_TOKEN', 401);
-
-  try {
-    const tokens = await refreshGoogleToken(
-      { clientId, clientSecret, redirectUri },
-      existingRefresh
-    );
-    const accessToken = tokens.accessToken;
-    if (!accessToken) {
-      throw new OAuthError('No access token returned from Google', 'OAUTH_NO_ACCESS_TOKEN', 502);
-    }
-    return {
-      accessToken,
-      expiry: tokens.expiryISO,
-      refreshToken: tokens.refreshToken || existingRefresh,
-      updated: true,
-    };
-  } catch (err: any) {
-    throw new OAuthError(err?.message || String(err));
+  if (!tokens.refreshToken) {
+    throw new OAuthError('Missing refresh token', 'OAUTH_MISSING_REFRESH_TOKEN', 401);
   }
+
+  const refreshedTokens = await refreshGoogleToken(config, tokens.refreshToken);
+  if (!refreshedTokens.accessToken) {
+    throw new OAuthError('No access token returned from Google', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  }
+
+  return {
+    accessToken: refreshedTokens.accessToken,
+    expiry: refreshedTokens.expiryISO,
+    refreshToken: refreshedTokens.refreshToken || tokens.refreshToken,
+    updated: true,
+  };
 }
 
 // Fetch Google OIDC userinfo using the access token

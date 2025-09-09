@@ -34,33 +34,35 @@ export interface UnifiedDiagnosticsResponse {
   };
 }
 
-function buildHierarchicalTree(
-  orchestrationEntries: OrchestrationDiagnosticEntry[],
-  conversations: ConversationThread[],
-  providerEvents: ProviderEvent[],
-  _traces: Trace[]
-): DiagnosticNode[] {
-  // Group by fetch cycle -> email -> director conversations -> agent conversations
-  const fetchCycles = new Map<string, {
-    id: string;
-    timestamp: string;
-    emails: Map<string, {
-      id: string;
-      subject: string;
-      directorConversations: Map<string, {
-        conversation: ConversationThread;
-        directorName: string;
-        agentConversations: ConversationThread[];
-        providerEvents: ProviderEvent[];
-        orchestrationEntries: OrchestrationDiagnosticEntry[];
-      }>;
-    }>;
-  }>();
+interface FetchCycleData {
+  id: string;
+  timestamp: string;
+  emails: Map<string, EmailData>;
+}
 
-  // Process orchestration entries to understand email processing
+interface EmailData {
+  id: string;
+  subject: string;
+  directorConversations: Map<string, DirectorConversationData>;
+}
+
+interface DirectorConversationData {
+  conversation: ConversationThread;
+  directorName: string;
+  agentConversations: ConversationThread[];
+  providerEvents: ProviderEvent[];
+  orchestrationEntries: OrchestrationDiagnosticEntry[];
+}
+
+/** Group orchestration entries by fetch cycle and email. */
+function groupOrchestrationData(
+  orchestrationEntries: OrchestrationDiagnosticEntry[]
+): Map<string, FetchCycleData> {
+  const fetchCycles = new Map<string, FetchCycleData>();
+
   for (const entry of orchestrationEntries) {
-    const cycleId = entry.fetchCycleId || 'unknown';
-    const emailId = (entry.email as any)?.id || 'unknown';
+    const cycleId = entry.fetchCycleId ?? 'unknown';
+    const emailId = (entry.email as any)?.id ?? 'unknown';
     const directorId = entry.director;
 
     if (!fetchCycles.has(cycleId)) {
@@ -75,18 +77,17 @@ function buildHierarchicalTree(
     if (!cycle.emails.has(emailId)) {
       cycle.emails.set(emailId, {
         id: emailId,
-        subject: (entry.email as any)?.subject || 'Unknown Subject',
+        subject: (entry.email as any)?.subject ?? 'Unknown Subject',
         directorConversations: new Map()
       });
     }
 
     const email = cycle.emails.get(emailId)!;
 
-    // Associate director conversation with this email
     if (directorId && entry.dirThreadId) {
       if (!email.directorConversations.has(entry.dirThreadId)) {
         email.directorConversations.set(entry.dirThreadId, {
-          conversation: {} as ConversationThread, // Will be filled later
+          conversation: {} as ConversationThread,
           directorName: directorId,
           agentConversations: [],
           providerEvents: [],
@@ -97,20 +98,26 @@ function buildHierarchicalTree(
       email.directorConversations.get(entry.dirThreadId)!.orchestrationEntries.push(entry);
     }
   }
+  
+  return fetchCycles;
+}
 
-  // Associate conversations with their proper locations
+/** Associate conversations with their grouped data locations. */
+function associateConversations(
+  fetchCycles: Map<string, FetchCycleData>,
+  conversations: ConversationThread[]
+): void {
+
   for (const conversation of conversations) {
     const conversationId = conversation.id;
     const parentId = conversation.parentId;
 
     for (const cycle of fetchCycles.values()) {
       for (const email of cycle.emails.values()) {
-        // Director conversation (no parentId)
         if (conversation.kind === 'director' && !parentId) {
           for (const [dirThreadId, dirConv] of email.directorConversations) {
             if (conversationId === dirThreadId) {
               dirConv.conversation = conversation;
-              // Backfill subject from conversation email if missing
               if (!email.subject || email.subject === 'Unknown Subject') {
                 const subj = (conversation as any)?.email?.subject;
                 if (subj && typeof subj === 'string') email.subject = subj;
@@ -119,7 +126,6 @@ function buildHierarchicalTree(
           }
         }
 
-        // Agent conversation (has parentId pointing to director)
         if (conversation.kind === 'agent' && parentId) {
           const dirConv = email.directorConversations.get(parentId);
           if (dirConv) {
@@ -129,20 +135,24 @@ function buildHierarchicalTree(
       }
     }
   }
+}
 
-  // Associate provider events with conversations
+/** Associate provider events with conversations. */
+function associateProviderEvents(
+  fetchCycles: Map<string, FetchCycleData>,
+  providerEvents: ProviderEvent[]
+): void {
+
   for (const event of providerEvents) {
     const conversationId = event.conversationId;
 
     for (const cycle of fetchCycles.values()) {
       for (const email of cycle.emails.values()) {
         for (const dirConv of email.directorConversations.values()) {
-          // Director conversation events
           if (dirConv.conversation.id === conversationId) {
             dirConv.providerEvents.push(event);
           }
 
-          // Agent conversation events
           const agentConv = dirConv.agentConversations.find(c => c.id === conversationId);
           if (agentConv) {
             dirConv.providerEvents.push(event);
@@ -151,6 +161,17 @@ function buildHierarchicalTree(
       }
     }
   }
+}
+
+function buildHierarchicalTree(
+  orchestrationEntries: OrchestrationDiagnosticEntry[],
+  conversations: ConversationThread[],
+  providerEvents: ProviderEvent[],
+  _traces: Trace[]
+): DiagnosticNode[] {
+  const fetchCycles = groupOrchestrationData(orchestrationEntries);
+  associateConversations(fetchCycles, conversations);
+  associateProviderEvents(fetchCycles, providerEvents);
 
   // Convert to tree structure
   const tree: DiagnosticNode[] = [];

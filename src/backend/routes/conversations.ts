@@ -9,6 +9,161 @@ import { requireReq, requireRepos } from '../utils/repo-access';
 import type { ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
+import { transformMessagesForEngine, extractLastUserContent } from '../utils/message-transformers';
+
+interface ConversationResult {
+  assistantMessage: PromptMessage | null;
+  content?: string;
+  toolCalls?: any[];
+}
+
+async function validateConversationRequest(
+  id: string, 
+  req: ReqLike, 
+  repos: LiveRepos
+): Promise<{ thread: ConversationThread; apiConfig: any }> {
+  const conversations = await repos.getConversations(req);
+  const thread = conversations.find((c) => c.id === id);
+  if (!thread) throw new NotFoundError('Conversation not found');
+
+  const apiConfig = (await repos.getSettings(requireReq(req))).apiConfigs.find((c: any) => c.id === thread.apiConfigId);
+  if (!apiConfig) throw new NotFoundError('API config not found');
+
+  return { thread, apiConfig };
+}
+
+
+async function processDirectorConversation(
+  thread: ConversationThread,
+  messages: any[],
+  apiConfig: any,
+  req: ReqLike,
+  repos: LiveRepos,
+  services: { logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>; newId: () => string }
+): Promise<ConversationResult> {
+  const t0 = Date.now();
+  const engineOut = await conversationEngine.run({
+    messages: messages as any,
+    apiConfig: apiConfig as any,
+    role: 'director',
+    roleCaps: { canSpawnAgents: true },
+    toolRegistry: TOOL_DESCRIPTORS,
+    context: { conversationId: thread.id, agents: await repos.getAgents(req) },
+  });
+  
+  const result = {
+    assistantMessage: engineOut.assistantMessage,
+    toolCalls: engineOut.toolCalls,
+    content: engineOut.content,
+    request: engineOut.request,
+    response: engineOut.response,
+  } as any;
+  
+  const latencyMs = Date.now() - t0;
+  await updateDirectorThread(thread, result.assistantMessage, req, repos);
+  await logDirectorProviderEvents(thread.id, result, latencyMs, req, services);
+  
+  return {
+    assistantMessage: result.assistantMessage,
+    content: result.content,
+    toolCalls: result.toolCalls
+  };
+}
+
+async function processAgentConversation(
+  thread: ConversationThread,
+  messages: any[],
+  apiConfig: any,
+  req: ReqLike,
+  repos: LiveRepos,
+  services: { logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>; newId: () => string }
+): Promise<ConversationResult> {
+  const userContent = extractLastUserContent(messages);
+  
+  const agentResult = await runAgentConversation(
+    thread,
+    userContent,
+    await repos.getConversations(req),
+    apiConfig,
+    TOOL_DESCRIPTORS,
+    async (next: ConversationThread[]) => { await repos.setConversations(req, next); },
+    createToolHandler(requireRepos(requireReq(req))),
+    undefined,
+    async (ev: ProviderEvent) => { await services.logProviderEvent(ev, req); }
+  );
+  
+  if (!agentResult.success) {
+    throw new Error(agentResult.error || 'Agent conversation failed');
+  }
+  
+  return {
+    assistantMessage: agentResult.finalAssistantMessage,
+    content: agentResult.finalAssistantMessage?.content
+  };
+}
+
+async function updateDirectorThread(
+  thread: ConversationThread,
+  assistantMessage: PromptMessage,
+  req: ReqLike,
+  repos: LiveRepos
+): Promise<void> {
+  const now = new Date().toISOString();
+  const updated: ConversationThread = {
+    ...thread,
+    messages: [...thread.messages, assistantMessage],
+    lastActiveAt: now,
+    provider: 'openai',
+  } as any;
+  
+  const conversations = await repos.getConversations(req);
+  const idx = conversations.findIndex((c) => c.id === thread.id);
+  if (idx !== -1) {
+    const next = conversations.slice();
+    next[idx] = updated;
+    await repos.setConversations(req, next);
+  }
+}
+
+async function logDirectorProviderEvents(
+  conversationId: string,
+  result: any,
+  latencyMs: number,
+  req: ReqLike,
+  services: { logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>; newId: () => string }
+): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    
+    if (result.request) {
+      await services.logProviderEvent({
+        id: services.newId(),
+        conversationId,
+        provider: 'openai',
+        type: 'request',
+        timestamp: now,
+        payload: result.request
+      }, req);
+    }
+    
+    const usage = (result.response && (result.response as any).usage) || undefined;
+    await services.logProviderEvent({
+      id: services.newId(),
+      conversationId,
+      provider: 'openai',
+      type: 'response',
+      timestamp: now,
+      latencyMs,
+      ...(usage ? { usage: { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } } : {}),
+      payload: result.response,
+    }, req);
+  } catch (e: any) {
+    logger.warn('Provider events logging failed in /api/conversations/:id/assistant', {
+      conversationId,
+      error: e?.message || String(e),
+    });
+  }
+}
 
 export default function registerConversationsRoutes(
   app: express.Express, 
@@ -78,116 +233,25 @@ export default function registerConversationsRoutes(
   // POST /api/conversations/:id/assistant
   app.post('/api/conversations/:id/assistant', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const conversations = await repos.getConversations(req as any as ReqLike);
-    const idx = conversations.findIndex((c) => c.id === id);
-    if (idx === -1) throw new NotFoundError('Conversation not found');
-    const t = conversations[idx];
-
-    const api = (await repos.getSettings(requireReq(req as any as ReqLike))).apiConfigs.find((c: any) => c.id === t.apiConfigId);
-    if (!api) throw new NotFoundError('API config not found');
-
-    // Use existing transcript as-is
-    const messages = t.messages.map((m) => {
-      const base: any = { role: m.role as any, content: (m as any).content ?? null };
-      if ((m as any).name) base.name = (m as any).name;
-      if (m.role === 'assistant' && (m as any).tool_calls) base.tool_calls = (m as any).tool_calls;
-      if (m.role === 'tool' && (m as any).tool_call_id) base.tool_call_id = (m as any).tool_call_id;
-      return base;
-    });
-    // Tool selection is handled by the engine (flags + roleCaps); no local tool building needed.
-
-    // Use unified conversation logic for both director and agent threads
-    let lastAssistant: PromptMessage | null = null;
-    let lastStep: any = null;
+    const reqLike = req as any as ReqLike;
     
-    // Get the last user message content for agent conversations
-    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
-    const userContent = lastUserMessage?.content || '';
+    const { thread, apiConfig } = await validateConversationRequest(id, reqLike, repos);
+    const messages = transformMessagesForEngine(thread.messages);
     
-    if (t.kind === 'director') {
-      // Director threads: single step only (delegations handled by fetcher path)
-      const t0 = Date.now();
-      const engineOut = await conversationEngine.run({
-        messages: messages as any,
-        apiConfig: api as any,
-        role: 'director',
-        roleCaps: { canSpawnAgents: true },
-        toolRegistry: TOOL_DESCRIPTORS,
-        context: { conversationId: id, agents: await repos.getAgents(req as any as ReqLike) },
-      });
-      const result = {
-        assistantMessage: engineOut.assistantMessage,
-        toolCalls: engineOut.toolCalls,
-        content: engineOut.content,
-        request: engineOut.request,
-        response: engineOut.response,
-      } as any;
-      const latencyMs = Date.now() - t0;
-      const now = new Date().toISOString();
-
-      // Append assistant to thread
-      const assistant = result.assistantMessage as any as PromptMessage;
-      lastAssistant = assistant;
-      const updated: ConversationThread = {
-        ...t,
-        messages: [...t.messages, assistant],
-        lastActiveAt: now,
-        provider: 'openai',
-      } as any;
-      {
-        const cur = await repos.getConversations(req as any as ReqLike);
-        const i2 = cur.findIndex((c) => c.id === id);
-        if (i2 !== -1) {
-          const next = cur.slice();
-          next[i2] = updated;
-          await repos.setConversations(req as any as ReqLike, next);
-        }
-      }
-      // Provider events (req-aware)
-      try {
-        if (result.request) await services.logProviderEvent({ id: services.newId(), conversationId: id, provider: 'openai', type: 'request', timestamp: now, payload: result.request }, req as any as ReqLike);
-        const usage = (result.response && (result.response as any).usage) || undefined;
-        await services.logProviderEvent({
-          id: services.newId(),
-          conversationId: id,
-          provider: 'openai',
-          type: 'response',
-          timestamp: now,
-          latencyMs,
-          ...(usage ? { usage: { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } } : {}),
-          payload: result.response,
-        }, req as any as ReqLike);
-      } catch (e: any) {
-        logger.warn('Provider events logging failed in /api/conversations/:id/assistant', {
-          id,
-          error: e?.message || String(e),
-        });
-      }
-      lastStep = result;
+    let result: ConversationResult;
+    if (thread.kind === 'director') {
+      result = await processDirectorConversation(thread, messages, apiConfig, reqLike, repos, services);
     } else {
-      // Agent threads: use unified agent conversation logic
-      const agentResult = await runAgentConversation(
-        t,
-        userContent, // Use the user's message content
-        await repos.getConversations(req as any as ReqLike),
-        api,
-        TOOL_DESCRIPTORS,
-        async (next: ConversationThread[]) => { await repos.setConversations(req as any as ReqLike, next); },
-        createToolHandler(requireRepos(requireReq(req as any as ReqLike))),
-        undefined, // No traceId in routes path
-        async (ev: ProviderEvent) => { await services.logProviderEvent(ev, req as any as ReqLike); } // Req-aware provider logging
-      );
-      
-      if (agentResult.success) {
-        lastAssistant = agentResult.finalAssistantMessage;
-        lastStep = { content: agentResult.finalAssistantMessage?.content };
-      } else {
-        throw new Error(agentResult.error || 'Agent conversation failed');
-      }
+      result = await processAgentConversation(thread, messages, apiConfig, reqLike, repos, services);
     }
 
-    logger.info('POST /api/conversations/:id/assistant replied', { id, length: String(lastStep?.content || '').length });
-    return res.json({ success: true, message: lastAssistant, content: lastStep?.content, toolCalls: lastStep?.toolCalls });
+    logger.info('POST /api/conversations/:id/assistant replied', { id, length: String(result.content || '').length });
+    return res.json({ 
+      success: true, 
+      message: result.assistantMessage, 
+      content: result.content, 
+      toolCalls: result.toolCalls 
+    });
   }));
 
   // DELETE single conversation by id

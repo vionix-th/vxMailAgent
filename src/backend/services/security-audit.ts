@@ -119,97 +119,99 @@ class SecurityAuditService {
     this.logQueue.push(event);
   }
 
-  /** Backward-compat: user-scoped file operation (uid required). */
-  logFileOperation(uid: string, details: FileOperationDetails, req?: any): void {
-    this.logUserFileOperation(uid, details, req);
-  }
-
-  /** Explicit user-scoped file operation audit. */
+  /** User-scoped file operation audit - requires uid. */
   logUserFileOperation(uid: string, details: FileOperationDetails, req?: any): void {
-    const ua = req?.headers?.['user-agent'] as string | undefined;
-    const ip = req?.ip || req?.connection?.remoteAddress;
-    const event: SecurityAuditEvent = {
-      timestamp: new Date().toISOString(),
-      uid,
-      operation: 'file_operation',
-      resource: details.filePath,
-      details,
-      severity: details.success ? 'info' : 'error',
-      ...(ua ? { userAgent: ua } : {}),
-      ...(ip ? { ip } : {}),
-    };
-    
+    const event = this.createFileOperationEvent(uid, details, req);
     this.writeLogEntry(event);
   }
 
-  /** Explicit system-scoped file operation audit (no uid). */
+  /** System-scoped file operation audit - no uid required. */
   logSystemFileOperation(details: FileOperationDetails, req?: any): void {
-    const ua = req?.headers?.['user-agent'] as string | undefined;
-    const ip = req?.ip || req?.connection?.remoteAddress;
-    const event: SecurityAuditEvent = {
+    const event = this.createFileOperationEvent(undefined, details, req);
+    this.writeLogEntry(event);
+  }
+
+  private createFileOperationEvent(uid: string | undefined, details: FileOperationDetails, req?: any): SecurityAuditEvent {
+    const { userAgent, ip } = this.extractRequestMetadata(req);
+    return {
       timestamp: new Date().toISOString(),
+      ...(uid ? { uid } : {}),
       operation: 'file_operation',
       resource: details.filePath,
       details,
       severity: details.success ? 'info' : 'error',
-      ...(ua ? { userAgent: ua } : {}),
+      ...(userAgent ? { userAgent } : {}),
       ...(ip ? { ip } : {}),
     };
-    this.writeLogEntry(event);
   }
 
   logAuthOperation(uid: string | undefined, details: AuthOperationDetails, req?: any): void {
-    const ua = req?.headers?.['user-agent'] as string | undefined;
-    const ip = req?.ip || req?.connection?.remoteAddress;
-    const event: SecurityAuditEvent = {
+    const event = this.createAuthOperationEvent(uid, details, req);
+    this.writeLogEntry(event);
+  }
+
+  private createAuthOperationEvent(uid: string | undefined, details: AuthOperationDetails, req?: any): SecurityAuditEvent {
+    const { userAgent, ip } = this.extractRequestMetadata(req);
+    return {
       timestamp: new Date().toISOString(),
       operation: 'auth_operation',
       resource: 'authentication',
       details,
       severity: details.success ? 'info' : 'warning',
       ...(uid ? { uid } : {}),
-      ...(ua ? { userAgent: ua } : {}),
+      ...(userAgent ? { userAgent } : {}),
       ...(ip ? { ip } : {}),
-    } as SecurityAuditEvent;
-    
-    this.writeLogEntry(event);
+    };
   }
 
   logDataAccess(uid: string | undefined, details: DataAccessDetails, req?: any): void {
-    const ua = req?.headers?.['user-agent'] as string | undefined;
-    const ip = req?.ip || req?.connection?.remoteAddress;
-    const event: SecurityAuditEvent = {
+    const event = this.createDataAccessEvent(uid, details, req);
+    this.writeLogEntry(event);
+  }
+
+  private createDataAccessEvent(uid: string | undefined, details: DataAccessDetails, req?: any): SecurityAuditEvent {
+    const { userAgent, ip } = this.extractRequestMetadata(req);
+    return {
       timestamp: new Date().toISOString(),
       operation: 'data_access',
       resource: details.resource,
       details,
       severity: details.success ? 'info' : 'error',
       ...(uid ? { uid } : {}),
-      ...(ua ? { userAgent: ua } : {}),
+      ...(userAgent ? { userAgent } : {}),
       ...(ip ? { ip } : {}),
-    } as SecurityAuditEvent;
-    
-    this.writeLogEntry(event);
+    };
   }
 
   logSecurityViolation(uid: string | undefined, violation: string, details: Record<string, any>, req?: any): void {
-    const ua = req?.headers?.['user-agent'] as string | undefined;
-    const ip = req?.ip || req?.connection?.remoteAddress;
-    const event: SecurityAuditEvent = {
+    const event = this.createSecurityViolationEvent(uid, violation, details, req);
+    this.writeLogEntry(event);
+    
+    // Also log via canonical logger for immediate attention
+    logger.error('[SECURITY-VIOLATION]', { violation, details });
+  }
+
+  private createSecurityViolationEvent(uid: string | undefined, violation: string, details: Record<string, any>, req?: any): SecurityAuditEvent {
+    const { userAgent, ip } = this.extractRequestMetadata(req);
+    return {
       timestamp: new Date().toISOString(),
       operation: 'security_violation',
       resource: 'system',
       details: { violation, ...details },
       severity: 'critical',
       ...(uid ? { uid } : {}),
-      ...(ua ? { userAgent: ua } : {}),
+      ...(userAgent ? { userAgent } : {}),
       ...(ip ? { ip } : {}),
-    } as SecurityAuditEvent;
-    
-    this.writeLogEntry(event);
-    
-    // Also log via canonical logger for immediate attention
-    logger.error('[SECURITY-VIOLATION]', { violation, details });
+    };
+  }
+
+  private extractRequestMetadata(req?: any): { userAgent?: string; ip?: string } {
+    const userAgent = req?.headers?.['user-agent'] as string | undefined;
+    const ip = req?.ip || req?.connection?.remoteAddress;
+    return { 
+      ...(userAgent ? { userAgent } : {}),
+      ...(ip ? { ip } : {})
+    };
   }
 
   logPathTraversal(uid: string | undefined, attemptedPath: string, req?: any): void {

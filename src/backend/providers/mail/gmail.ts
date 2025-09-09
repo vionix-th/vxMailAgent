@@ -10,10 +10,8 @@ export const gmailProvider: IMailProvider = {
   async ensureValidAccessToken(account: Account) {
     const cfg = getGoogleOAuthConfig();
     const result = await ensureValidGoogleAccessToken(
-      account,
-      cfg.clientId,
-      cfg.clientSecret,
-      cfg.redirectUri,
+      account.tokens,
+      cfg
     );
     return result;
   },
@@ -26,8 +24,7 @@ export const gmailProvider: IMailProvider = {
     const cfg = getGoogleOAuthConfig();
     const oauth2Client = getGoogleOAuth2Client(
       cfg.clientId,
-      cfg.clientSecret,
-      cfg.redirectUri,
+      cfg.clientSecret
     );
     oauth2Client.setCredentials({ access_token: account.tokens.accessToken });
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });

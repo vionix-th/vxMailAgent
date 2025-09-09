@@ -5,65 +5,79 @@ dotenv.config();
 
 // Centralized configuration and environment validation
 
-// VX-only configuration (no legacy aliases)
-export const VX_MAILAGENT_KEY = process.env.VX_MAILAGENT_KEY || '';
-export const PORT: number = parseInt(process.env.PORT || '3001', 10);
-export const HOST = process.env.HOST || '172.0.0.1';
-export const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
-export const isProd = (process.env.NODE_ENV || 'development') === 'production';
-// OAuth: Google
-export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-export const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
+// Required configuration - fail fast if missing
+
+function getOptionalEnv(key: string, defaultValue: string): string {
+  return process.env[key] ?? defaultValue;
+}
+
+function getOptionalIntEnv(key: string, defaultValue: number): number {
+  const value = process.env[key];
+  return value ? parseInt(value, 10) : defaultValue;
+}
+
+// VX-only configuration
+export const VX_MAILAGENT_KEY = getOptionalEnv('VX_MAILAGENT_KEY', '');
+export const PORT: number = getOptionalIntEnv('PORT', 3001);
+export const HOST = getOptionalEnv('HOST', '172.0.0.1');
+export const CORS_ORIGIN = getOptionalEnv('CORS_ORIGIN', '*');
+export const isProd = getOptionalEnv('NODE_ENV', 'development') === 'production';
+
+// OAuth: Google - allow empty for optional configuration
+export const GOOGLE_CLIENT_ID = getOptionalEnv('GOOGLE_CLIENT_ID', '');
+export const GOOGLE_CLIENT_SECRET = getOptionalEnv('GOOGLE_CLIENT_SECRET', '');
+export const GOOGLE_REDIRECT_URI = getOptionalEnv('GOOGLE_REDIRECT_URI', '');
+
 // OAuth: Google (Login client - OIDC only)
-export const GOOGLE_LOGIN_CLIENT_ID = process.env.GOOGLE_LOGIN_CLIENT_ID || '';
-export const GOOGLE_LOGIN_CLIENT_SECRET = process.env.GOOGLE_LOGIN_CLIENT_SECRET || '';
-export const GOOGLE_LOGIN_REDIRECT_URI = process.env.GOOGLE_LOGIN_REDIRECT_URI || '';
+export const GOOGLE_LOGIN_CLIENT_ID = getOptionalEnv('GOOGLE_LOGIN_CLIENT_ID', '');
+export const GOOGLE_LOGIN_CLIENT_SECRET = getOptionalEnv('GOOGLE_LOGIN_CLIENT_SECRET', '');
+export const GOOGLE_LOGIN_REDIRECT_URI = getOptionalEnv('GOOGLE_LOGIN_REDIRECT_URI', '');
+
 // OAuth: Outlook
-export const OUTLOOK_CLIENT_ID = process.env.OUTLOOK_CLIENT_ID || '';
-export const OUTLOOK_CLIENT_SECRET = process.env.OUTLOOK_CLIENT_SECRET || '';
-export const OUTLOOK_REDIRECT_URI = process.env.OUTLOOK_REDIRECT_URI || '';
+export const OUTLOOK_CLIENT_ID = getOptionalEnv('OUTLOOK_CLIENT_ID', '');
+export const OUTLOOK_CLIENT_SECRET = getOptionalEnv('OUTLOOK_CLIENT_SECRET', '');
+export const OUTLOOK_REDIRECT_URI = getOptionalEnv('OUTLOOK_REDIRECT_URI', '');
 
 // Auth / Sessions (JWT)
-export const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-jwt';
-export const JWT_EXPIRES_IN_SEC = parseInt(process.env.JWT_EXPIRES_IN_SEC || '86400', 10); // 24h default
+export const JWT_SECRET = getOptionalEnv('JWT_SECRET', 'dev-insecure-jwt');
+export const JWT_EXPIRES_IN_SEC = getOptionalIntEnv('JWT_EXPIRES_IN_SEC', 86400); // 24h default
 
 // Diagnostics / Tracing configuration
-export const TRACE_VERBOSE = /^true$/i.test(process.env.TRACE_VERBOSE || '');
+export const TRACE_VERBOSE = /^true$/i.test(getOptionalEnv('TRACE_VERBOSE', ''));
 export const TRACE_PERSIST = process.env.TRACE_PERSIST === undefined ? true : /^true$/i.test(process.env.TRACE_PERSIST);
-export const TRACE_MAX_PAYLOAD = parseInt(process.env.TRACE_MAX_PAYLOAD || '32768', 10); // 32KB default per payload
-export const TRACE_MAX_SPANS = parseInt(process.env.TRACE_MAX_SPANS || '1000', 10);
-export const TRACE_REDACT_FIELDS = (process.env.TRACE_REDACT_FIELDS || 'authorization,api_key,access_token,refresh_token,set-cookie,cookie').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+export const TRACE_MAX_PAYLOAD = getOptionalIntEnv('TRACE_MAX_PAYLOAD', 32768); // 32KB default per payload
+export const TRACE_MAX_SPANS = getOptionalIntEnv('TRACE_MAX_SPANS', 1000);
+export const TRACE_REDACT_FIELDS = getOptionalEnv('TRACE_REDACT_FIELDS', 'authorization,api_key,access_token,refresh_token,set-cookie,cookie').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 // Retention
-export const TRACE_TTL_DAYS = parseInt(process.env.TRACE_TTL_DAYS || '7', 10);
+export const TRACE_TTL_DAYS = getOptionalIntEnv('TRACE_TTL_DAYS', 7);
 
 // Provider events retention (audit log)
-export const PROVIDER_TTL_DAYS = parseInt(process.env.PROVIDER_TTL_DAYS || '7', 10);
+export const PROVIDER_TTL_DAYS = getOptionalIntEnv('PROVIDER_TTL_DAYS', 7);
 
 // Fetcher log retention
-export const FETCHER_TTL_DAYS = parseInt(process.env.FETCHER_TTL_DAYS || '7', 10);
+export const FETCHER_TTL_DAYS = getOptionalIntEnv('FETCHER_TTL_DAYS', 7);
 
 // Orchestration diagnostics retention
-export const ORCHESTRATION_TTL_DAYS = parseInt(process.env.ORCHESTRATION_TTL_DAYS || '7', 10);
+export const ORCHESTRATION_TTL_DAYS = getOptionalIntEnv('ORCHESTRATION_TTL_DAYS', 7);
 
 // Network and execution timeouts (ms)
 // Keep conservative defaults to avoid indefinite hangs while not being too aggressive
-export const OPENAI_REQUEST_TIMEOUT_MS = parseInt(process.env.OPENAI_REQUEST_TIMEOUT_MS || '30000', 10);
-export const GRAPH_REQUEST_TIMEOUT_MS = parseInt(process.env.GRAPH_REQUEST_TIMEOUT_MS || '15000', 10);
-export const PROVIDER_REQUEST_TIMEOUT_MS = parseInt(process.env.PROVIDER_REQUEST_TIMEOUT_MS || '30000', 10);
-export const CONVERSATION_STEP_TIMEOUT_MS = parseInt(process.env.CONVERSATION_STEP_TIMEOUT_MS || '45000', 10);
-export const TOOL_EXEC_TIMEOUT_MS = parseInt(process.env.TOOL_EXEC_TIMEOUT_MS || '30000', 10);
+export const OPENAI_REQUEST_TIMEOUT_MS = getOptionalIntEnv('OPENAI_REQUEST_TIMEOUT_MS', 30000);
+export const GRAPH_REQUEST_TIMEOUT_MS = getOptionalIntEnv('GRAPH_REQUEST_TIMEOUT_MS', 15000);
+export const PROVIDER_REQUEST_TIMEOUT_MS = getOptionalIntEnv('PROVIDER_REQUEST_TIMEOUT_MS', 30000);
+export const CONVERSATION_STEP_TIMEOUT_MS = getOptionalIntEnv('CONVERSATION_STEP_TIMEOUT_MS', 45000);
+export const TOOL_EXEC_TIMEOUT_MS = getOptionalIntEnv('TOOL_EXEC_TIMEOUT_MS', 30000);
 
 // Multi-user isolation configuration (always enabled)
-export const USER_REGISTRY_TTL_MINUTES = parseInt(process.env.USER_REGISTRY_TTL_MINUTES || '60', 10);
-export const USER_REGISTRY_MAX_ENTRIES = parseInt(process.env.USER_REGISTRY_MAX_ENTRIES || '1000', 10);
-export const USER_MAX_FILE_SIZE_MB = parseInt(process.env.USER_MAX_FILE_SIZE_MB || '50', 10);
-export const USER_MAX_CONVERSATIONS = parseInt(process.env.USER_MAX_CONVERSATIONS || '10000', 10);
-export const USER_MAX_LOGS_PER_TYPE = parseInt(process.env.USER_MAX_LOGS_PER_TYPE || '10000', 10);
-export const FETCHER_MANAGER_TTL_MINUTES = parseInt(process.env.FETCHER_MANAGER_TTL_MINUTES || '60', 10);
-export const FETCHER_MANAGER_MAX_FETCHERS = parseInt(process.env.FETCHER_MANAGER_MAX_FETCHERS || '100', 10);
+export const USER_REGISTRY_TTL_MINUTES = getOptionalIntEnv('USER_REGISTRY_TTL_MINUTES', 60);
+export const USER_REGISTRY_MAX_ENTRIES = getOptionalIntEnv('USER_REGISTRY_MAX_ENTRIES', 1000);
+export const USER_MAX_FILE_SIZE_MB = getOptionalIntEnv('USER_MAX_FILE_SIZE_MB', 50);
+export const USER_MAX_CONVERSATIONS = getOptionalIntEnv('USER_MAX_CONVERSATIONS', 10000);
+export const USER_MAX_LOGS_PER_TYPE = getOptionalIntEnv('USER_MAX_LOGS_PER_TYPE', 10000);
+export const FETCHER_MANAGER_TTL_MINUTES = getOptionalIntEnv('FETCHER_MANAGER_TTL_MINUTES', 60);
+export const FETCHER_MANAGER_MAX_FETCHERS = getOptionalIntEnv('FETCHER_MANAGER_MAX_FETCHERS', 100);
 // Bootstrap concurrency for starting user fetchers on server startup
-export const FETCHER_BOOTSTRAP_CONCURRENCY = parseInt(process.env.FETCHER_BOOTSTRAP_CONCURRENCY || '10', 10);
+export const FETCHER_BOOTSTRAP_CONCURRENCY = getOptionalIntEnv('FETCHER_BOOTSTRAP_CONCURRENCY', 10);
 
 // ---- Validated OAuth config helpers (fail fast; avoid non-null assertions) ----
 type OAuthCfg = { clientId: string; clientSecret: string; redirectUri: string };
@@ -145,7 +159,7 @@ export function envSummary() {
       FETCHER_MANAGER_MAX_FETCHERS,
       FETCHER_BOOTSTRAP_CONCURRENCY,
     },
-    NODE_ENV: process.env.NODE_ENV || 'development',
+    NODE_ENV: getOptionalEnv('NODE_ENV', 'development'),
   };
 }
 
