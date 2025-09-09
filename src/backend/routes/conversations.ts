@@ -42,13 +42,18 @@ async function processAgentConversation(
 ): Promise<ConversationResult> {
   const userContent = extractLastUserContent(messages);
   const provLogger = new ProviderEventLogger(req as any);
+  // Compute gated tool registry for this agent: mandatory + explicitly enabled optional tools
+  const agentList = await repos.getAgents(req);
+  const agent = agentList.find((a: any) => a.id === thread.agentId);
+  const enabled = Array.isArray((agent as any)?.enabledToolCalls) ? new Set<string>((agent as any).enabledToolCalls) : new Set<string>();
+  const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => (d.flags && d.flags.mandatory) || enabled.has(d.name));
   
   const agentResult = await runAgentConversation(
     thread,
     userContent,
     await repos.getConversations(req),
     apiConfig,
-    TOOL_DESCRIPTORS,
+    gatedToolDescriptors,
     async (next: ConversationThread[]) => { await repos.setConversations(req, next); },
     createToolHandler(requireRepos(requireReq(req))),
     undefined,

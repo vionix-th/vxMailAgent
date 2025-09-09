@@ -242,26 +242,28 @@ export class ConversationOrchestrator {
     // Fetch current conversations snapshot
     let conversations = await userReq.repos.getConversations(userReq.reqLike);
     const nowIso = new Date().toISOString();
-    const ensure = ensureAgentThread(
-      conversations,
-      context.thread.id,
-      director,
-      agent,
-      context.thread.email as any,
-      context.prompts as any,
-      context.apiConfigs as any,
-      nowIso,
-      () => newId(),
-      userReq.traceId,
-      userReq.reqLike
-    );
-    if ('error' in ensure) {
-      await this.injectAgentErrorMessage(context.thread, toolCall.id, ensure.error, userReq);
+    let agentThread: ConversationThread;
+    try {
+      const ensure = ensureAgentThread(
+        conversations,
+        context.thread.id,
+        director,
+        agent,
+        context.thread.email as any,
+        context.prompts as any,
+        context.apiConfigs as any,
+        nowIso,
+        () => newId(),
+        userReq.traceId,
+        userReq.reqLike
+      );
+      conversations = ensure.conversations;
+      agentThread = ensure.agentThread;
+      await userReq.repos.setConversations(userReq.reqLike, conversations);
+    } catch (e: any) {
+      await this.injectAgentErrorMessage(context.thread, toolCall.id, e?.message || String(e), userReq);
       return;
     }
-    conversations = ensure.conversations;
-    const agentThread = ensure.agentThread;
-    await userReq.repos.setConversations(userReq.reqLike, conversations);
 
     // Persist workspace item via helper (validates schema and writes to repo)
     const addedItem = await this.createWorkspaceItem(context, args, agentId, agentThread.id, userReq, { id: toolCall.id, name: toolCall.name });
@@ -381,12 +383,18 @@ export class ConversationOrchestrator {
         return;
       }
 
+      // Gate tool registry for the agent: mandatory + explicitly enabled optional tools
+      const allAgents = await userReq.repos.getAgents(userReq.reqLike);
+      const agentCfg = allAgents.find((a: Agent) => a.id === agentThread.agentId);
+      const enabledSet = new Set<string>(Array.isArray(agentCfg?.enabledToolCalls) ? agentCfg!.enabledToolCalls! : []);
+      const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => (d.flags && d.flags.mandatory) || enabledSet.has(d.name));
+
       const agentResult = await runAgentConversation(
         agentThread,
         args.content || args.title || 'New task assigned',
         await userReq.repos.getConversations(userReq.reqLike),
         apiConfig,
-        TOOL_DESCRIPTORS,
+        gatedToolDescriptors,
         async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
         createToolHandler(requireRepos(requireReq(userReq.reqLike))),
         userReq.traceId,

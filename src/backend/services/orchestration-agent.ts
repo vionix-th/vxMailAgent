@@ -5,6 +5,7 @@ import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
 import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import type { ReqLike } from '../interfaces';
+import { InvalidAgentConfigError } from './error-handler';
 
 export interface AgentConversationResult {
   finalMessages: any[];
@@ -16,7 +17,8 @@ export interface AgentConversationResult {
 
 /**
  * Ensure an agent thread exists under a director thread, creating or reusing one.
- * Returns either { conversations, agentThread, isNew } or an { error, reason } result.
+ * Returns { conversations, agentThread, isNew }.
+ * Throws an Error when configuration is invalid (e.g., missing agent api/prompt).
  */
 export function ensureAgentThread(
   conversations: ConversationThread[],
@@ -30,7 +32,7 @@ export function ensureAgentThread(
   newIdFn: () => string,
   traceId?: string,
   req?: ReqLike,
-): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } | { conversations: ConversationThread[]; error: string; reason: 'invalid' } {
+): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } {
   const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }, req) : '';
 
   let agentThread = undefined as ConversationThread | undefined;
@@ -51,7 +53,8 @@ export function ensureAgentThread(
   const agentApi = apiConfigs.find((c: any) => c.id === agent.apiConfigId);
   if (!agentApi || !agentPrompt) {
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'error', error: 'missing agent api/prompt' }, req);
-    return { conversations, error: 'missing agent api/prompt', reason: 'invalid' } as const;
+    // Throw to avoid returning a union type and to simplify call sites.
+    throw new InvalidAgentConfigError('missing agent api/prompt');
   }
 
   const isNew = !agentThread;

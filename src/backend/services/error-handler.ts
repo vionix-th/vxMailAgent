@@ -43,6 +43,17 @@ export class OrchestrationError extends Error {
   }
 }
 
+export class InvalidAgentConfigError extends OrchestrationError {
+  constructor(
+    message: string = 'Invalid agent configuration',
+    code: string = 'INVALID_AGENT_CONFIG',
+    statusCode: number = 400
+  ) {
+    super(message, code, statusCode);
+    this.name = 'InvalidAgentConfigError';
+  }
+}
+
 export class OAuthError extends Error {
   constructor(
     message: string,
