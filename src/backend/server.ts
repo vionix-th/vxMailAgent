@@ -1,9 +1,7 @@
 import express from 'express';
 
 import { requireAuth } from './middleware/auth';
-import { setOrchestrationLog as svcSetOrchestrationLog, logProviderEvent as svcLogProviderEvent, getTraces } from './services/logging';
-import { newId } from './utils/id';
-import { ProviderEvent } from '../shared/types';
+import { setOrchestrationLog as svcSetOrchestrationLog, getTraces } from './services/logging';
 
 import registerHealthRoutes from './routes/health';
 // Cleanup routes kept (admin); health route is unauthenticated
@@ -41,8 +39,6 @@ export function createServer() {
 
   registerRoutes(app, repos, fetcherManager, {
     setOrchestrationLog: async (next: any[], req?: ReqLike) => { await svcSetOrchestrationLog(next, req); },
-    logProviderEvent: async (e: ProviderEvent, req?: ReqLike) => { await svcLogProviderEvent(e, req); },
-    newId,
     getTraces: async (req?: ReqLike) => await getTraces(req),
     setTraces: async (req: ReqLike, next: any[]) => { await repos.getTracesRepo(req).setAll(next); },
     getProviderEvents: async (req?: ReqLike) => await repos.getProviderRepo(req).getAll(),

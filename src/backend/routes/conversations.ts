@@ -5,6 +5,7 @@ import { runAgentConversation } from '../services/orchestration-agent';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { createToolHandler } from '../toolCalls';
 import logger from '../services/logger';
+import { ProviderEventLogger } from '../services/logging-handlers';
 import { requireReq, requireRepos } from '../utils/repo-access';
 import type { ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
@@ -39,9 +40,9 @@ async function processDirectorConversation(
   apiConfig: any,
   req: ReqLike,
   repos: LiveRepos,
-  services: { logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>; newId: () => string }
 ): Promise<ConversationResult> {
   const t0 = Date.now();
+  const provLogger = new ProviderEventLogger(req as any);
   const engineOut = await conversationEngine.run({
     messages: messages as any,
     apiConfig: apiConfig as any,
@@ -61,8 +62,14 @@ async function processDirectorConversation(
   
   const latencyMs = Date.now() - t0;
   await updateDirectorThread(thread, result.assistantMessage, req, repos);
-  await logDirectorProviderEvents(thread.id, result, latencyMs, req, services);
-  
+  // Centralized provider-event logging via ProviderEventLogger
+  if (result.request) {
+    provLogger.logRequest(thread.id, result.request);
+  }
+  if (result.response) {
+    provLogger.logResponse(thread.id, latencyMs, result.response, result.response?.usage);
+  }
+
   return {
     assistantMessage: result.assistantMessage,
     content: result.content,
@@ -76,9 +83,9 @@ async function processAgentConversation(
   apiConfig: any,
   req: ReqLike,
   repos: LiveRepos,
-  services: { logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>; newId: () => string }
 ): Promise<ConversationResult> {
   const userContent = extractLastUserContent(messages);
+  const provLogger = new ProviderEventLogger(req as any);
   
   const agentResult = await runAgentConversation(
     thread,
@@ -89,7 +96,34 @@ async function processAgentConversation(
     async (next: ConversationThread[]) => { await repos.setConversations(req, next); },
     createToolHandler(requireRepos(requireReq(req))),
     undefined,
-    async (ev: ProviderEvent) => { await services.logProviderEvent(ev, req); }
+    async (ev: ProviderEvent) => {
+      try {
+        const t = (ev as any).type;
+        if (t === 'request') {
+          provLogger.logRequest(thread.id, (ev as any).payload);
+        } else if (t === 'response') {
+          provLogger.logResponse(
+            thread.id,
+            (ev as any).latencyMs,
+            (ev as any).payload,
+            (ev as any).usage
+          );
+        } else if (t === 'error') {
+          provLogger.logError(
+            thread.id,
+            String((ev as any).error),
+            (ev as any).latencyMs
+          );
+        } else {
+          logger.warn('Unknown provider event type', { type: t, conversationId: thread.id });
+        }
+      } catch (e: any) {
+        logger.warn('Provider event logging failed in conversations route', {
+          error: e?.message || String(e),
+          conversationId: thread.id,
+        });
+      }
+    }
   );
   
   if (!agentResult.success) {
@@ -124,54 +158,9 @@ async function updateDirectorThread(
     await repos.setConversations(req, next);
   }
 }
-
-async function logDirectorProviderEvents(
-  conversationId: string,
-  result: any,
-  latencyMs: number,
-  req: ReqLike,
-  services: { logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>; newId: () => string }
-): Promise<void> {
-  try {
-    const now = new Date().toISOString();
-    
-    if (result.request) {
-      await services.logProviderEvent({
-        id: services.newId(),
-        conversationId,
-        provider: 'openai',
-        type: 'request',
-        timestamp: now,
-        payload: result.request
-      }, req);
-    }
-    
-    const usage = (result.response && (result.response as any).usage) || undefined;
-    await services.logProviderEvent({
-      id: services.newId(),
-      conversationId,
-      provider: 'openai',
-      type: 'response',
-      timestamp: now,
-      latencyMs,
-      ...(usage ? { usage: { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } } : {}),
-      payload: result.response,
-    }, req);
-  } catch (e: any) {
-    logger.warn('Provider events logging failed in /api/conversations/:id/assistant', {
-      conversationId,
-      error: e?.message || String(e),
-    });
-  }
-}
-
 export default function registerConversationsRoutes(
   app: express.Express, 
   repos: LiveRepos,
-  services: {
-    logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>;
-    newId: () => string;
-  }
 ) {
   // LIST conversations (canonical). Supports optional pagination only; no filters, no sorting.
   // GET /api/conversations?limit=&offset=
@@ -240,9 +229,9 @@ export default function registerConversationsRoutes(
     
     let result: ConversationResult;
     if (thread.kind === 'director') {
-      result = await processDirectorConversation(thread, messages, apiConfig, reqLike, repos, services);
+      result = await processDirectorConversation(thread, messages, apiConfig, reqLike, repos);
     } else {
-      result = await processAgentConversation(thread, messages, apiConfig, reqLike, repos, services);
+      result = await processAgentConversation(thread, messages, apiConfig, reqLike, repos);
     }
 
     logger.info('POST /api/conversations/:id/assistant replied', { id, length: String(result.content || '').length });

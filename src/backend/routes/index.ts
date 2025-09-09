@@ -20,7 +20,6 @@ import registerDiagnosticTracesRoutes from './diagnostic-traces';
 import registerUnifiedDiagnosticsRoutes from './unified-diagnostics';
 import registerCleanupRoutes from './cleanup';
 import { FetcherManager } from '../services/fetcher-manager';
-import { ProviderEvent } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
 
 export default function registerRoutes(
@@ -29,8 +28,6 @@ export default function registerRoutes(
   fetcherManager: FetcherManager,
   services: {
     setOrchestrationLog: (next: any[], req?: ReqLike) => Promise<void>;
-    logProviderEvent: (e: ProviderEvent, req?: ReqLike) => Promise<void>;
-    newId: () => string;
     getTraces: (req?: ReqLike) => Promise<any[]>;
     setTraces: (req: ReqLike, next: any[]) => Promise<void>;
     getProviderEvents: (req?: ReqLike) => Promise<any[]>;
@@ -46,7 +43,7 @@ export default function registerRoutes(
   registerDirectorsRoutes(app, repos);
   registerPromptsRoutes(app, repos);
   registerTemplatesRoutes(app);
-  registerConversationsRoutes(app, repos, services);
+  registerConversationsRoutes(app, repos);
   registerWorkspacesRoutes(app, repos);
   registerImprintsRoutes(app, repos);
   registerAccountsRoutes(app);

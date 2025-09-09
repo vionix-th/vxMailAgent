@@ -101,7 +101,10 @@ export class ConversationOrchestrator {
         }
       });
 
-      // Log provider response
+      // Log provider request/response
+      if (result.request) {
+        this.providerLogger.logRequest(threadId, result.request);
+      }
       if (result.response) {
         this.providerLogger.logResponse(threadId, Date.now() - startTime, result.response, result.response?.usage);
       }
@@ -387,8 +390,33 @@ export class ConversationOrchestrator {
         async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
         createToolHandler(requireRepos(requireReq(userReq.reqLike))),
         userReq.traceId,
-        async (ev: ProviderEvent) => { 
-          logger.info('Provider event', { event: ev, threadId: agentThread.id });
+        async (ev: ProviderEvent) => {
+          try {
+            const t = (ev as any).type;
+            if (t === 'request') {
+              this.providerLogger.logRequest(agentThread.id, (ev as any).payload);
+            } else if (t === 'response') {
+              this.providerLogger.logResponse(
+                agentThread.id,
+                (ev as any).latencyMs,
+                (ev as any).payload,
+                (ev as any).usage
+              );
+            } else if (t === 'error') {
+              this.providerLogger.logError(
+                agentThread.id,
+                String((ev as any).error),
+                (ev as any).latencyMs
+              );
+            } else {
+              logger.warn('Unknown provider event type', { type: t, conversationId: agentThread.id });
+            }
+          } catch (e: any) {
+            logger.warn('Provider event logging failed', {
+              error: e?.message || String(e),
+              conversationId: agentThread.id,
+            });
+          }
         }
       );
 
