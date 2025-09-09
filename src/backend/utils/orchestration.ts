@@ -31,7 +31,7 @@ export function buildOrchBase(
     director: input.director,
     emailId: input.emailId,
     ...(input.directorName ? { directorName: input.directorName } : {}),
-    agent: input.agent ?? '',
+    ...(input.agent ? { agent: input.agent } : {}),
     ...(input.agentName ? { agentName: input.agentName } : {}),
     emailSummary: input.emailSummary,
     ...(input.accountId ? { accountId: input.accountId } : {}),

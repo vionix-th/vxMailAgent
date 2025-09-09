@@ -140,8 +140,12 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       if (found.length === 0) {
         return { kind: 'memory', success: true, result: [] };
       }
-      // Attach provenance to each result
-      const resultWithProvenance = found.map(e => ({ ...e, provenance: { scope: e.scope, owner: typeof e.owner === 'string' ? e.owner : '' } }));
+      // Attach provenance to each result without defaulting owner
+      const resultWithProvenance = found.map(e => {
+        const prov: any = { scope: e.scope };
+        if (typeof e.owner === 'string') prov.owner = e.owner;
+        return { ...e, provenance: prov };
+      });
       return { kind: 'memory', success: true, result: resultWithProvenance };
 
     } else if (payload.action === 'add') {
@@ -245,7 +249,11 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
       if (idx === -1) {
         return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
       }
-      const updated = { ...items[idx], ...payload.patch, updated: new Date().toISOString(), revision: (items[idx].revision || 0) + 1 };
+      const currentRev = items[idx].revision;
+      if (typeof currentRev !== 'number') {
+        return { kind: 'workspace', success: false, result: null, error: 'Workspace item missing revision' };
+      }
+      const updated = { ...items[idx], ...payload.patch, updated: new Date().toISOString(), revision: currentRev + 1 } as WorkspaceItem;
       const next = items.slice();
       next[idx] = updated;
       await workspaceRepo.setAll(next);

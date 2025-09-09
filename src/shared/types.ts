@@ -180,7 +180,7 @@ export interface OrchestrationDiagnosticEntry {
   timestamp: string;
   director: string;
   directorName?: string;
-  agent: string;
+  agent?: string;
   agentName?: string;
   emailSummary: string;
   emailId: string;
@@ -200,7 +200,7 @@ export interface OrchestrationResultEntry {
   timestamp: string;
   director: string;
   directorName?: string;
-  agent: string;
+  agent?: string;
   agentName?: string;
   emailSummary: string;
   emailId: string;

@@ -60,10 +60,12 @@ export const conversationEngine: ConversationEngine = {
       messages: updatedMessages,
       assistantMessage: assistant,
       content: (assistant && (assistant as any).content) ?? null,
-      toolCalls: (result.toolCalls ?? []).map((tc: any) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })),
       request: result.request,
       response: result.response,
     };
+    if (Array.isArray(result.toolCalls)) {
+      (out as any).toolCalls = result.toolCalls.map((tc: any) => ({ id: tc.id, name: tc.name, arguments: tc.arguments }));
+    }
     if (usage) {
       (out as any).usage = { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens };
     }

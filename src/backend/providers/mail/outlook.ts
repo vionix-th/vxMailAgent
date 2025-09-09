@@ -43,8 +43,10 @@ export const outlookProvider: IMailProvider = {
       const contentType: string = String(full?.body?.contentType || '').toLowerCase();
       const content: string = String(full?.body?.content || '');
 
+      const mid = full.id || m.id;
+      if (!mid) throw new Error('Outlook message missing id');
       const env: EmailEnvelope = {
-        id: String(full.id || m.id),
+        id: String(mid),
         subject,
         from,
         date,

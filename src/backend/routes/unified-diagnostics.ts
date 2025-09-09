@@ -61,8 +61,15 @@ function groupOrchestrationData(
   const fetchCycles = new Map<string, FetchCycleData>();
 
   for (const entry of orchestrationEntries) {
-    const cycleId = entry.fetchCycleId ?? 'unknown';
-    const emailId = (entry.email as any)?.id ?? 'unknown';
+    if (!entry.fetchCycleId) {
+      throw new ValidationError('Missing fetchCycleId in orchestration entry');
+    }
+    const cycleId = entry.fetchCycleId;
+    const emailObj = entry.email as any;
+    if (!emailObj || !emailObj.id) {
+      throw new ValidationError('Missing email.id in orchestration entry');
+    }
+    const emailId = String(emailObj.id);
     const directorId = entry.director;
 
     if (!fetchCycles.has(cycleId)) {
@@ -77,7 +84,7 @@ function groupOrchestrationData(
     if (!cycle.emails.has(emailId)) {
       cycle.emails.set(emailId, {
         id: emailId,
-        subject: (entry.email as any)?.subject ?? 'Unknown Subject',
+        subject: String(emailObj.subject ?? ''),
         directorConversations: new Map()
       });
     }
@@ -118,7 +125,7 @@ function associateConversations(
           for (const [dirThreadId, dirConv] of email.directorConversations) {
             if (conversationId === dirThreadId) {
               dirConv.conversation = conversation;
-              if (!email.subject || email.subject === 'Unknown Subject') {
+              if (!email.subject) {
                 const subj = (conversation as any)?.email?.subject;
                 if (subj && typeof subj === 'string') email.subject = subj;
               }
@@ -245,10 +252,13 @@ function buildHierarchicalTree(
 
         // Add agent conversations as children of director
         for (const agentConv of dirConv.agentConversations) {
+          if (!agentConv.agentId) {
+            throw new ValidationError('Missing agentId for agent conversation');
+          }
           const agentNode: DiagnosticNode = {
             id: agentConv.id,
             type: 'agent',
-            name: `Agent: ${agentConv.agentId || 'Unknown'}`,
+            name: `Agent: ${agentConv.agentId}`,
             timestamp: agentConv.startedAt,
             children: [],
             metadata: {

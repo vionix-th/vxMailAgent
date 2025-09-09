@@ -1,4 +1,4 @@
-import { Agent, Director, Filter, Prompt, ConversationThread } from '../../shared/types';
+import { ConversationThread, Agent, Director, Prompt } from '../../shared/types';
 import { beginSpan, endSpan } from './logging';
 import logger from './logger';
 import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
@@ -6,84 +6,13 @@ import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import type { ReqLike } from '../interfaces';
 
-export interface EmailContext {
-  from: string;
-  subject: string;
-  bodyPlain?: string;
-  bodyHtml?: string;
-  snippet?: string;
-  date?: string;
+export interface AgentConversationResult {
+  finalMessages: any[];
+  finalAssistantMessage: any;
+  conversations: ConversationThread[];
+  success: boolean;
+  error?: string;
 }
-
-export interface FilterEvaluation {
-  filter: Filter;
-  match: boolean;
-  fieldValue: string;
-}
-
-/** Evaluates filters against the provided email context. */
-export function evaluateFilters(filters: Filter[], ctx: EmailContext): FilterEvaluation[] {
-  return filters.map(f => {
-    let match = false;
-    let fieldValue = '';
-    try {
-      switch (f.field) {
-        case 'from': fieldValue = ctx.from || ''; break;
-        case 'subject': fieldValue = ctx.subject || ''; break;
-        case 'body': fieldValue = (ctx.bodyPlain || '') + '\n' + (ctx.bodyHtml || '') + '\n' + (ctx.snippet || ''); break;
-        case 'date': fieldValue = ctx.date || ''; break;
-        default: fieldValue = '';
-      }
-      match = new RegExp(f.regex, 'i').test(fieldValue);
-    } catch (e: any) {
-      logger.warn('ORCHESTRATION evaluateFilters regex error', {
-        error: e?.message || String(e),
-        filterId: f.id,
-        field: f.field,
-        regex: f.regex,
-      });
-    }
-    return { filter: f, match, fieldValue };
-  });
-}
-
-/** Derive director ids that should trigger based on filter evaluations. */
-export function selectDirectorTriggers(evals: FilterEvaluation[]): string[] {
-  const directorTriggers: string[] = [];
-  const nonDupSeen = new Set<string>();
-  for (const e of evals) {
-    if (!e.match) continue;
-    const dirId = e.filter.directorId;
-    if (e.filter.duplicateAllowed) directorTriggers.push(dirId);
-    else if (!nonDupSeen.has(dirId)) { directorTriggers.push(dirId); nonDupSeen.add(dirId); }
-  }
-  return directorTriggers;
-}
-
-// Finalization removed; completion is implicit when loops end
-
-/** Enhanced logging hook for conversation step diagnostics. */
-export function logConversationStepDiagnostic(
-  stepType: 'director_start' | 'director_llm' | 'director_tool' | 'director_finalize' | 'agent_start' | 'agent_llm' | 'agent_tool' | 'agent_finalize',
-  conversationId: string,
-  details: any,
-  logOrch?: (e: any) => void
-) {
-  if (!logOrch) return;
-  try {
-    logOrch({
-      timestamp: new Date().toISOString(),
-      type: 'conversation_step_diagnostic',
-      stepType,
-      conversationId,
-      details,
-      level: 'debug'
-    });
-  } catch (e) {
-    console.warn('Failed to log conversation step diagnostic:', e);
-  }
-}
-
 
 /**
  * Ensure an agent thread exists under a director thread, creating or reusing one.
@@ -142,7 +71,7 @@ export function ensureAgentThread(
 /**
  * Appends a message to the specified conversation thread.
  */
-export function appendMessageToThread(
+function appendMessageToThread(
   conversations: ConversationThread[],
   threadId: string,
   message: any,
@@ -155,14 +84,6 @@ export function appendMessageToThread(
     messages: [...conversations[idx].messages, message],
   } as any;
   return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
-}
-
-export interface AgentConversationResult {
-  finalMessages: any[];
-  finalAssistantMessage: any;
-  conversations: ConversationThread[];
-  success: boolean;
-  error?: string;
 }
 
 /**
@@ -195,7 +116,6 @@ export async function runAgentConversation(
   try {
     while (stepCount < LOOP_MAX) {
       stepCount++;
-      
 
       const t0 = Date.now();
       let stepTimeoutId: any;

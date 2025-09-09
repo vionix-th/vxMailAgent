@@ -1,7 +1,7 @@
 import express from 'express';
 import { ConversationThread, PromptMessage, ProviderEvent } from '../../shared/types';
 import { conversationEngine } from '../services/engine';
-import { runAgentConversation } from '../services/orchestration';
+import { runAgentConversation } from '../services/orchestration-agent';
 import { TOOL_DESCRIPTORS } from '../../shared/tools';
 import { createToolHandler } from '../toolCalls';
 import logger from '../services/logger';

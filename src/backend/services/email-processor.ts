@@ -1,8 +1,9 @@
 import { ConversationThread, Agent, Director, Filter, Prompt } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
 import { UserRequest } from '../middleware/user-context';
-import { evaluateFilters, selectDirectorTriggers } from './orchestration';
+import { evaluateFilters, selectDirectorTriggers } from './orchestration-director';
 import { ConversationOrchestrator, createUserRequest } from './conversation-orchestrator';
+import type { ReqLike } from '../interfaces';
 import { newId } from '../utils/id';
 import { beginSpan, endSpan } from './logging';
 
@@ -232,13 +233,13 @@ export class EmailProcessor {
       kind: 'director',
       directorId: director.id,
       traceId,
-      email: envelope as any,
-      promptId: director.promptId ?? '',
+      email: envelope,
+      promptId: director.promptId!,
       apiConfigId: director.apiConfigId,
       startedAt: nowIso,
       status: 'ongoing',
       lastActiveAt: nowIso,
-      messages: directorPrompt.messages ? [...directorPrompt.messages] : [],
+      messages: [...directorPrompt.messages],
       errors: [],
     } as ConversationThread;
 
@@ -264,7 +265,7 @@ export class EmailProcessor {
     const sConvCreate = beginSpan(traceId, {
       type: 'conversation_update',
       name: 'create_director_thread',
-      emailId: thread.email?.id,
+      emailId: thread.email.id,
       directorId: thread.directorId
     }, userReq);
 
@@ -303,7 +304,7 @@ export class EmailProcessor {
     userReq: UserRequest
   ): void {
     const orchestratorUserReq = createUserRequest(userReq, this.repos);
-    const orchestrator = new ConversationOrchestrator(userReq as any);
+    const orchestrator = new ConversationOrchestrator(userReq as unknown as ReqLike);
     
     // Start orchestration asynchronously - don't block email processing
     setImmediate(async () => {

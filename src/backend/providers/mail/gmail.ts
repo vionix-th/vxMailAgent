@@ -42,8 +42,10 @@ export const gmailProvider: IMailProvider = {
       const date: string = getHeader('Date');
       const snippet: string = msgRes.data?.snippet || '';
       const bodies = extractGmailBodies(msgRes.data?.payload);
+      const mid = msg.id || msgRes.data?.id;
+      if (!mid) throw new Error('Gmail message missing id');
       envelopes.push({
-        id: String(msg.id || msgRes.data?.id),
+        id: String(mid),
         subject,
         from,
         date,
