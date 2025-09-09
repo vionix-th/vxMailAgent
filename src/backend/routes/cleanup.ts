@@ -2,6 +2,7 @@ import express from 'express';
 import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler } from '../services/error-handler';
+import { WorkspaceService } from '../services/workspace-service';
 
 export default function registerCleanupRoutes(
   app: express.Express,
@@ -64,6 +65,10 @@ export default function registerCleanupRoutes(
       repoGetAll<any>(ureq, 'traces'),
       repoGetAll<any>(ureq, 'workspaceItems'),
     ]);
+    const wsService = new WorkspaceService({
+      getItems: async () => await repoGetAll<any>(ureq, 'workspaceItems'),
+      setItems: async (next) => await repoSetAll<any>(ureq, 'workspaceItems', next),
+    });
     
     // Clear fetcher log through manager
     if (fetcherManager) {
@@ -75,7 +80,7 @@ export default function registerCleanupRoutes(
       repoSetAll<any>(ureq, 'orchestrationLog', []),
       repoSetAll<any>(ureq, 'providerEvents', []),
       repoSetAll<any>(ureq, 'traces', []),
-      repoSetAll<any>(ureq, 'workspaceItems', []),
+      wsService.purgeAll(),
     ]);
     const deleted = {
       fetcherLogs: fetcherLog.length,
@@ -116,9 +121,12 @@ export default function registerCleanupRoutes(
   }));
   app.delete('/api/cleanup/workspace-items', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
-    const prev = await repoGetAll<any>(ureq, 'workspaceItems');
-    await repoSetAll<any>(ureq, 'workspaceItems', []);
-    res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} workspace items` });
+    const service = new WorkspaceService({
+      getItems: async () => await repoGetAll<any>(ureq, 'workspaceItems'),
+      setItems: async (next) => await repoSetAll<any>(ureq, 'workspaceItems', next),
+    });
+    const deleted = await service.purgeAll();
+    res.json({ success: true, deleted, message: `Deleted ${deleted} workspace items` });
   }));
   app.delete('/api/cleanup/provider-events', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);

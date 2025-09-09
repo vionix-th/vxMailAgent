@@ -48,7 +48,8 @@ This section is the operational contract the backend must uphold. It is used as 
 
 - Scope is Director-thread scoped. Each email × director pair has its own workspace bucket identified by the Director thread id.
 - Workspace items are persisted via the Workspaces repository (no direct embedding into `ConversationThread`).
-- Tool handlers must write to `workspaceItems` via repository functions with `ReqLike` context, using `conversationId = <directorThreadId>`.
+- Canonical layer: `WorkspaceService` (`src/backend/services/workspace-service.ts`) centralizes all workspace operations (list/get/add/update/soft-delete/hard-delete, and optional conversation association updates). All routes and tool handlers must delegate to this service.
+- Tool handlers and routes write to `workspaceItems` through `WorkspaceService` using `ReqLike` context, carrying provenance (`context`) and `conversationId = <directorThreadId>`.
 
 ### Acceptance checks (post‑change)
 
@@ -660,4 +661,5 @@ Response shape:
 ### Cleanup Routes
 
 - Cleanup endpoints are backed directly by per-user repositories via `LiveRepos`; there is no CleanupService or RepositoryHub abstraction.
+- Workspace purge: `DELETE /api/cleanup/workspace-items` delegates to `WorkspaceService.purgeAll()` for centralized behavior.
 - Canonical endpoints are listed under Cleanup (Admin); they remove logs, conversations, traces, and workspace items by id.

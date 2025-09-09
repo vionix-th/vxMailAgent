@@ -1,9 +1,12 @@
 // Tool call handlers for calendar, todo, filesystem, memory
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
-import { ToolCallResult } from '../shared/types';
+import { ToolCallResult, MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
 import { validateAgainstSchema } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
 import { logger } from './services/logger';
+import { WorkspaceService } from './services/workspace-service';
+import { Repository } from './repository/core';
+import { newId } from './utils/id';
 
 export function createToolHandler(repos: {
   memory: Repository<MemoryEntry>;
@@ -111,10 +114,7 @@ async function handleFilesystemToolCall(payload: any): Promise<ToolCallResult> {
   return { kind: 'filesystem', success: false, result: null, error: 'Invalid filesystem action' };
 }
 
-import { MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
-
-import { newId } from './utils/id';
-import { Repository } from './repository/core';
+ 
 
 export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<MemoryEntry>): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] memory', { payload });
@@ -214,57 +214,33 @@ function validScope(s: any): s is MemoryScope {
 async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<WorkspaceItem>): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] workspace', { payload });
   try {
+    const service = new WorkspaceService({
+      getItems: () => workspaceRepo.getAll(),
+      setItems: (next) => workspaceRepo.setAll(next),
+    });
     if (payload.action === 'add') {
-      const now = new Date().toISOString();
-      const item: WorkspaceItem = {
-        id: newId(),
-        label: payload.label || 'Untitled',
+      const item = await service.addItem({
+        label: payload.label,
         description: payload.description,
-        mimeType: payload.mimeType || 'text/plain',
-        encoding: payload.encoding || 'utf8',
-        data: payload.data || '',
-        tags: payload.tags ?? [],
-        created: now,
-        updated: now,
-        revision: 1,
-        // Required context from orchestration
+        mimeType: payload.mimeType,
+        encoding: payload.encoding,
+        data: payload.data,
+        tags: payload.tags,
         context: payload.context,
-      };
-      const current = await workspaceRepo.getAll();
-      await workspaceRepo.setAll([...current, item]);
+      } as any);
       return { kind: 'workspace', success: true, result: { added: true, item } };
     } else if (payload.action === 'list') {
-      const items = await workspaceRepo.getAll();
+      const items = await service.listItems(false);
       return { kind: 'workspace', success: true, result: items };
     } else if (payload.action === 'get') {
-      const items = await workspaceRepo.getAll();
-      const item = items.find((i: WorkspaceItem) => i.id === payload.id);
-      if (!item) {
-        return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
-      }
+      const item = await service.getItem(payload.id);
+      if (!item) return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
       return { kind: 'workspace', success: true, result: item };
     } else if (payload.action === 'update') {
-      const items = await workspaceRepo.getAll();
-      const idx = items.findIndex((i: WorkspaceItem) => i.id === payload.id);
-      if (idx === -1) {
-        return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
-      }
-      const currentRev = items[idx].revision;
-      if (typeof currentRev !== 'number') {
-        return { kind: 'workspace', success: false, result: null, error: 'Workspace item missing revision' };
-      }
-      const updated = { ...items[idx], ...payload.patch, updated: new Date().toISOString(), revision: currentRev + 1 } as WorkspaceItem;
-      const next = items.slice();
-      next[idx] = updated;
-      await workspaceRepo.setAll(next);
+      const updated = await service.updateItem(payload.id, payload.patch, payload.expectedRevision);
       return { kind: 'workspace', success: true, result: { updated: true, item: updated } };
     } else if (payload.action === 'remove') {
-      const items = await workspaceRepo.getAll();
-      const filtered = items.filter((i: WorkspaceItem) => i.id !== payload.id);
-      if (filtered.length === items.length) {
-        return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
-      }
-      await workspaceRepo.setAll(filtered);
+      await service.hardDeleteItem(payload.id);
       return { kind: 'workspace', success: true, result: { removed: true } };
     }
     return { kind: 'workspace', success: false, result: null, error: 'Invalid workspace action' };
