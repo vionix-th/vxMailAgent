@@ -12,7 +12,7 @@ export type OrchBaseInput = {
   emailId: string;
   accountId?: string;
   email?: EmailEnvelope;
-  fetchCycleId?: string;
+  fetchCycleId: string;
   dirThreadId?: string;
   agentThreadId?: string;
 };
@@ -34,7 +34,7 @@ export function buildOrchBase(
     emailSummary: input.emailSummary,
     ...(input.accountId ? { accountId: input.accountId } : {}),
     ...(input.email ? { email: input.email } : {}),
-    ...(input.fetchCycleId ? { fetchCycleId: input.fetchCycleId } : {}),
+    fetchCycleId: input.fetchCycleId,
     ...(input.dirThreadId ? { dirThreadId: input.dirThreadId } : {}),
     ...(input.agentThreadId ? { agentThreadId: input.agentThreadId } : {}),
   };

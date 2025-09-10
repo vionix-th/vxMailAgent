@@ -50,14 +50,15 @@ export interface ConversationStepResult {
  * spawns Agent threads, and persists transcripts and provider diagnostics.
  */
 export class ConversationOrchestrator {
-  private activeSteps = new Map<string, { timeoutId: NodeJS.Timeout; startTime: number; emailId: string }>();
+  private activeSteps = new Map<string, { timeoutId: NodeJS.Timeout; startTime: number; emailId: string; email?: any; directorId?: string }>();
   private stepLogger: ConversationStepLogger;
   private providerLogger: ProviderEventLogger;
 
   constructor(
-    req?: ReqLike
+    req?: ReqLike,
+    private fetchCycleId?: string
   ) {
-    this.stepLogger = new ConversationStepLogger(req);
+    this.stepLogger = new ConversationStepLogger(req, this.fetchCycleId);
     this.providerLogger = new ProviderEventLogger(req);
   }
 
@@ -88,7 +89,11 @@ export class ConversationOrchestrator {
       this.activeSteps.delete(threadId);
     }, CONVERSATION_STEP_TIMEOUT_MS);
 
-    this.activeSteps.set(threadId, { timeoutId, startTime, emailId });
+    this.activeSteps.set(threadId, { timeoutId, startTime, emailId, email: context.thread.email, directorId: context.thread.directorId });
+
+    const stepType = context.thread.kind === 'director' ? 'director_llm' : 'agent_llm';
+    this.stepLogger.logStepStart(threadId, stepType, emailId, context.thread.directorId, context.thread.email);
+    this.stepLogger.logEngineStart(threadId, stepType, (context.thread.messages || []).length, emailId, context.thread.directorId, context.thread.email);
 
     try {
       const result = await conversationEngine.run({
@@ -117,6 +122,7 @@ export class ConversationOrchestrator {
 
       // Process any director tool calls and determine continuation
       const shouldContinue = this.decideShouldContinue(result.toolCalls);
+      const toolCallCount = Array.isArray(result.toolCalls) ? result.toolCalls.length : 0;
       if (shouldContinue) {
         const toolCalls: Array<{ id: string; name: string; arguments: string }> = (result.toolCalls as Array<any>).map((tc: any) => ({ id: tc.id, name: tc.name, arguments: tc.arguments }));
         await this.processDirectorToolCalls({ ...context, thread: updatedThread }, userReq, toolCalls);
@@ -124,6 +130,8 @@ export class ConversationOrchestrator {
 
       const finalThread = (await repoGetThreadById(userReq.repos, userReq.reqLike, threadId)) || updatedThread;
       
+      this.stepLogger.logStepComplete(threadId, stepType, Date.now() - startTime, shouldContinue, toolCallCount, emailId, context.thread.directorId, context.thread.email);
+
       return {
         updatedThread: finalThread,
         success: true,
@@ -132,6 +140,7 @@ export class ConversationOrchestrator {
       };
 
     } catch (error: any) {
+      this.stepLogger.logStepError(threadId, stepType, Date.now() - startTime, error?.message || String(error), emailId, context.thread.directorId, context.thread.email);
       return {
         updatedThread: context.thread,
         success: false,
@@ -552,7 +561,7 @@ export class ConversationOrchestrator {
       clearTimeout(activeStep.timeoutId);
       this.activeSteps.delete(threadId);
       
-      this.stepLogger.logStepCancelled(threadId, Date.now() - activeStep.startTime, activeStep.emailId);
+      this.stepLogger.logStepCancelled(threadId, Date.now() - activeStep.startTime, activeStep.emailId, activeStep.directorId, activeStep.email);
       
       return true;
     }
@@ -574,7 +583,7 @@ export class ConversationOrchestrator {
     const count = this.activeSteps.size;
     for (const [threadId, step] of this.activeSteps.entries()) {
       clearTimeout(step.timeoutId);
-      this.stepLogger.logStepCancelledShutdown(threadId, Date.now() - step.startTime, step.emailId);
+      this.stepLogger.logStepCancelledShutdown(threadId, Date.now() - step.startTime, step.emailId, step.directorId, step.email);
     }
     this.activeSteps.clear();
     return count;

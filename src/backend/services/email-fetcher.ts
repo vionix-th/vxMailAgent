@@ -5,6 +5,7 @@ import { EmailProcessor, EmailEnvelope, EmailProcessingContext } from './email-p
 import { AccountManager } from './account-manager';
 import { getMailProvider } from '../providers/mail';
 import { PROVIDER_REQUEST_TIMEOUT_MS } from '../config';
+import { newId } from '../utils/id';
 
 export interface FetchContext {
   userReq: UserRequest;
@@ -36,6 +37,7 @@ export class EmailFetcher {
   async fetchEmails(context: FetchContext): Promise<void> {
     const { userReq, settings, filters, directors, agents, accounts } = context;
     const fetchStart = new Date().toISOString();
+    const fetchCycleId = newId();
 
     this.logFetch({
       timestamp: fetchStart,
@@ -44,6 +46,7 @@ export class EmailFetcher {
       accountId: 'all',
       event: 'fetch_cycle_start',
       message: 'Starting email fetch cycle',
+      cycleId: fetchCycleId,
       accountCount: accounts.length
     });
 
@@ -55,7 +58,8 @@ export class EmailFetcher {
         filters,
         directors,
         agents,
-        fetchStart
+        fetchStart,
+        fetchCycleId
       });
     }
 
@@ -65,7 +69,8 @@ export class EmailFetcher {
       provider: 'system',
       accountId: 'all',
       event: 'fetch_cycle_complete',
-      message: 'Completed email fetch cycle'
+      message: 'Completed email fetch cycle',
+      cycleId: fetchCycleId
     });
   }
 
@@ -80,8 +85,9 @@ export class EmailFetcher {
     directors: any[];
     agents: any[];
     fetchStart: string;
+    fetchCycleId: string;
   }): Promise<void> {
-    const { account, userReq, settings, filters, directors, agents } = context;
+    const { account, userReq, settings, filters, directors, agents, fetchCycleId } = context;
     const accountTraceId = beginTrace({ accountId: account.id, provider: account.provider }, userReq);
 
     try {
@@ -116,7 +122,8 @@ export class EmailFetcher {
           prompts,
           apiConfigs: settings.apiConfigs,
           userReq,
-          accountTraceId
+          accountTraceId,
+          fetchCycleId
         });
       }
 
@@ -228,8 +235,9 @@ export class EmailFetcher {
     apiConfigs: any[];
     userReq: UserRequest;
     accountTraceId: string;
+    fetchCycleId: string;
   }): Promise<void> {
-    const { envelope, account, filters, directors, agents, prompts, apiConfigs, userReq } = context;
+    const { envelope, account, filters, directors, agents, prompts, apiConfigs, userReq, fetchCycleId } = context;
     const emailTraceId = beginTrace({
       emailId: envelope.id,
       accountId: account.id,
@@ -241,6 +249,7 @@ export class EmailFetcher {
         envelope,
         account,
         traceId: emailTraceId,
+        fetchCycleId,
         filters,
         directors,
         agents,

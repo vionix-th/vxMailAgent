@@ -195,7 +195,7 @@ export interface OrchestrationDiagnosticEntry {
   result?: OrchestrationResult | null;
   error?: any;
   detail?: any;
-  fetchCycleId?: string;
+  fetchCycleId: string;
   dirThreadId?: string;
   agentThreadId?: string;
   phase?: 'director' | 'agent' | 'tool' | 'result';

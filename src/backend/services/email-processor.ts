@@ -25,6 +25,7 @@ export interface EmailProcessingContext {
   envelope: EmailEnvelope;
   account: any;
   traceId: string;
+  fetchCycleId: string;
   filters: Filter[];
   directors: Director[];
   agents: Agent[];
@@ -310,7 +311,7 @@ export class EmailProcessor {
     userReq: UserRequest
   ): void {
     const orchestratorUserReq = createUserRequest(userReq, this.repos);
-    const orchestrator = new ConversationOrchestrator(userReq as unknown as ReqLike);
+    const orchestrator = new ConversationOrchestrator(userReq as unknown as ReqLike, context.fetchCycleId);
     
     // Start orchestration asynchronously - don't block email processing
     setImmediate(async () => {
