@@ -2,21 +2,13 @@
 
 Authoritative guide for how vxMailAgent’s LLM agents behave, interact, and are added or modified. This document defines roles, response protocol, coding discipline, and operational boundaries. It complements docs in `docs/DEVELOPER.md` and `docs/DESIGN.md`.
 
-## 1) Roles & Responsibilities
-
-- Director: Orchestrates conversations, calls tools, and delegates to Agents. One Director thread per email/conversation. See `src/shared/types.ts:DirectorThread`.
-- Agent: Performs delegated sub-tasks, can call a subset of tools. Agent threads are children of a Director thread. See `src/shared/types.ts:Agent` and `src/shared/types.ts:AgentThread`.
-
-Operational semantics for loops, tool-calls, and transcripts are specified in docs/DEVELOPER.md (Orchestrator Contract) and enforced by the backend services.
-
-## 2) Interaction Protocol (LLM Response Rules)
+## 1) Interaction Protocol (LLM Response Rules)
 
 - Identity: Refer to the user only as “Caesar” or “The Caesar.”
 - Assumptions: Assume expert-level proficiency unless evidence contradicts it.
 - Continuity: Maintain context; reference prior turns when needed for clarity.
 - Style: Be precise, candid, and professional; avoid apologetic or motivational tone.
 - Brevity: Default to concise answers; no filler or generic framing.
-- Error Attribution: Point out Caesar’s mistakes only when essential for accuracy.
 - Feasibility: If a request is impossible or outside capabilities, explicitly reject, explain why, and propose the nearest feasible alternative with trade‑offs. Never fabricate.
 
 Progress and structure conventions:
@@ -47,7 +39,8 @@ Clean code
 - Enforce strict typing and explicit identifiers; no optional IDs in core entities.
 
 Documentation
-- Read `/docs/DEVELOPER.md` and `/docs/DESIGN.md` before architectural changes.
+- docs/DESIGN.md: describes the target/final product and intended behavior.
+- docs/DEVELOPER.md: documents current implementation, APIs, and active development.
 
 Error handling
 - Add proper error handling and reporting; never silently swallow errors.
@@ -61,10 +54,6 @@ Defaults & validation
 - Safe Defaulting Semantics: Use `??` only for typed optionals; never use `||` for defaulting.
 - Layered Behavior: Backend enforces invariants strictly; UI may degrade while surfacing causes.
 - PR Checklist: For each default, document safety, location, and tests for missing‑value and normal paths; log and count default activations.
-
-Tooling enforcement
-- TypeScript/ESLint: Enable `@typescript-eslint/strict-boolean-expressions`, `no-unnecessary-condition`, `no-implicit-coercion`; ban `||` defaulting; prefer `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`.
-- Backend lint config: `src/backend/eslint.config.cjs`; run via `npm run lint` in `src/backend/`.
 
 Comments & sources
 - Only add comments where they add value; do not comment self‑evident code.
@@ -100,47 +89,9 @@ Explicit exclusions
 - Tools: Use `update_plan`, `apply_patch` (shell), repository read commands (`rg`, `sed`, `cat`), and other allowed tools as needed.
 - Approvals: Some actions (writes, network access, destructive operations) may require approval depending on sandbox mode. Request escalation only when necessary and explain why.
 - Sandbox: Prefer fast, read‑only commands (`rg`) for search. Read files in ≤250 line chunks.
-- Safety: Avoid destructive actions unless explicitly requested by Caesar; suggest safer alternatives when possible.
 
-## 6) Adding or Updating Agents
-
-Data model (authoritative types): see `src/shared/types.ts` — `Agent`, `DirectorThread`, `AgentThread`.
-
-Storage
-- Per‑user repositories live under `data/users/{uid}/` (see `src/backend/utils/paths.ts`).
-- Agents file: `agents.json`; prompts: `prompts.json`; directors: `directors.json`.
-
-Required Agent fields
-- `id` (string): Stable identifier.
-- `name` (string): Display name.
-- `type` (enum): Project‑specific agent kind.
-- `promptId` (string): References a prompt in `prompts.json`.
-- `apiConfigId` (string): API/model configuration to use.
-- `enabledToolCalls?` (string[]): Optional allowlist of tool names.
-
-Operational behavior
-- Director exposes dynamic tools `agent__<id>` for assigned agents.
-- Agent loops run with tools limited to `enabledToolCalls`.
-- Transcripts must follow OpenAI ordering: assistant(with `tool_calls[]`) → tool → assistant → …
-
-Change procedure
-1) Define or update the Agent entry in the per‑user `agents.json`.
-2) Create/update the referenced prompt in `prompts.json` (or Templates as appropriate).
-3) If adding tools, ensure descriptors exist in `src/shared/tools.ts`, are gated by role, and parameters are schema‑validated at handlers.
-4) Run backend lint/type‑check; verify orchestrator behavior matches docs/DEVELOPER.md acceptance checks.
-
-## 7) Error Handling & Validation (LLM‑side)
+## 6) Error Handling & Validation (LLM‑side)
 
 - Validate inputs at boundaries and surface precise errors; never mask or silently default.
 - If constraints are unmet, fail closed and provide actionable guidance.
 - When proposing code changes, include paths and minimal diffs; do not over‑modify unrelated areas.
-
-## 8) Appendix — Key Paths
-
-- Types: `src/shared/types.ts`
-- Tools catalog: `src/shared/tools.ts`
-- Orchestrator: `src/backend/services/conversation-orchestrator.ts`
-- Workspace service: `src/backend/services/workspace-service.ts`
-- Repos registry: `src/backend/repository/registry.ts`
-- Per‑user paths: `src/backend/utils/paths.ts`
-- Backend ESLint config: `src/backend/eslint.config.cjs`
