@@ -92,27 +92,40 @@ export function userRoot(uid: string): string {
  */
 export function validatePathSafety(targetPath: string, containerPath: string): boolean {
   try {
-    // Check if any component in the path is a symlink
-    const segments = targetPath.split(path.sep);
-    let currentPath = '';
-    
-    for (const segment of segments) {
-      if (!segment) continue;
-      currentPath = currentPath ? path.join(currentPath, segment) : segment;
-      
-      if (fs.existsSync(currentPath)) {
-        const stats = fs.lstatSync(currentPath);
-        if (stats.isSymbolicLink()) {
-          return false; // Reject any symlinks
+    // 1) Resolve absolute anchors for container and target
+    const containerAbs = path.resolve(containerPath);
+    if (!fs.existsSync(containerAbs)) return false;
+    const containerReal = fs.realpathSync(containerAbs);
+
+    // Build an absolute target path; resolve relatives against the container root
+    const targetAbs = path.isAbsolute(targetPath)
+      ? path.normalize(targetPath)
+      : path.normalize(path.join(containerReal, targetPath));
+
+    // 2) Walk the target path from its root (or container for relatives) and reject any symlink components
+    const startAnchor = path.isAbsolute(targetAbs) ? path.parse(targetAbs).root : containerReal;
+    const relFromAnchor = path.relative(startAnchor, targetAbs);
+    const segments = relFromAnchor.split(path.sep).filter(Boolean);
+
+    let current = startAnchor;
+    for (const seg of segments) {
+      current = path.join(current, seg);
+      if (fs.existsSync(current)) {
+        const st = fs.lstatSync(current);
+        if (st.isSymbolicLink()) {
+          // Disallow any symlink in the path
+          return false;
         }
       }
     }
-    
-    // Verify final path is contained within expected directory
-    const realPath = fs.existsSync(targetPath) ? fs.realpathSync(targetPath) : path.resolve(targetPath);
-    const realContainer = path.resolve(containerPath);
-    
-    return realPath.startsWith(realContainer + path.sep) || realPath === realContainer;
+
+    // 3) Verify the final (real) path is contained within the real container
+    const targetReal = fs.existsSync(targetAbs)
+      ? fs.realpathSync(targetAbs)
+      : path.join(fs.realpathSync(path.dirname(targetAbs)), path.basename(targetAbs));
+
+    const rel = path.relative(containerReal, targetReal);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
   } catch {
     return false;
   }
