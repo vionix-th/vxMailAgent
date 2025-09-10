@@ -89,30 +89,32 @@ export async function encryptAndPersist(obj: any, filePath: string, containerPat
 }
 
 /**
- * Load and decrypt a previously persisted object. Falls back to plaintext JSON
- * if encryption is not configured or decryption fails.
+ * Load and decrypt a previously persisted object.
  * @param filePath - Path to file to load
  * @param containerPath - Optional container path for security validation
  */
 export async function loadAndDecrypt(filePath: string, containerPath?: string): Promise<any> {
-  // Security validation if container path provided
   if (containerPath && !validatePathSafety(filePath, containerPath)) {
     throw new Error(`Security violation: path ${filePath} is not safe relative to ${containerPath}`);
   }
 
-  const key = getKey();
   const payload = await fs.promises.readFile(filePath, { encoding: 'utf8' });
-
-  // Size validation
   const maxSizeBytes = USER_MAX_FILE_SIZE_MB * 1024 * 1024;
   if (Buffer.byteLength(payload, 'utf8') > maxSizeBytes) {
     throw new Error(`File size exceeds limit of ${USER_MAX_FILE_SIZE_MB}MB`);
   }
 
-  if (!key) {
-    return JSON.parse(payload);
+  const key = getKey();
+  const jsonText = key ? decryptPayload(payload, key, filePath) : payload;
+  
+  try {
+    return JSON.parse(jsonText);
+  } catch (e: any) {
+    throw new PersistenceError(`Invalid JSON in file: ${filePath}. ${e?.message || String(e)}`);
   }
+}
 
+function decryptPayload(payload: string, key: Buffer, filePath: string): string {
   try {
     const buf = Buffer.from(payload, ENCODING);
     const iv = buf.slice(0, IV_LENGTH);
@@ -120,9 +122,8 @@ export async function loadAndDecrypt(filePath: string, containerPath?: string): 
     const encrypted = buf.slice(IV_LENGTH + 16);
     const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(tag);
-    const json = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
-    return JSON.parse(json);
-  } catch {
-    return JSON.parse(payload);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  } catch (e: any) {
+    throw new PersistenceError(`Decryption failed for file: ${filePath}. ${e?.message || String(e)}`);
   }
 }

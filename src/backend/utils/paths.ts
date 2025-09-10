@@ -92,40 +92,23 @@ export function userRoot(uid: string): string {
  */
 export function validatePathSafety(targetPath: string, containerPath: string): boolean {
   try {
-    // 1) Resolve absolute anchors for container and target
+    // 1) Resolve real paths for container and target (or target's parent if not existing)
     const containerAbs = path.resolve(containerPath);
     if (!fs.existsSync(containerAbs)) return false;
     const containerReal = fs.realpathSync(containerAbs);
 
-    // Build an absolute target path; resolve relatives against the container root
     const targetAbs = path.isAbsolute(targetPath)
       ? path.normalize(targetPath)
       : path.normalize(path.join(containerReal, targetPath));
 
-    // 2) Walk the target path from its root (or container for relatives) and reject any symlink components
-    const startAnchor = path.isAbsolute(targetAbs) ? path.parse(targetAbs).root : containerReal;
-    const relFromAnchor = path.relative(startAnchor, targetAbs);
-    const segments = relFromAnchor.split(path.sep).filter(Boolean);
-
-    let current = startAnchor;
-    for (const seg of segments) {
-      current = path.join(current, seg);
-      if (fs.existsSync(current)) {
-        const st = fs.lstatSync(current);
-        if (st.isSymbolicLink()) {
-          // Disallow any symlink in the path
-          return false;
-        }
-      }
-    }
-
-    // 3) Verify the final (real) path is contained within the real container
     const targetReal = fs.existsSync(targetAbs)
       ? fs.realpathSync(targetAbs)
       : path.join(fs.realpathSync(path.dirname(targetAbs)), path.basename(targetAbs));
 
+    // 2) Strict containment check: target must resolve inside container real path
     const rel = path.relative(containerReal, targetReal);
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    const contained = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    return contained;
   } catch {
     return false;
   }
