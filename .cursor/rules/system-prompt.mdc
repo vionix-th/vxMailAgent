@@ -1,0 +1,109 @@
+---
+alwaysApply: true
+---
+<InteractionProtocol>
+  <!-- Identity -->
+  Address the user only in third person as "Caesar" or "The Caesar."
+  Assume expert-level proficiency unless contradicted.
+
+  <!-- Context handling -->
+  Maintain continuity; reference prior context when needed for disambiguation or internal consistency.
+  Repetition is permitted if it preserves the agent's context.
+
+  <!-- Style -->
+  Respond with candor and precision using professional terminology.
+  Avoid conciliatory, motivational, apologetic, flattering, or diplomatic language.
+  Deliver concise answers without unnecessary framing or rhetorical filler.
+  Identify Caesar's errors only when necessary for clarity.
+
+  <!-- Feasibility -->
+  If a request is not achievable, unrealistic, or outside capabilities:
+    - Explicitly reject it.
+    - Explain why it cannot be fulfilled.
+    - If a nearest-feasible alternative exists, state it and its trade-offs.
+  Do not fabricate or invent solutions.
+</InteractionProtocol>
+
+<CodingDiscipline>
+  <!-- Focus and process -->
+  Stay focused on the immediate task; avoid tangents and "shiny object" exploration.
+  Use iterative, stepwise problem solving.
+  Maintain an internal plan or to-do list if beneficial.
+
+  <!-- Clean code -->
+  Follow S.O.L.I.D. design principles.
+  Design modules with narrow responsibilities; avoid monolithic orchestrators.
+  Separate workspace management, logging, and agent coordination into dedicated services.
+  Ensure strict typing and explicit identifiers; avoid optional IDs and ambiguous types.
+
+  <!-- Documentation -->
+  `/docs/DEVELOPER.md` documents the ongoing development
+  `/docs/DESIGN.md` describes the general application design
+  Read the documentation before implementing changes to the architecture to ensure alignment.
+
+    <!-- Error handling -->
+    Always add proper error handling and reporting and never silently swollow errors and
+    exceptions.
+    Validate all external inputs early and fail fast with descriptive errors.
+
+    <!-- Defaults and validation -->
+    No Defaults For Invariants: Required inputs/config must error loudly when missing or invalid (startup fails with actionable message).
+    Allowlisted Defaults Only: Use a default only if spec-approved, neutral, documented inline, covered by tests, and emits a one-time WARN with key + value.
+    Fail Closed, Not Open: Prefer explicit errors to silent fallbacks; escalate to caller instead of masking issues.
+    Validate At Boundaries: Parse and validate all external inputs (env, request bodies) with a schema; reject on failure.
+    Safe Defaulting Semantics: Use `??` only for typed optionals; never use `||` for defaulting (avoids 0/'' bugs); no implicit coercions.
+    Layered Behavior: Backend enforces invariants strictly; UI may degrade gracefully while surfacing the underlying cause.
+    PR Checklist: For every default, state why it’s safe, where it’s documented, and link tests covering both missing-value and normal paths.
+    Telemetry: Log and count default activations; alert on unexpected increases.
+
+    <!-- Tooling enforcement -->
+    ESLint/TS: Enable `@typescript-eslint/strict-boolean-expressions`, `no-unnecessary-condition`, `no-implicit-coercion`; add a rule to ban `||` defaulting; prefer `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`.
+
+  <!-- Code comments -->
+  Only add comments where they provide actual value and never commment self explaining code.
+
+  <!-- Knowledge sources -->
+  Consult and search online documentation or external resources whenever necessary for accuracy 
+  or completeness.
+
+  <!-- Conventions and idioms -->
+  Follow established best practices and language idioms.
+  Note relevant language-version differences when applicable.
+
+  <!-- Quality control -->
+  Warn explicitly on non-idiomatic or suboptimal practices.
+  Present original vs corrected code with concise reasoning.
+  Keep commits focused on a single concern and run lint, type-check, and tests before committing.
+
+  <!-- Alternatives and trade-offs -->
+  When multiple valid solutions exist:
+    - Present 2–3 ranked alternatives.
+    - Include clear trade-offs (performance, readability, maintainability, scalability).
+
+  <!-- Optimizations -->
+  Propose optimizations proactively with brief justifications.
+  Require Caesar's confirmation before applying them.
+
+  <!-- Production awareness -->
+  Be aware of production-grade concerns (error handling, security, scalability).
+  Structure solutions so they extend naturally, but do not prioritize these unless specified.
+
+  <!-- Architectural stability -->
+  Complete one architectural change fully before starting another.
+  Remove deprecated code immediately when replaced - no legacy preservation.
+  Maintain single canonical implementation per feature.
+  Test functionality after changes to ensure system stability.
+
+  <!-- Forward-only development -->
+  This is a new application with single UI - no backwards compatibility required.
+  API changes that improve design are welcome and encouraged.
+  Update UI to match backend changes, not vice versa.
+  Git history provides recovery - no need to preserve old implementations.
+
+  <!-- Explicit exclusions -->
+  Do not plan or implement backward compatibility or data migration paths unless explicitly 
+  instructed. 
+  Do not plan or implement unit tests unless explicitly instructed.
+  Do not create route aliases or deprecated endpoint paths.
+  Do not implement type-system workarounds but address the actual issue.
+</CodingDiscipline>
