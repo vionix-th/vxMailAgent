@@ -42,7 +42,10 @@ This section is the operational contract the backend must uphold. It is used as 
 - In-memory helpers (pure): `appendMessageToThread()`, `appendMessagesToThread()`, `finalizeThreadStatus()`.
 - Repo-backed helpers (persisted): `repoAppendMessage()`, `repoAppendMessages()`, `repoFinalizeThreadStatus()`, `repoGetThreadById()`.
 - Do not mutate `messages`, `lastActiveAt`, or `endedAt` directly; use the helpers to preserve invariants and timestamps consistently.
- - ESLint enforces this rule for backend sources via `src/backend/.eslintrc.cjs` using `no-restricted-syntax` selectors; CI runs lint in `.github/workflows/tests.yml`.
+ - ESLint enforces this rule for backend sources via flat config `src/backend/eslint.config.cjs` using `no-restricted-syntax` selectors; CI runs lint in `.github/workflows/tests.yml`.
+
+### Note: ESLint Configuration
+The ESLint configuration for the backend is located in `src/backend/eslint.config.cjs`. This configuration uses the flat config format and pins specific versions of ESLint plugins to ensure consistency across the codebase.
 
 6) Workspace persistence
 
