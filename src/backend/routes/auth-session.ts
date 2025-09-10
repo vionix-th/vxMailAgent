@@ -1,6 +1,8 @@
 import express from 'express';
 import { JWT_EXPIRES_IN_SEC, CORS_ORIGIN, isProd } from '../config';
-import { getGoogleLoginUrl, handleGoogleLoginCallback, getUserFromToken } from '../services/auth';
+import { getUserFromToken } from '../services/auth';
+import { initiateGoogleLogin, handleGoogleLoginCallback as handleGoogleLoginCallbackV2 } from '../auth/oidc/flows';
+import { clearLoginCookie } from '../auth/oidc/issuer';
 import { errorHandler, ValidationError, AuthenticationError } from '../services/error-handler';
 import { serializeSessionCookie, clearSessionCookie, extractTokenFromHeaders } from '../utils/session';
 
@@ -8,7 +10,8 @@ import { serializeSessionCookie, clearSessionCookie, extractTokenFromHeaders } f
 export default function registerAuthSessionRoutes(app: express.Express) {
   app.get('/api/auth/google/initiate', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     void req;
-    const url = getGoogleLoginUrl();
+    const { url, loginCookie } = await initiateGoogleLogin();
+    res.setHeader('Set-Cookie', loginCookie);
     res.json({ url });
   }));
 
@@ -17,9 +20,13 @@ export default function registerAuthSessionRoutes(app: express.Express) {
     const state = String(req.query.state || '');
     if (!code) throw new ValidationError('Missing code');
 
-    const { token } = await handleGoogleLoginCallback(code, state);
     const secure = isProd;
-    res.setHeader('Set-Cookie', serializeSessionCookie(token, { maxAgeSec: JWT_EXPIRES_IN_SEC, secure }));
+    const cookieHeader = typeof req.headers['cookie'] === 'string' ? req.headers['cookie'] : undefined;
+    const { token } = await handleGoogleLoginCallbackV2({ code, state, cookieHeader });
+    res.setHeader('Set-Cookie', [
+      serializeSessionCookie(token, { maxAgeSec: JWT_EXPIRES_IN_SEC, secure }),
+      clearLoginCookie(),
+    ] as any);
     // Redirect to frontend after setting cookie. Use CORS_ORIGIN when it's a concrete origin; otherwise fallback to '/'
     const origin = (CORS_ORIGIN && CORS_ORIGIN !== '*') ? CORS_ORIGIN : '';
     const location = origin || '/';
