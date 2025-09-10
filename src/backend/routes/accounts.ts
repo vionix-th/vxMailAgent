@@ -19,6 +19,18 @@ import {
   outlookTest,
 } from '../services/accounts';
 
+ // Redact sensitive token values before sending to clients.
+ function sanitizeAccountForClient(a: Account): Account {
+   return {
+     ...a,
+     tokens: {
+       accessToken: a.tokens?.accessToken ? 'REDACTED' : '',
+       refreshToken: a.tokens?.refreshToken ? 'REDACTED' : '',
+       expiry: a.tokens?.expiry || '',
+     },
+   };
+ }
+
 /**
  * Gets accounts from the per-user repository (user context required).
  */
@@ -69,7 +81,8 @@ export default function registerAccountsRoutes(app: express.Express) {
     const ureq = requireReq(req as ReqLike);
     const accounts = await listAccounts(ureq);
     logger.info('Loaded accounts', { count: accounts.length, uid: requireUid(ureq) });
-    res.json(accounts);
+    const sanitized = accounts.map(sanitizeAccountForClient);
+    res.json(sanitized);
   }));
 
   app.get('/api/accounts/:id/outlook-test', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
@@ -91,7 +104,18 @@ export default function registerAccountsRoutes(app: express.Express) {
   app.put('/api/accounts/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     try {
-      await svcUpdateAccount(req as ReqLike, id, req.body as Account);
+      // Preserve existing sensitive fields; only allow updating safe fields (currently: signature)
+      const ureq = requireReq(req as ReqLike);
+      const existing = (await listAccounts(ureq)).find(a => a.id === id);
+      if (!existing) {
+        throw new NotFoundError('Account not found');
+      }
+      const body = (req.body || {}) as Partial<Account>;
+      const next: Account = {
+        ...existing,
+        signature: typeof body.signature === 'string' ? body.signature : existing.signature,
+      } as Account;
+      await svcUpdateAccount(req as ReqLike, id, next);
     } catch (e: any) {
       if (String(e?.message || '').toLowerCase().includes('not found')) {
         throw new NotFoundError('Account not found');
@@ -119,14 +143,24 @@ export default function registerAccountsRoutes(app: express.Express) {
   app.post('/api/accounts/:id/refresh', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     logger.info('POST /api/accounts/:id/refresh invoked', { id });
-    const result = await refreshAccount(req as ReqLike, id);
-    if (!result.ok) {
+    const svcResult = await refreshAccount(req as ReqLike, id);
+    if (!svcResult.ok) {
       // Map known errors to validation; others bubble as generic errors
-      if (result.error === 'missing_refresh_token' || result.error === 'invalid_grant') {
-        throw new ValidationError(`Refresh failed: ${result.error}`);
+      if (svcResult.error === 'missing_refresh_token' || svcResult.error === 'invalid_grant') {
+        throw new ValidationError(`Refresh failed: ${svcResult.error}`);
       }
-      throw new Error(result.error || 'Refresh failed');
+      throw new Error(svcResult.error || 'Refresh failed');
     }
+    const result = svcResult && svcResult.tokens
+      ? {
+          ...svcResult,
+          tokens: {
+            accessToken: svcResult.tokens?.accessToken ? 'REDACTED' : '',
+            refreshToken: svcResult.tokens?.refreshToken ? 'REDACTED' : '',
+            expiry: svcResult.tokens?.expiry || '',
+          },
+        }
+      : svcResult;
     return res.json(result);
   }));
 
