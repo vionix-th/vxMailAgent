@@ -236,7 +236,11 @@ export class EmailProcessor {
     const nowIso = new Date().toISOString();
 
     // Initial transcript = prompt messages + email context as user message
-    const emailContextContent = `Email context\nsubject: ${envelope.subject}\nfrom: ${envelope.from}\ndate: ${envelope.date}\nsnippet: ${envelope.snippet}`;
+    const emailContextContent = `Email context
+subject: ${envelope.subject}
+from: ${envelope.from}
+date: ${envelope.date}
+snippet: ${envelope.snippet}`;
     const initialMessages = [
       ...directorPrompt.messages,
       { role: 'user', content: emailContextContent } as any,
@@ -245,13 +249,16 @@ export class EmailProcessor {
     const dirThread: ConversationThread = {
       id: dirThreadId,
       kind: 'director',
+      parentId: null,
       directorId: director.id,
+      agentId: null,
       traceId,
       email: envelope,
-      promptId: director.promptId!,
-      apiConfigId: director.apiConfigId,
+      promptId: directorPrompt.id,
+      apiConfigId: context.apiConfigs.find(a => a.id === director.apiConfigId)?.id || director.apiConfigId,
       startedAt: nowIso,
       status: 'ongoing',
+      endedAt: null,
       lastActiveAt: nowIso,
       messages: initialMessages,
       errors: [],

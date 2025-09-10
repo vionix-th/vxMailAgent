@@ -4,7 +4,7 @@ import { userPaths, UserPaths } from '../utils/paths';
 import fs from 'fs';
 import * as persistence from '../persistence';
 import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS } from '../config';
-import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem, TemplateItem } from '../../shared/types';
+import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem, TemplateItem, EmailEnvelope } from '../../shared/types';
 import logger from '../services/logger';
 
 /**
@@ -31,6 +31,7 @@ export interface RepoBundle {
   // Conversation and memory
   conversations: Repository<ConversationThread>;
   memory: Repository<any>;
+  emails: Repository<EmailEnvelope>;
   
   // Logging repositories
   fetcherLog: FetcherLogRepository;
@@ -79,6 +80,7 @@ export class RepoBundleRegistry {
       paths.conversations,
       paths.workspaceItems,
       paths.memory,
+      paths.emails,
       paths.logs.fetcher,
       paths.logs.orchestration,
       paths.logs.providerEvents,
@@ -115,6 +117,7 @@ export class RepoBundleRegistry {
       // Conversation and memory
       conversations: createUserJsonRepository<ConversationThread>(paths.conversations, paths.root, USER_MAX_CONVERSATIONS, uid),
       memory: createUserJsonRepository<any>(paths.memory, paths.root, undefined, uid),
+      emails: createUserJsonRepository<EmailEnvelope>(paths.emails, paths.root, undefined, uid),
       
       // Logging repositories
       fetcherLog: createUserFetcherLogRepository(paths.logs.fetcher, paths.root, uid),

@@ -19,6 +19,8 @@ import registerDiagnosticsRoutes from './diagnostics';
 import registerDiagnosticTracesRoutes from './diagnostic-traces';
 import registerUnifiedDiagnosticsRoutes from './unified-diagnostics';
 import registerCleanupRoutes from './cleanup';
+import { createEmailRoutes } from './emails';
+import { createConversationsEnhancedRoutes } from './conversations-enhanced';
 import { FetcherManager } from '../services/fetcher-manager';
 import { LiveRepos } from '../liveRepos';
 import { isProd, ENABLE_TEST_ROUTES } from '../config';
@@ -62,5 +64,9 @@ export default function registerRoutes(
   registerCleanupRoutes(app, repos, {
     getFetcherManager: (req: ReqLike) => fetcherManager.getFetcher(req)
   });
+  
+  // Enhanced diagnostics routes
+  app.use('/api/emails', createEmailRoutes(repos));
+  app.use('/api/conversations', createConversationsEnhancedRoutes(repos));
 }
 

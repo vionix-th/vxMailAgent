@@ -40,18 +40,13 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
   app.put('/api/workspaces/:id/items/:itemId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { itemId } = req.params as { id: string; itemId: string };
     const expectedRevision = typeof req.body?.expectedRevision === 'number' ? (req.body.expectedRevision as number) : undefined;
-    const { label, description, tags, mimeType, encoding, data } = req.body as { label?: string; description?: string; tags?: string[]; mimeType?: string; encoding?: 'utf8'|'base64'|'binary'; data?: string };
     const service = createWorkspaceService(req as ReqLike, deps);
-    const patch: Partial<WorkspaceItem> = {
-      ...(typeof label !== 'undefined' ? { label } : {}),
-      ...(typeof description !== 'undefined' ? { description } : {}),
-      ...(Array.isArray(tags) ? { tags } : {}),
-      ...(typeof mimeType !== 'undefined' ? { mimeType } : {}),
-      ...(typeof encoding !== 'undefined' ? { encoding } : {}),
-      ...(typeof data !== 'undefined' ? { data } : {}),
-    };
+    const patch: Partial<WorkspaceItem> = {};
+    if (req.body.content) patch.content = req.body.content;
+    if (req.body.metadata) patch.metadata = req.body.metadata;
+    if (req.body.lifecycle) patch.lifecycle = req.body.lifecycle;
     const nextItem = await service.updateItem(itemId, patch, expectedRevision);
-    logger.info('PUT /api/workspaces/:id/items/:itemId updated', { itemId, revision: nextItem.revision });
+    logger.info('PUT /api/workspaces/:id/items/:itemId updated', { itemId, revision: nextItem.lifecycle.revision });
     res.json({ success: true, item: nextItem });
   }));
 
@@ -73,7 +68,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
       res.json({ success: true });
     } else {
       const updatedItem = await service.softDeleteItem(itemId);
-      logger.info('DELETE /api/workspaces/:id/items/:itemId soft-deleted', { itemId, hard: false, revision: updatedItem.revision });
+      logger.info('DELETE /api/workspaces/:id/items/:itemId soft-deleted', { itemId, hard: false, revision: updatedItem.lifecycle.revision });
       res.json({ success: true, item: updatedItem });
     }
   }));

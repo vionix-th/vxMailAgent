@@ -5,7 +5,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
-import { Prompt, PromptMessage } from '../../shared/types';
+import { Prompt, PromptMessage } from './types/shared';
 import { useTranslation } from 'react-i18next';
 import { useCookieState } from './hooks/useCookieState';
 import { apiFetch } from './utils/http';

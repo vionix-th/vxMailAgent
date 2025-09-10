@@ -1,5 +1,5 @@
 import express from 'express';
-import { OrchestrationDiagnosticEntry } from '../../shared/types';
+import { OrchestrationEvent } from '../../shared/types';
 import { ReqLike } from '../utils/repo-access';
 import { errorHandler, ValidationError } from '../services/error-handler';
 
@@ -9,13 +9,13 @@ export default function registerOrchestrationRoutes(
   app: express.Express, 
   repos: LiveRepos,
   services: {
-    setOrchestrationLog: (next: OrchestrationDiagnosticEntry[], req?: ReqLike) => Promise<void>;
+    setOrchestrationLog: (next: OrchestrationEvent[], req?: ReqLike) => Promise<void>;
   }
 ) {
   // GET diagnostics: via repository with filters and pagination
   // /api/orchestration/diagnostics?director=&agent=&emailId=&phase=&since=&until=&limit=&offset=
   app.get('/api/orchestration/diagnostics', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const log: OrchestrationDiagnosticEntry[] = await repos.getOrchestrationLog(req as any as ReqLike);
+    const log: OrchestrationEvent[] = await repos.getOrchestrationLog(req as any as ReqLike);
     const q = req.query as Record<string, string>;
     const director = q.director?.trim();
     const agent = q.agent?.trim();
@@ -27,9 +27,9 @@ export default function registerOrchestrationRoutes(
     const offset = Math.max(0, Number(q.offset) || 0);
 
     let items = log.slice();
-    if (director) items = items.filter(e => e.director === director);
-    if (agent) items = items.filter(e => e.agent === agent);
-    if (emailId) items = items.filter(e => (e.email as any)?.id === emailId);
+    if (director) items = items.filter(e => e.context.directorId === director);
+    if (agent) items = items.filter(e => e.context.agentId === agent);
+    if (emailId) items = items.filter(e => e.context.emailId === emailId);
     if (phase) items = items.filter(e => e.phase === phase);
     if (sinceMs) items = items.filter(e => Date.parse(e.timestamp) >= sinceMs);
     if (untilMs) items = items.filter(e => Date.parse(e.timestamp) <= untilMs);

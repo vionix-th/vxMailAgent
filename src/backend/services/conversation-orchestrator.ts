@@ -92,8 +92,8 @@ export class ConversationOrchestrator {
     this.activeSteps.set(threadId, { timeoutId, startTime, emailId, email: context.thread.email, directorId: context.thread.directorId });
 
     const stepType = context.thread.kind === 'director' ? 'director_llm' : 'agent_llm';
-    this.stepLogger.logStepStart(threadId, stepType, emailId, context.thread.directorId, context.thread.email);
-    this.stepLogger.logEngineStart(threadId, stepType, (context.thread.messages || []).length, emailId, context.thread.directorId, context.thread.email);
+    this.stepLogger.logStepStart(threadId, stepType, emailId, context.thread.directorId);
+    this.stepLogger.logEngineStart(threadId, stepType, (context.thread.messages || []).length, emailId, context.thread.directorId);
 
     try {
       const result = await conversationEngine.run({
@@ -130,7 +130,7 @@ export class ConversationOrchestrator {
 
       const finalThread = (await repoGetThreadById(userReq.repos, userReq.reqLike, threadId)) || updatedThread;
       
-      this.stepLogger.logStepComplete(threadId, stepType, Date.now() - startTime, shouldContinue, toolCallCount, emailId, context.thread.directorId, context.thread.email);
+      this.stepLogger.logStepComplete(threadId, stepType, Date.now() - startTime, shouldContinue, toolCallCount, emailId, context.thread.directorId);
 
       return {
         updatedThread: finalThread,
@@ -140,7 +140,7 @@ export class ConversationOrchestrator {
       };
 
     } catch (error: any) {
-      this.stepLogger.logStepError(threadId, stepType, Date.now() - startTime, error?.message || String(error), emailId, context.thread.directorId, context.thread.email);
+      this.stepLogger.logStepError(threadId, stepType, Date.now() - startTime, error?.message || String(error), emailId, context.thread.directorId);
       return {
         updatedThread: context.thread,
         success: false,
@@ -360,9 +360,10 @@ export class ConversationOrchestrator {
 
     // Inject tool response back into director thread for continuity
     const toolResponse: PromptMessage = {
+      id: newId(),
       role: 'tool',
       tool_call_id: toolCall.id,
-      content: JSON.stringify({ added: true, itemId: addedItem.id, label: addedItem.label }),
+      content: JSON.stringify({ added: true, itemId: addedItem.id, label: addedItem.metadata.label }),
     };
     await repoAppendMessage(userReq.repos, userReq.reqLike, context.thread.id, toolResponse);
 
@@ -390,9 +391,10 @@ export class ConversationOrchestrator {
     }
 
     const toolResponse: PromptMessage = {
+      id: newId(),
       role: 'tool',
       tool_call_id: toolCall.id,
-      content: JSON.stringify({ items }),
+      content: JSON.stringify(listResult)
     };
 
     await repoAppendMessage(userReq.repos, userReq.reqLike, context.thread.id, toolResponse);
@@ -450,7 +452,7 @@ export class ConversationOrchestrator {
       return null;
     }
     const added: { item?: WorkspaceItem } = (addResult.result || {}) as any;
-    logger.info('Added workspace item', { itemId: added?.item?.id, agentId, label: added?.item?.label });
+    logger.info('Added workspace item', { itemId: added?.item?.id, agentId, label: added?.item?.metadata.label });
     return (added?.item as WorkspaceItem) || null;
   }
 
@@ -544,6 +546,7 @@ export class ConversationOrchestrator {
     });
     
     const errorMessage: PromptMessage = {
+      id: newId(),
       role: 'tool',
       tool_call_id: toolCallId,
       content: `Agent conversation failed: ${error || 'Unknown error'}`
@@ -561,7 +564,7 @@ export class ConversationOrchestrator {
       clearTimeout(activeStep.timeoutId);
       this.activeSteps.delete(threadId);
       
-      this.stepLogger.logStepCancelled(threadId, Date.now() - activeStep.startTime, activeStep.emailId, activeStep.directorId, activeStep.email);
+      this.stepLogger.logStepCancelled(threadId, Date.now() - activeStep.startTime, activeStep.emailId, activeStep.directorId);
       
       return true;
     }
@@ -583,7 +586,7 @@ export class ConversationOrchestrator {
     const count = this.activeSteps.size;
     for (const [threadId, step] of this.activeSteps.entries()) {
       clearTimeout(step.timeoutId);
-      this.stepLogger.logStepCancelledShutdown(threadId, Date.now() - step.startTime, step.emailId, step.directorId, step.email);
+      this.stepLogger.logStepCancelledShutdown(threadId, Date.now() - step.startTime, step.emailId, step.directorId);
     }
     this.activeSteps.clear();
     return count;

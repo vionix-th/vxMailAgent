@@ -172,9 +172,9 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
         content: String(base.content),
         created: now,
         updated: now,
+        owner: typeof base.owner === 'string' ? base.owner : 'system',
         ...(Array.isArray(base.tags) ? { tags: base.tags } : {}),
         ...((base as any)?.relatedEmailId ? { relatedEmailId: (base as any).relatedEmailId } : {}),
-        ...(typeof base.owner === 'string' ? { owner: base.owner } : {}),
         ...(base.metadata ? { metadata: base.metadata } : {}),
       } : null;
       if (!entry) {

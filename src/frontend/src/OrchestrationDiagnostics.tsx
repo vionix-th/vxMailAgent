@@ -9,7 +9,7 @@ import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { OrchestrationDiagnosticEntry } from '../../shared/types';
+import { OrchestrationEvent } from './types/shared';
 import { getOrchestrationDiagnostics, deleteOrchestrationDiagnosticOne, deleteOrchestrationDiagnosticsBulk, getDiagnosticsRuntime } from './utils/api';
 import { useTranslation } from 'react-i18next';
 import { useCookieState } from './hooks/useCookieState';
@@ -18,16 +18,32 @@ type AgentBucket = {
   agentThreadId: string;
   agent?: string;
   agentName?: string;
-  entries: OrchestrationDiagnosticEntry[];
+  entries: OrchestrationEvent[];
 };
 
-type FlowItemEntry = { kind: 'entry'; ts: number; entry: OrchestrationDiagnosticEntry };
+type EmailBucket = {
+  emailId: string;
+  emailSummary?: string;
+  entries: OrchestrationEvent[];
+  directorBuckets: DirectorBucket[];
+};
+
+type DirectorBucket = {
+  dirThreadId: string;
+  director: string;
+  directorName?: string;
+  entries: OrchestrationEvent[];
+  agentBuckets: AgentBucket[];
+  emailBuckets: EmailBucket[];
+};
+
+type FlowItemEntry = { kind: 'entry'; ts: number; entry: OrchestrationEvent };
 type FlowItemAgent = { kind: 'agent'; ts: number; agent: AgentBucket };
 type FlowItem = FlowItemEntry | FlowItemAgent;
 
 export default function OrchestrationDiagnostics() {
   const { t } = useTranslation();
-  const [entries, setEntries] = useState<OrchestrationDiagnosticEntry[]>([]);
+  const [entries, setEntries] = useState<OrchestrationEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTs, setActiveTs] = useState<string | null>(null);

@@ -1,6 +1,7 @@
 import { WorkspaceItem, ConversationThread } from '../../shared/types';
 import { ValidationError, NotFoundError } from './error-handler';
 import { newId } from '../utils/id';
+import { WorkspaceItemInput } from '../../shared/types';
 
 export type GetItemsFn = () => Promise<WorkspaceItem[]>;
 export type SetItemsFn = (next: WorkspaceItem[]) => Promise<void>;
@@ -29,7 +30,7 @@ export class WorkspaceService {
 
   async listItems(includeDeleted: boolean = false): Promise<WorkspaceItem[]> {
     const items = await this.getItems();
-    return includeDeleted ? items : items.filter(i => !i.deleted);
+    return includeDeleted ? items : items.filter(i => !i.lifecycle.deleted);
     }
 
   async getItem(id: string): Promise<WorkspaceItem | null> {
@@ -37,22 +38,25 @@ export class WorkspaceService {
     return items.find(i => i.id === id) || null;
   }
 
-  async addItem(input: Omit<WorkspaceItem, 'id' | 'created' | 'updated' | 'revision' | 'deleted'> & Partial<Pick<WorkspaceItem, 'label' | 'description' | 'mimeType' | 'encoding' | 'data' | 'tags'>>): Promise<WorkspaceItem> {
-    this.validateEncoding(input.encoding);
+  async addItem(input: WorkspaceItemInput): Promise<WorkspaceItem> {
+    this.validateEncoding(input.content.encoding);
 
-    const now = new Date().toISOString();
+    const nowIso = () => new Date().toISOString();
     const item: WorkspaceItem = {
       id: newId(),
-      label: input.label || 'Untitled',
-      description: input.description,
-      mimeType: input.mimeType || 'text/plain',
-      encoding: (input.encoding as any) || 'utf8',
-      data: input.data || '',
-      tags: input.tags ?? [],
-      created: now,
-      updated: now,
-      revision: 1,
-      context: input.context,
+      content: input.content,
+      metadata: {
+        label: input.metadata.label,
+        description: input.metadata.description,
+        tags: input.metadata.tags || [],
+      },
+      provenance: input.provenance,
+      lifecycle: {
+        created: nowIso(),
+        updated: nowIso(),
+        revision: 1,
+        deleted: false,
+      },
     };
 
     const items = await this.getItems();
@@ -61,8 +65,8 @@ export class WorkspaceService {
   }
 
   async updateItem(id: string, patch: Partial<WorkspaceItem>, expectedRevision?: number): Promise<WorkspaceItem> {
-    if (typeof patch.encoding !== 'undefined') {
-      this.validateEncoding(patch.encoding);
+    if (patch.content && typeof patch.content.encoding !== 'undefined') {
+      this.validateEncoding(patch.content.encoding);
     }
 
     const items = await this.getItems();
@@ -70,16 +74,20 @@ export class WorkspaceService {
     if (idx === -1) throw new NotFoundError('Item not found');
 
     const current = items[idx];
-    const currentRevision = current.revision ?? 0;
+    const currentRevision = current.lifecycle.revision ?? 0;
     if (typeof expectedRevision === 'number' && currentRevision !== expectedRevision) {
-      throw new ValidationError(`Revision conflict (current=${currentRevision})`);
+      throw new ValidationError(`Revision mismatch: expected ${expectedRevision}, got ${currentRevision}`);
     }
 
     const updated: WorkspaceItem = {
       ...current,
       ...patch,
-      updated: new Date().toISOString(),
-      revision: currentRevision + 1,
+      lifecycle: {
+        ...current.lifecycle,
+        ...patch.lifecycle,
+        updated: new Date().toISOString(),
+        revision: currentRevision + 1,
+      },
     };
 
     const next = items.slice();
@@ -94,17 +102,20 @@ export class WorkspaceService {
     if (idx === -1) throw new NotFoundError('Item not found');
 
     const current = items[idx];
-    const nextItem: WorkspaceItem = {
+    const updated: WorkspaceItem = {
       ...current,
-      deleted: true,
-      updated: new Date().toISOString(),
-      revision: (current.revision ?? 0) + 1,
+      lifecycle: {
+        ...current.lifecycle,
+        deleted: true,
+        updated: new Date().toISOString(),
+        revision: (current.lifecycle.revision ?? 0) + 1,
+      },
     };
 
     const next = items.slice();
-    next[idx] = nextItem;
+    next[idx] = updated;
     await this.setItems(next);
-    return nextItem;
+    return updated;
   }
 
   async hardDeleteItem(id: string): Promise<void> {
@@ -118,7 +129,8 @@ export class WorkspaceService {
     const conversations = await this.getConversations();
     const idx = conversations.findIndex(c => c.id === conversationId);
     if (idx === -1) throw new NotFoundError('Conversation not found');
-    const updated = { ...conversations[idx], workspaceId } as ConversationThread as any;
+    const updated = { ...conversations[idx] } as ConversationThread;
+    (updated as any).workspaceId = workspaceId;
     const next = conversations.slice();
     next[idx] = updated;
     await this.setConversations(next);

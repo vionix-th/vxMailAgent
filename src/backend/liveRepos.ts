@@ -1,4 +1,4 @@
-import { Filter, Director, Agent, Prompt, Imprint, OrchestrationDiagnosticEntry, ConversationThread } from '../shared/types';
+import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent } from '../shared/types';
 import { requireReq, requireUserRepo, repoGetAll, repoSetAll, ReqLike } from './utils/repo-access';
 import { RepoBundle } from './repository/registry';
 
@@ -13,9 +13,12 @@ export interface LiveRepos {
   setFilters(req: ReqLike, next: Filter[]): Promise<void>;
   getImprints(req?: ReqLike): Promise<Imprint[]>;
   setImprints(req: ReqLike, next: Imprint[]): Promise<void>;
-  getOrchestrationLog(req?: ReqLike): Promise<OrchestrationDiagnosticEntry[]>;
+  getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]>;
   getConversations(req?: ReqLike): Promise<ConversationThread[]>;
   setConversations(req: ReqLike, next: ConversationThread[]): Promise<void>;
+  getEmails(req?: ReqLike): Promise<EmailEnvelope[]>;
+  getProviderEvents(req?: ReqLike): Promise<ProviderEvent[]>;
+  getConversationById(req: ReqLike, id: string): Promise<ConversationThread | null>;
   getSettings(req?: ReqLike): Promise<any>;
   getProviderRepo(req?: ReqLike): any;
   getTracesRepo(req?: ReqLike): any;
@@ -43,7 +46,7 @@ export function createLiveRepos(): LiveRepos {
     setFilters: set<Filter>('filters'),
     getImprints: get<Imprint>('imprints'),
     setImprints: set<Imprint>('imprints'),
-    getOrchestrationLog: get<OrchestrationDiagnosticEntry>('orchestrationLog'),
+    getOrchestrationLog: get<OrchestrationEvent>('orchestrationLog'),
     getConversations: get<ConversationThread>('conversations'),
     setConversations: set<ConversationThread>('conversations'),
     getSettings: async (req?: ReqLike) => {
@@ -65,5 +68,14 @@ export function createLiveRepos(): LiveRepos {
       return Array.isArray(arr) ? arr : [];
     },
     setFetcherLog: (req: ReqLike, next: any[]) => repoSetAll<any>(requireReq(req), 'fetcherLog', next),
+    getEmails: get<EmailEnvelope>('emails'),
+    getProviderEvents: async (req?: ReqLike) => {
+      const repo = requireUserRepo(requireReq(req), 'providerEvents');
+      return await repo.getAll();
+    },
+    getConversationById: async (req: ReqLike, id: string) => {
+      const conversations = await get<ConversationThread>('conversations')(req);
+      return conversations.find((c: ConversationThread) => c.id === id) || null;
+    },
   };
 }

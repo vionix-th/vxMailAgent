@@ -1,3 +1,158 @@
+# Backend Type System Documentation
+
+## Overview
+
+The backend type system has been comprehensively refactored to enforce strict logical coherence, eliminate optional fields that should be mandatory, separate mixed responsibilities, and remove redundant data copying. This ensures types serve as reliable contracts for development.
+
+## Core Type Principles
+
+### Mandatory Fields
+All critical identifiers and core data fields are now mandatory:
+- `Director.promptId` - Required for director functionality
+- `Agent.promptId` - Required for agent functionality  
+- `EmailEnvelope.to`, `EmailEnvelope.date` - Core email metadata
+- `ConversationThread` discriminated union fields - Explicit thread type handling
+- All entity IDs are mandatory strings
+
+### Separated Responsibilities
+
+#### WorkspaceItem Decomposition
+```typescript
+interface WorkspaceItem {
+  id: string;
+  content: WorkspaceContent;     // Data storage
+  metadata: WorkspaceMetadata;   // Labels, descriptions, tags
+  provenance: WorkspaceProvenance; // Reference-only tracking
+  lifecycle: WorkspaceLifecycle; // Creation, updates, deletion
+}
+```
+
+#### ConversationThread Discriminated Union
+```typescript
+type ConversationThread = DirectorThread | AgentThread;
+
+interface DirectorThread {
+  kind: 'director';
+  parentId: null;
+  agentId: null;
+  // ... other fields
+}
+
+interface AgentThread {
+  kind: 'agent';
+  parentId: string;  // Required reference to parent
+  agentId: string;   // Required agent identifier
+  // ... other fields
+}
+```
+
+#### OrchestrationEvent Separation
+```typescript
+interface OrchestrationEvent {
+  context: OrchestrationContext;  // What happened
+  outcome: OrchestrationOutcome;  // Result/error
+}
+```
+
+### Reference-Only Provenance
+Eliminated redundant data copying by using reference-only fields:
+- `WorkspaceProvenance` contains only IDs, not copied data
+- `OrchestrationContext` references entities by ID
+- Lookup utilities provided for accessing referenced data
+
+## Migration Guidelines
+
+### WorkspaceItem Usage
+```typescript
+// OLD - flat structure
+const item = {
+  id: '123',
+  label: 'Document',
+  mimeType: 'text/plain',
+  data: 'content',
+  created: '2024-01-01'
+};
+
+// NEW - decomposed structure
+const item: WorkspaceItem = {
+  id: '123',
+  content: {
+    mimeType: 'text/plain',
+    encoding: 'utf8',
+    data: 'content'
+  },
+  metadata: {
+    label: 'Document',
+    tags: []
+  },
+  provenance: {
+    emailId: 'email-123',
+    conversationId: 'conv-456',
+    createdBy: 'agent',
+    creatorId: 'agent-789'
+  },
+  lifecycle: {
+    created: '2024-01-01',
+    updated: '2024-01-01',
+    revision: 1,
+    deleted: false
+  }
+};
+```
+
+### ConversationThread Creation
+```typescript
+// Director thread
+const directorThread: DirectorThread = {
+  kind: 'director',
+  parentId: null,
+  agentId: null,
+  endedAt: null,
+  // ... other required fields
+};
+
+// Agent thread
+const agentThread: AgentThread = {
+  kind: 'agent',
+  parentId: 'parent-thread-id',
+  agentId: 'agent-id',
+  endedAt: null,
+  // ... other required fields
+};
+```
+
+## Runtime Validation
+
+The type system enforces compile-time safety, but runtime validation should be added for external inputs:
+
+```typescript
+function validateWorkspaceItemInput(input: any): WorkspaceItemInput {
+  if (!input.content?.mimeType) {
+    throw new ValidationError('mimeType is required');
+  }
+  if (!input.provenance?.emailId) {
+    throw new ValidationError('emailId is required for provenance');
+  }
+  return input as WorkspaceItemInput;
+}
+```
+
+## Deprecated Types
+
+- `OrchestrationDiagnosticEntry` - Use `OrchestrationEvent` instead
+- Flat WorkspaceItem structure - Use decomposed interfaces
+- Optional IDs in core entities - All IDs are now mandatory
+
+## Best Practices
+
+1. **No Defaults For Invariants** - Required fields must error when missing
+2. **Reference-Only Provenance** - Store IDs, not copied data
+3. **Explicit Type Discrimination** - Use discriminated unions for variant types
+4. **Focused Interfaces** - Single responsibility per interface
+5. **Mandatory Identifiers** - All entity IDs are required strings
+
+This type system provides a solid foundation for reliable, maintainable code development.
+
 ## Orchestrator Contract (Authoritative)
 
 This section is the operational contract the backend must uphold. It is used as acceptance criteria after refactors.

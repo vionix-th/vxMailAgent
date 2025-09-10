@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography, Divider, Stack, Alert
 } from '@mui/material';
-import { PromptMessage } from '../../shared/types';
+import { PromptMessage } from './types/shared';
 import { useTranslation } from 'react-i18next';
 import MessageListEditor from './components/MessageListEditor';
 

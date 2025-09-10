@@ -9,7 +9,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ChatPlayground from './ChatPlayground';
 
-import { Agent, Prompt } from '../../shared/types';
+import { Agent, Prompt } from './types/shared';
 import { OPTIONAL_TOOL_NAMES, CORE_TOOL_NAMES } from '../../shared/tools';
 import { useCrudResource } from './hooks/useCrudResource';
 import { randomId } from './utils/randomId';

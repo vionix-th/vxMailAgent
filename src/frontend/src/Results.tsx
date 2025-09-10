@@ -29,12 +29,12 @@ import Code from '@mui/icons-material/Code';
 import WarningAmber from '@mui/icons-material/WarningAmber';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { WorkspaceItem } from '../../shared/types';
+import type { WorkspaceItem } from './types/shared';
 import { useTranslation } from 'react-i18next';
 import { deleteWorkspaceItem } from './utils/api';
 import { apiFetch } from './utils/http';
 
-// Use canonical OrchestrationResultEntry type from shared/types
+// Note: OrchestrationResultEntry was deprecated and removed in backend refactor
 
 export default function Results() {
   const { t, i18n } = useTranslation();

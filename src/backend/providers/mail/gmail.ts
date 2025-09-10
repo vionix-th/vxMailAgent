@@ -46,15 +46,14 @@ export const gmailProvider: IMailProvider = {
       if (!mid) throw new Error('Gmail message missing id');
       envelopes.push({
         id: String(mid),
-        subject,
-        from,
-        ...(to ? { to } : {}),
-        ...(cc ? { cc } : {}),
-        ...(bcc ? { bcc } : {}),
-        date,
-        snippet,
-        ...(bodies.bodyPlain ? { bodyPlain: bodies.bodyPlain } : {}),
-        ...(bodies.bodyHtml ? { bodyHtml: bodies.bodyHtml } : {}),
+        subject: subject || '(no subject)',
+        from: from || '(unknown)',
+        to: to || '',
+        cc: cc,
+        bcc: bcc,
+        date: date || new Date().toISOString(),
+        snippet: snippet,
+        ...bodies,
         attachments: [],
       });
     }

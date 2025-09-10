@@ -1,12 +1,13 @@
 import express from 'express';
 import { PromptMessage } from '../../shared/types';
-import logger from '../services/logger';
 import { requireReq } from '../utils/repo-access';
 import type { ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
-import { ConversationOrchestrator, createUserRequest } from '../services/conversation-orchestrator';
 import { repoAppendMessage } from '../services/conversation-mutations';
+import { newId } from '../utils/id';
+import logger from '../services/logger';
+import { ConversationOrchestrator, createUserRequest } from '../services/conversation-orchestrator';
 import type { ConversationThread } from '../../shared/types';
 
 interface ConversationResult {
@@ -75,7 +76,7 @@ export default function registerConversationsRoutes(
     const conversations = await repos.getConversations(req as any as ReqLike);
     const exists = conversations.some((c) => c.id === id);
     if (!exists) throw new NotFoundError('Conversation not found');
-    const msg: PromptMessage = { role: 'user', content };
+    const msg: PromptMessage = { id: newId(), role: 'user', content };
     await repoAppendMessage(repos, req as any as ReqLike, id, msg);
     logger.info('POST /api/conversations/:id/messages appended user message', { id, length: content.length });
     return res.json({ success: true });

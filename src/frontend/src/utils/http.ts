@@ -6,6 +6,8 @@
 export interface FetchOptions extends RequestInit {
   /** If true, expects JSON response. If false, returns undefined for empty responses. Default: auto-detect */
   expectJson?: boolean;
+  /** Query parameters to append to URL */
+  params?: Record<string, string | number | boolean | undefined>;
 }
 
 /**
@@ -13,11 +15,27 @@ export interface FetchOptions extends RequestInit {
  * Automatically detects JSON responses or returns undefined for empty bodies.
  */
 export async function apiFetch<T = any>(url: string, options: FetchOptions = {}): Promise<T> {
-  const { expectJson, ...rest } = options;
+  const { expectJson, params, ...rest } = options;
+  
+  // Build URL with query parameters
+  let finalUrl = url;
+  if (params) {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        searchParams.append(key, String(value));
+      }
+    });
+    const queryString = searchParams.toString();
+    if (queryString) {
+      finalUrl += (url.includes('?') ? '&' : '?') + queryString;
+    }
+  }
+  
   // Always include credentials (cookies) by default for authenticated endpoints; allow override via options
   const init: RequestInit = { ...rest, credentials: rest.credentials ?? 'include' };
   
-  const res = await fetch(url, init);
+  const res = await fetch(finalUrl, init);
   
   if (!res.ok) {
     const text = await res.text().catch(() => '');

@@ -28,15 +28,15 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import ReactMarkdown from 'react-markdown';
-import { ConversationThread, ConversationStatus, WorkspaceItem, Agent, Director } from '../../shared/types';
+import { ConversationThread, ConversationStatus, WorkspaceItem, Agent, Director } from './types/shared';
 import { WORKSPACE_ITEM_TYPES, WorkspaceItemTypeUI } from './constants/workspace';
 import { useTranslation } from 'react-i18next';
 import { apiFetch } from './utils/http';
 
 // Infer a display kind for a WorkspaceItem (MIME/tags-first, mirrors Results.tsx)
 const getItemKind = (it: WorkspaceItem): string => {
-  const mt = String(it.mimeType || '').toLowerCase();
-  const tags = Array.isArray(it.tags) ? it.tags.map(t => String(t).toLowerCase()) : [];
+  const mt = String(it.content.mimeType || '').toLowerCase();
+  const tags = Array.isArray(it.metadata.tags) ? it.metadata.tags.map(t => String(t).toLowerCase()) : [];
   if (tags.includes('draft_reply') || mt === 'application/vnd.ia.draft-reply+json' || mt === 'application/x-ia-draft-reply+json') return 'draft_reply';
   if (mt.startsWith('image/')) return 'image';
   if (tags.includes('error') || mt === 'application/vnd.ia.error+json') return 'error';

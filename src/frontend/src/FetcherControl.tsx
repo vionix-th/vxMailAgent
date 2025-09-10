@@ -5,7 +5,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import { FetcherLogEntry, FetcherLogLevel, AccountProvider } from '../../shared/types';
+import { FetcherLogEntry, FetcherLogLevel, AccountProvider } from './types/shared';
 import { useTranslation } from 'react-i18next';
 import { useCookieState } from './hooks/useCookieState';
 import { apiFetch } from './utils/http';

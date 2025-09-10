@@ -6,7 +6,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import AddIcon from '@mui/icons-material/Add';
-import { PromptMessage } from '../../../shared/types';
+import { PromptMessage } from '../types/shared';
 import { useTranslation } from 'react-i18next';
 import VariableInsertMenu from '../VariableInsertMenu';
 

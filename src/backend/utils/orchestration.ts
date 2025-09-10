@@ -1,4 +1,5 @@
-import { OrchestrationDiagnosticEntry, EmailEnvelope, ConversationThread } from '../../shared/types';
+import { OrchestrationEvent, OrchestrationContext, OrchestrationOutcome, EmailEnvelope, ConversationThread } from '../../shared/types';
+import { newId } from './id';
 
 /**
  * Minimal base input used to construct an orchestration diagnostic entry.
@@ -18,25 +19,27 @@ export type OrchBaseInput = {
 };
 
 /**
- * Build the fixed portion of an orchestration diagnostic entry.
- * Consumers typically spread this into the final object and add { detail, result, error, phase }.
+ * Build the fixed portion of an orchestration event.
+ * Consumers typically spread this into the final object and add { context, outcome, phase }.
  */
-export function buildOrchBase(
-  input: OrchBaseInput
-): Omit<OrchestrationDiagnosticEntry, 'detail' | 'result' | 'error' | 'phase'> {
+export function buildOrchBase(): Omit<OrchestrationEvent, 'context' | 'outcome' | 'phase'> {
   return {
+    id: newId(),
     timestamp: new Date().toISOString(),
-    director: input.director,
+  };
+}
+
+/**
+ * Build orchestration context from base input.
+ */
+export function buildOrchContext(input: OrchBaseInput): OrchestrationContext {
+  return {
+    fetchCycleId: input.fetchCycleId || '',
     emailId: input.emailId,
-    ...(input.directorName ? { directorName: input.directorName } : {}),
-    ...(input.agent ? { agent: input.agent } : {}),
-    ...(input.agentName ? { agentName: input.agentName } : {}),
-    emailSummary: input.emailSummary,
-    ...(input.accountId ? { accountId: input.accountId } : {}),
-    ...(input.email ? { email: input.email } : {}),
-    fetchCycleId: input.fetchCycleId,
-    ...(input.dirThreadId ? { dirThreadId: input.dirThreadId } : {}),
-    ...(input.agentThreadId ? { agentThreadId: input.agentThreadId } : {}),
+    accountId: input.accountId,
+    directorId: input.director,
+    agentId: input.agent,
+    conversationId: input.dirThreadId || input.agentThreadId,
   };
 }
 
@@ -64,8 +67,8 @@ export function normalizeError(e: any, detail?: any) {
   };
 }
 
-/** Callback used to emit orchestration diagnostic entries. */
-export type OrchLogger = (entry: OrchestrationDiagnosticEntry) => void;
+/** Callback used to emit orchestration events. */
+export type OrchLogger = (entry: OrchestrationEvent) => void;
 
 /**
  * Run an async tool operation with standardized diagnostics for start/success/error.
@@ -75,10 +78,16 @@ export async function withOrchToolLogging<TOutput = any>(
   logger: OrchLogger,
   base: OrchBaseInput,
   detail: any,
-  run: () => Promise<{ result?: OrchestrationDiagnosticEntry['result']; detail?: any; output?: TOutput } | void>
+  run: () => Promise<{ result?: OrchestrationOutcome['result']; detail?: any; output?: TOutput } | void>
 ): Promise<TOutput | void> {
-  const baseEntry = buildOrchBase(base);
-  logger({ ...baseEntry, detail: { ...detail, action: 'start' }, phase: 'tool' });
+  const baseEntry = buildOrchBase();
+  const context = buildOrchContext(base);
+  logger({ 
+    ...baseEntry, 
+    context,
+    outcome: { success: true, metrics: { ...detail, action: 'start' } },
+    phase: 'tool' 
+  });
   try {
     const out = await run();
     const result = (out as any)?.result ?? null;
@@ -86,17 +95,24 @@ export async function withOrchToolLogging<TOutput = any>(
     const output = (out as any)?.output as TOutput | undefined;
     logger({
       ...baseEntry,
-      detail: { ...detail, ...(extraDetail || {}), action: 'success' },
-      result,
+      context,
+      outcome: { 
+        success: true, 
+        result,
+        metrics: { ...detail, ...extraDetail, action: 'success' }
+      },
       phase: 'tool',
     });
     return output as any;
   } catch (e: any) {
     logger({
       ...baseEntry,
-      detail: { ...detail, action: 'error' },
-      result: null,
-      error: normalizeError(e),
+      context,
+      outcome: { 
+        success: false, 
+        error: normalizeError(e, detail),
+        metrics: { ...detail, action: 'error' }
+      },
       phase: 'tool',
     });
     throw e;

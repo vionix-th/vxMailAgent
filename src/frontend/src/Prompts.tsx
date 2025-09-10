@@ -7,7 +7,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import { useTranslation } from 'react-i18next';
 
-import { Prompt, PromptMessage } from '../../shared/types';
+import { Prompt, PromptMessage } from './types/shared';
 import TemplateEditDialog, { TemplateItem } from './TemplateEditDialog';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCookieState } from './hooks/useCookieState';

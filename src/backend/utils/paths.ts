@@ -140,6 +140,7 @@ export interface UserPaths {
   conversations: string;
   workspaceItems: string;
   memory: string;
+  emails: string;
   logs: {
     fetcher: string;
     orchestration: string;
@@ -175,6 +176,7 @@ export function userPaths(uid: string): UserPaths {
     conversations: path.join(root, 'conversations.json'),
     workspaceItems: path.join(root, 'workspaceItems.json'),
     memory: path.join(root, 'memory.json'),
+    emails: path.join(root, 'emails.json'),
     logs: {
       fetcher: path.join(logsDir, 'fetcher.json'),
       orchestration: path.join(logsDir, 'orchestration.json'),

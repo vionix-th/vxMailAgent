@@ -5,7 +5,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ScienceIcon from '@mui/icons-material/Science';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 
-import { Account } from '../../shared/types';
+import { Account } from './types/shared';
 import FetcherControl from './FetcherControl';
 import { useTranslation } from 'react-i18next';
 import { apiFetch, apiFetchWithResponse } from './utils/http';

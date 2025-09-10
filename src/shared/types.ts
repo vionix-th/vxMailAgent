@@ -14,7 +14,7 @@ export interface Director {
   id: string;
   name: string;
   agentIds: string[];
-  promptId?: string;
+  promptId: string;
   apiConfigId: string;
   enabledToolCalls?: string[];
 }
@@ -95,48 +95,51 @@ export interface OrchestrationResult {
   toolCallResult?: ToolCallResult;
 }
 
-/** Workspace item (MIME-first, unrestricted). */
-export interface WorkspaceItem {
-  id: string;
-  label?: string;
-  description?: string;
-  mimeType?: string;
-  encoding?: 'utf8' | 'base64' | 'binary';
-  data?: string;
-  tags?: string[];
-  created: string;
-  updated: string;
-  revision?: number;
-  /** Soft delete marker; item remains addressable but hidden by default. */
-  deleted?: boolean;
-  /** Required provenance context. */
-  context: {
-    email: { id: string; subject?: string; from?: string; date?: string };
-    director: { id: string; name?: string };
-    agent?: { id?: string; name?: string };
-    createdBy: 'director' | 'agent' | 'tool';
-    agentId?: string;
-    tool?: ToolCallKind | string;
-    conversationId?: string;
-  };
+/** Workspace content data. */
+export interface WorkspaceContent {
+  mimeType: string;
+  encoding: 'utf8' | 'base64' | 'binary';
+  data: string;
 }
 
-/** Input shape for creating/updating workspace items via REST. */
-export interface WorkspaceItemInput {
+/** Workspace metadata. */
+export interface WorkspaceMetadata {
   label?: string;
   description?: string;
-  mimeType?: string;
-  encoding?: 'utf8' | 'base64' | 'binary';
-  data?: string;
-  tags?: string[];
-  /** Optional write-time context snapshot; if provided, persisted as-is. */
-  context?: {
-    email: { id: string; subject?: string; from?: string; date?: string };
-    director: { id: string; name?: string };
-    agent?: { id?: string; name?: string };
-  };
-  /** Optional provenance override; defaults applied by backend if omitted. */
-  provenance?: { by: 'director' | 'agent' | 'tool'; agentId?: string; tool?: ToolCallKind | string; conversationId?: string };
+  tags: string[];
+}
+
+/** Workspace provenance (reference-only). */
+export interface WorkspaceProvenance {
+  emailId: string;
+  conversationId: string;
+  createdBy: 'director' | 'agent' | 'tool';
+  creatorId: string;
+  toolName?: string;
+}
+
+/** Workspace lifecycle management. */
+export interface WorkspaceLifecycle {
+  created: string;
+  updated: string;
+  revision: number;
+  deleted: boolean;
+}
+
+/** Workspace item (decomposed responsibilities). */
+export interface WorkspaceItem {
+  id: string;
+  content: WorkspaceContent;
+  metadata: WorkspaceMetadata;
+  provenance: WorkspaceProvenance;
+  lifecycle: WorkspaceLifecycle;
+}
+
+/** Input shape for creating workspace items via REST. */
+export interface WorkspaceItemInput {
+  content: WorkspaceContent;
+  metadata: Omit<WorkspaceMetadata, 'tags'> & { tags?: string[] };
+  provenance: WorkspaceProvenance;
 }
 
 /** Generic file attachment. */
@@ -154,12 +157,12 @@ export interface EmailEnvelope {
   subject: string;
   from: string;
   /** Comma-separated recipients (normalized string). */
-  to?: string;
+  to: string;
   /** Comma-separated recipients (normalized string). */
   cc?: string;
   /** Comma-separated recipients (normalized string). */
   bcc?: string;
-  date?: string;
+  date: string;
   snippet?: string;
   bodyPlain?: string;
   bodyHtml?: string;
@@ -180,47 +183,40 @@ export interface Reply {
   attachments?: Attachment[];
 }
 
-/** Diagnostic entry for orchestration (separate from results). */
-export interface OrchestrationDiagnosticEntry {
-  id?: string;
-  timestamp: string;
-  director: string;
-  directorName?: string;
-  agent?: string;
-  agentName?: string;
-  emailSummary: string;
+/** Orchestration context (reference-only). */
+export interface OrchestrationContext {
+  fetchCycleId: string;
   emailId: string;
   accountId?: string;
-  email?: EmailEnvelope;
-  result?: OrchestrationResult | null;
-  error?: any;
-  detail?: any;
-  fetchCycleId: string;
-  dirThreadId?: string;
-  agentThreadId?: string;
-  phase?: 'director' | 'agent' | 'tool' | 'result';
+  directorId: string;
+  agentId?: string;
+  conversationId?: string;
 }
 
-/** Result entry for orchestration outcomes. */
-export interface OrchestrationResultEntry {
-  timestamp: string;
-  director: string;
-  directorName?: string;
-  agent?: string;
-  agentName?: string;
-  emailSummary: string;
-  emailId: string;
-  accountId?: string;
-  email?: EmailEnvelope;
-  result: OrchestrationResult;
+/** Orchestration outcome. */
+export interface OrchestrationOutcome {
+  success: boolean;
+  result?: OrchestrationResult;
   error?: any;
+  metrics?: Record<string, any>;
 }
+
+/** Orchestration event (separated concerns). */
+export interface OrchestrationEvent {
+  id: string;
+  timestamp: string;
+  phase: 'director' | 'agent' | 'tool' | 'result';
+  context: OrchestrationContext;
+  outcome: OrchestrationOutcome;
+}
+
+
 
 /** Fetcher log entries (persistent, structured). */
 export type FetcherLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface FetcherLogEntry {
-  id?: string;                       // assigned for deletion targeting
+  id: string;                          // assigned for deletion targeting
   timestamp: string;                   // ISO timestamp
   level: FetcherLogLevel;              // severity
   provider?: AccountProvider;          // 'gmail' | 'outlook'
@@ -237,15 +233,15 @@ export interface Agent {
   id: string;
   name: string;
   type: AgentType;
-  promptId?: string;
+  promptId: string;
   apiConfigId: string;
   enabledToolCalls?: string[];
 }
 
 /** Chat message used in prompts and transcripts. */
 export interface PromptMessage {
-  /** Stable identifier used by editors (optional). */
-  id?: string;
+  /** Stable identifier used by editors. */
+  id: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
   name?: string;
@@ -307,8 +303,8 @@ export interface User {
   /** Stable app user id (e.g., `google:{sub}`) */
   id: string;
   email: string;
-  name?: string;
-  picture?: string;
+  name: string;
+  picture: string;
   createdAt: string;
   lastLoginAt: string;
 }
@@ -332,39 +328,54 @@ export interface MemoryEntry {
   updated: string;
   tags?: string[];
   relatedEmailId?: string;
-  owner?: string; // user, agent, or director id
+  owner: string; // user, agent, or director id
   metadata?: Record<string, any>;
 }
 
 /** Conversation status values. */
 export type ConversationStatus = 'ongoing' | 'completed' | 'failed';
 
-/** Canonical conversation thread (Director or Agent). */
-export interface ConversationThread {
+/** Base conversation thread properties. */
+export interface BaseConversationThread {
   id: string;
-  kind: 'director' | 'agent';
-  /** For agent threads, link to parent director thread id. */
-  parentId?: string;
-  directorId: string;
-  agentId?: string;
-  /** Optional correlation to a unified diagnostics Trace. */
-  traceId?: string;
   email: EmailEnvelope;
   promptId: string;
   apiConfigId: string;
   startedAt: string;
-  endedAt?: string;
-  status: ConversationStatus;
-  /** Last activity timestamp. */
-  lastActiveAt?: string;
+  lastActiveAt: string;
+  /** Optional correlation to a unified diagnostics Trace. */
+  traceId?: string;
   /** OpenAI-aligned transcript of the conversation. */
   messages: PromptMessage[];
-  /** Terminal result, if any. */
-  result?: OrchestrationResult;
-  /** Accumulated errors during processing. */
-  errors?: any[];
   provider?: 'openai';
 }
+
+/** Director conversation thread. */
+export interface DirectorThread extends BaseConversationThread {
+  kind: 'director';
+  parentId: null;
+  directorId: string;
+  agentId: null;
+  status: ConversationStatus;
+  endedAt: string | null;
+  result?: OrchestrationResult;
+  errors?: any[];
+}
+
+/** Agent conversation thread. */
+export interface AgentThread extends BaseConversationThread {
+  kind: 'agent';
+  parentId: string;
+  directorId: string;
+  agentId: string;
+  status: ConversationStatus;
+  endedAt: string | null;
+  result?: OrchestrationResult;
+  errors?: any[];
+}
+
+/** Canonical conversation thread (Director or Agent). */
+export type ConversationThread = DirectorThread | AgentThread;
 
 /** Provider event kinds. */
 export type ProviderEventType = 'request' | 'response' | 'error';

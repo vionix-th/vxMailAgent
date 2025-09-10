@@ -14,7 +14,7 @@ import ChatPlayground from './ChatPlayground';
 import AgentsPanel from './Agents';
 import { useCrudResource } from './hooks/useCrudResource';
 import { randomId } from './utils/randomId';
-import { Prompt } from '../../shared/types';
+import { Prompt } from './types/shared';
 import { apiFetch } from './utils/http';
 
 interface Director {

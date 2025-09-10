@@ -2,7 +2,7 @@ import fs from 'fs';
 import logger from '../services/logger';
 import * as persistence from '../persistence';
 import { Repository } from './core';
-import { ProviderEvent, Trace, FetcherLogEntry, OrchestrationDiagnosticEntry } from '../../shared/types';
+import { ProviderEvent, Trace, FetcherLogEntry, OrchestrationEvent } from '../../shared/types';
 import { TRACE_TTL_DAYS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_DAYS, ORCHESTRATION_TTL_DAYS } from '../config';
 import { securityAudit } from '../services/security-audit';
 import { SecurityError, RepositoryError } from '../services/error-handler';
@@ -275,13 +275,13 @@ export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> 
   }
 }
 
-/** Repository interface for orchestration diagnostics log. */
-export interface OrchestrationLogRepository extends Repository<OrchestrationDiagnosticEntry> {
-  append(e: OrchestrationDiagnosticEntry): Promise<void>;
+/** Repository interface for orchestration events log. */
+export interface OrchestrationLogRepository extends Repository<OrchestrationEvent> {
+  append(e: OrchestrationEvent): Promise<void>;
 }
 
-/** Orchestration diagnostics repository with TTL + cap pruning. */
-export class FileOrchestrationLogRepository extends PrunableFileRepo<OrchestrationDiagnosticEntry> implements OrchestrationLogRepository {
+/** Orchestration events repository with TTL + cap pruning. */
+export class FileOrchestrationLogRepository extends PrunableFileRepo<OrchestrationEvent> implements OrchestrationLogRepository {
   constructor(
     filePath: string,
     uid: string,
@@ -294,10 +294,10 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
     });
   }
 
-  async getAll(): Promise<OrchestrationDiagnosticEntry[]> {
+  async getAll(): Promise<OrchestrationEvent[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationDiagnosticEntry[]);
+        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationEvent[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
         return data;
@@ -313,7 +313,7 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
   }
 
   /** Internal write that assumes caller coordinates locking. */
-  private async writeAllUnlocked(next: OrchestrationDiagnosticEntry[]): Promise<void> {
+  private async writeAllUnlocked(next: OrchestrationEvent[]): Promise<void> {
     const pruned = this.pruneList(next);
     try {
       await persistence.encryptAndPersist(pruned, this.filePath, this.containerPath);
@@ -327,13 +327,13 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
     }
   }
 
-  async setAll(next: OrchestrationDiagnosticEntry[]): Promise<void> {
+  async setAll(next: OrchestrationEvent[]): Promise<void> {
     await withFileLock(this.filePath, async () => {
       await this.writeAllUnlocked(next);
     });
   }
 
-  async append(e: OrchestrationDiagnosticEntry): Promise<void> {
+  async append(e: OrchestrationEvent): Promise<void> {
     await withFileLock(this.filePath, async () => {
       const list = await this.getAll();
       list.push(e);

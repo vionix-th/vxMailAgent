@@ -1,4 +1,4 @@
-import { OrchestrationDiagnosticEntry, ProviderEvent, Trace, Span } from '../../shared/types';
+import { OrchestrationEvent, ProviderEvent, Trace, Span } from '../../shared/types';
 import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS, TRACE_VERBOSE } from '../config';
 import { newId } from '../utils/id';
 import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
@@ -42,8 +42,8 @@ function getTracesRepo(req?: ReqLike): TracesRepository {
   return requireUserRepo(ureq, 'traces');
 }
 
-/** Append an orchestration diagnostic entry to the log. */
-export function logOrch(e: OrchestrationDiagnosticEntry, req?: ReqLike): void {
+/** Append an orchestration event to the log. */
+export function logOrch(e: OrchestrationEvent, req?: ReqLike): void {
   const repo = getOrchRepo(req);
   // best-effort persistence; do not block callers
   enqueue(async () => {
@@ -60,14 +60,14 @@ export function logProviderEvent(e: ProviderEvent, req?: ReqLike): void {
   enqueue(() => repo.append(e), 'logProviderEvent');
 }
 
-/** Retrieve all orchestration diagnostic entries. */
-export function getOrchestrationLog(req?: ReqLike): Promise<OrchestrationDiagnosticEntry[]> {
+/** Retrieve all orchestration events. */
+export function getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]> {
   const repo = getOrchRepo(req);
   return repo.getAll();
 }
 
-/** Replace the orchestration diagnostic log with the provided list. */
-export function setOrchestrationLog(next: OrchestrationDiagnosticEntry[], req?: ReqLike): void {
+/** Replace the orchestration event log with the provided list. */
+export function setOrchestrationLog(next: OrchestrationEvent[], req?: ReqLike): void {
   const repo = getOrchRepo(req);
   // best-effort persistence
   enqueue(() => repo.setAll(next), 'setOrchestrationLog');

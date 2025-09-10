@@ -1,5 +1,5 @@
 import express from 'express';
-import { OrchestrationDiagnosticEntry, ConversationThread, ProviderEvent, Trace } from '../../shared/types';
+import { OrchestrationEvent, ConversationThread, ProviderEvent, Trace } from '../../shared/types';
 import { ReqLike } from '../utils/repo-access';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 
@@ -15,7 +15,7 @@ export interface DiagnosticNode {
   metadata?: any;
   children?: DiagnosticNode[];
   // Raw data for detail view
-  orchestrationEntry?: OrchestrationDiagnosticEntry;
+  orchestrationEntry?: OrchestrationEvent;
   conversation?: ConversationThread;
   providerEvent?: ProviderEvent;
   trace?: Trace;
@@ -51,26 +51,25 @@ interface DirectorConversationData {
   directorName: string;
   agentConversations: ConversationThread[];
   providerEvents: ProviderEvent[];
-  orchestrationEntries: OrchestrationDiagnosticEntry[];
+  orchestrationEntries: OrchestrationEvent[];
 }
 
 /** Group orchestration entries by fetch cycle and email. */
 function groupOrchestrationData(
-  orchestrationEntries: OrchestrationDiagnosticEntry[]
+  orchestrationEntries: OrchestrationEvent[]
 ): Map<string, FetchCycleData> {
   const fetchCycles = new Map<string, FetchCycleData>();
 
   for (const entry of orchestrationEntries) {
-    if (!entry.fetchCycleId) {
+    if (!entry.context.fetchCycleId) {
       throw new ValidationError('Missing fetchCycleId in orchestration entry');
     }
-    const cycleId = entry.fetchCycleId;
-    const emailObj = entry.email as any;
-    if (!emailObj || !emailObj.id) {
-      throw new ValidationError('Missing email.id in orchestration entry');
+    const cycleId = entry.context.fetchCycleId;
+    const emailId = entry.context.emailId;
+    if (!emailId) {
+      throw new ValidationError('Missing emailId in orchestration entry');
     }
-    const emailId = String(emailObj.id);
-    const directorId = entry.director;
+    const directorId = entry.context.directorId;
 
     if (!fetchCycles.has(cycleId)) {
       fetchCycles.set(cycleId, {
@@ -84,25 +83,24 @@ function groupOrchestrationData(
     if (!cycle.emails.has(emailId)) {
       cycle.emails.set(emailId, {
         id: emailId,
-        subject: String(emailObj.subject ?? ''),
+        subject: '',
         directorConversations: new Map()
       });
     }
 
     const email = cycle.emails.get(emailId)!;
 
-    if (directorId && entry.dirThreadId) {
-      if (!email.directorConversations.has(entry.dirThreadId)) {
-        email.directorConversations.set(entry.dirThreadId, {
-          conversation: {} as ConversationThread,
+    if (directorId && entry.context.conversationId) {
+      if (!email.directorConversations.has(entry.context.conversationId)) {
+        email.directorConversations.set(entry.context.conversationId, {
+          conversation: null as any,
           directorName: directorId,
           agentConversations: [],
           providerEvents: [],
           orchestrationEntries: []
         });
       }
-      
-      email.directorConversations.get(entry.dirThreadId)!.orchestrationEntries.push(entry);
+      email.directorConversations.get(entry.context.conversationId)!.orchestrationEntries.push(entry);
     }
   }
   
@@ -125,10 +123,6 @@ function associateConversations(
           for (const [dirThreadId, dirConv] of email.directorConversations) {
             if (conversationId === dirThreadId) {
               dirConv.conversation = conversation;
-              if (!email.subject) {
-                const subj = (conversation as any)?.email?.subject;
-                if (subj && typeof subj === 'string') email.subject = subj;
-              }
             }
           }
         }
@@ -171,7 +165,7 @@ function associateProviderEvents(
 }
 
 function buildHierarchicalTree(
-  orchestrationEntries: OrchestrationDiagnosticEntry[],
+  orchestrationEntries: OrchestrationEvent[],
   conversations: ConversationThread[],
   providerEvents: ProviderEvent[],
   _traces: Trace[]
@@ -331,13 +325,13 @@ export default function registerUnifiedDiagnosticsRoutes(
       totalEmails: tree.reduce((sum, cycle) => 
         sum + (cycle.children?.reduce((emailSum, account) => 
           emailSum + (account.children?.length || 0), 0) || 0), 0),
-      totalDirectors: orchestrationEntries.reduce((set, entry) => 
-        set.add(entry.director), new Set()).size,
-      totalAgents: orchestrationEntries.reduce((set, entry) => 
-        set.add(entry.agent), new Set()).size,
+      totalDirectors: orchestrationEntries.reduce((set, entry) =>
+        set.add(entry.context.directorId), new Set()).size,
+      totalAgents: orchestrationEntries.reduce((set, entry) =>
+        set.add(entry.context.agentId), new Set()).size,
       totalConversations: conversations.length,
       totalProviderEvents: providerEvents.length,
-      totalErrors: orchestrationEntries.filter(e => e.error).length
+      totalErrors: orchestrationEntries.filter(e => !e.outcome.success).length
     };
 
     const response: UnifiedDiagnosticsResponse = { tree, summary };

@@ -1,4 +1,5 @@
 import { PromptMessage } from '../../shared/types';
+import { newId } from './id';
 
 /**
  * Transform conversation messages for engine consumption.
@@ -22,6 +23,7 @@ export function createToolResponseMessage(
   content: string | object
 ): PromptMessage {
   return {
+    id: newId(),
     role: 'tool',
     tool_call_id: toolCallId,
     content: typeof content === 'string' ? content : JSON.stringify(content)
@@ -36,9 +38,22 @@ export function createToolErrorMessage(
   error: string
 ): PromptMessage {
   return {
+    id: newId(),
     role: 'tool',
     tool_call_id: toolCallId,
     content: `Error: ${error}`
+  };
+}
+
+/**
+ * Create a standardized result message for tool calls.
+ */
+export function createToolResultMessage(toolCallId: string, result: any): PromptMessage {
+  return {
+    id: newId(),
+    role: 'tool',
+    tool_call_id: toolCallId,
+    content: JSON.stringify(result)
   };
 }
 

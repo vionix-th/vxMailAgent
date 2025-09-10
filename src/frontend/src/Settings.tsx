@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-import { ApiConfig } from '../../shared/types';
+import { ApiConfig } from './types/shared';
 import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats } from './utils/api';
 import log from './utils/log';
 import { apiFetch } from './utils/http';
