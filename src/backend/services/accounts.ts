@@ -1,10 +1,9 @@
 import https from 'https';
 import logger from './logger';
 import { ValidationError } from './error-handler';
-import { getGoogleOAuthConfig, getOutlookOAuthConfig, JWT_SECRET } from '../config';
-import { signJwt, verifyJwt } from '../utils/jwt';
-import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleUserInfo, ensureValidGoogleAccessToken } from '../oauth/google';
-import { buildOutlookAuthUrl, exchangeOutlookCode, getOutlookUserInfo, ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outlook';
+import { getGoogleOAuthConfig, getOutlookOAuthConfig } from '../config';
+import { ensureValidGoogleAccessToken } from '../oauth/google';
+import { ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outlook';
 import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
 import type { ReqLike } from '../interfaces';
 import type { Account } from '../../shared/types';
@@ -80,81 +79,7 @@ export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeS
   return resp;
 }
 
-// OAuth initiation
-export function initiateGoogleAccountOAuth(rawState: string): string {
-  const signedState = signJwt({ p: 'google.account', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-  const cfg = getGoogleOAuthConfig();
-  return buildGoogleAuthUrl(cfg, signedState);
-}
-
-export async function initiateOutlookAccountOAuth(rawState: string): Promise<string> {
-  const signedState = signJwt({ p: 'outlook.account', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-  const cfg = getOutlookOAuthConfig();
-  return buildOutlookAuthUrl(cfg, signedState);
-}
-
-// OAuth callbacks
-export async function handleGoogleAccountCallback(code: string, stateToken: string, req: ReqLike): Promise<Account> {
-  const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
-  if (!payload || payload.p !== 'google.account') throw new Error('Invalid or expired state');
-  const cfg = getGoogleOAuthConfig();
-  const tokens = await exchangeGoogleCode(cfg, code);
-  const me = await getGoogleUserInfo(tokens.accessToken);
-  const email = me?.email || '';
-  if (!email) throw new Error('Google profile missing email address');
-  const account: Account = {
-    id: email,
-    provider: 'gmail',
-    email,
-    signature: '',
-    tokens: {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken || '',
-      expiry: tokens.expiryISO,
-    },
-  } as any;
-  await upsertAccount(req, account);
-  return account;
-}
-
-export async function handleOutlookAccountCallback(code: string, stateToken: string, req: ReqLike): Promise<Account> {
-  const payload = stateToken ? verifyJwt(stateToken, JWT_SECRET) : null;
-  if (!payload || payload.p !== 'outlook.account') throw new Error('Invalid or expired state');
-  const cfg = getOutlookOAuthConfig();
-  const tokens = await exchangeOutlookCode(cfg, code);
-  let email = '';
-  if (tokens?.raw?.id_token) {
-    try {
-      const parts = String(tokens.raw.id_token).split('.');
-      if (parts.length >= 2) {
-        const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-        email = payload.preferred_username || payload.email || '';
-      }
-    } catch (e: any) {
-      logger.warn('Failed to parse Outlook id_token payload', { error: e?.message || String(e) });
-    }
-  }
-  if (!email) {
-    const accessToken = tokens.accessToken || '';
-    if (!accessToken) throw new Error('Outlook profile missing email address');
-    const me = await getOutlookUserInfo(accessToken);
-    email = (me && (me.mail || (Array.isArray(me.otherMails) && me.otherMails[0]) || me.userPrincipalName)) || '';
-  }
-  if (!email) throw new Error('Outlook profile missing email address');
-  const account: Account = {
-    id: email,
-    provider: 'outlook',
-    email,
-    signature: '',
-    tokens: {
-      accessToken: tokens.accessToken || '',
-      refreshToken: tokens.refreshToken || '',
-      expiry: tokens.expiryISO,
-    },
-  } as any;
-  await upsertAccount(req, account);
-  return account;
-}
+// Legacy OAuth functions removed - now handled by auth/oidc/flows.ts
 
 // Refresh tokens and provider tests
 export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
@@ -188,10 +113,7 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
       const category = missing ? 'missing_refresh_token' : invalidGrant ? 'invalid_grant' : network ? 'network' : 'other';
       logger.error('Google refresh failed', { area: 'oauth', provider: 'google', op: 'refresh', accountId: id, email: account.email, category, error: errTxt });
       if (missing || invalidGrant) {
-        const rawState = `reauth:${id}`;
-        const signedState = signJwt({ p: 'google', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-        const url = buildGoogleAuthUrl(getGoogleOAuthConfig(), signedState);
-        return { ok: false, error: category, reauthUrl: url };
+        return { ok: false, error: category, reauthRequired: true };
       }
       return { ok: false, error: errTxt };
     }
@@ -216,10 +138,7 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
     } catch (e: any) {
       const errTxt = String(e?.message || e);
       if (/missing refresh token/i.test(errTxt) || /OAUTH_MISSING_REFRESH_TOKEN/i.test(errTxt)) {
-        const rawState = `reauth:${id}`;
-        const signedState = signJwt({ p: 'outlook', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-        const url = buildOutlookAuthUrl(getOutlookOAuthConfig(), signedState);
-        return { ok: false, error: 'missing_refresh_token', reauthUrl: url };
+        return { ok: false, error: 'missing_refresh_token', reauthRequired: true };
       }
       logger.error('Outlook refresh failed', { id, error: errTxt });
       return { ok: false, error: errTxt };
@@ -247,10 +166,7 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
   } catch (e: any) {
     const errTxt = String(e?.message || e);
     if (/missing refresh token/i.test(errTxt) || /OAUTH_MISSING_REFRESH_TOKEN/i.test(errTxt)) {
-      const rawState = `reauth:${id}`;
-      const signedState = signJwt({ p: 'outlook', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-      const url = buildOutlookAuthUrl(getOutlookOAuthConfig(), signedState);
-      return { ok: false, error: 'missing_refresh_token', reauthUrl: url };
+      return { ok: false, error: 'missing_refresh_token', reauthRequired: true };
     }
     throw new Error(errTxt);
   }
@@ -317,10 +233,7 @@ export async function gmailTest(req: ReqLike, id: string): Promise<any> {
     const category = missing ? 'missing_refresh_token' : invalidGrant ? 'invalid_grant' : network ? 'network' : 'other';
     logger.error('Gmail test failed', { area: 'oauth', provider: 'google', op: 'gmail-test', accountId: id, email: account.email, category, error: errTxt });
     if (missing || invalidGrant) {
-      const rawState = `reauth:${id}`;
-      const signedState = signJwt({ p: 'google', s: rawState, ts: Date.now() }, JWT_SECRET, { expiresInSec: 600 });
-      const url = buildGoogleAuthUrl(getGoogleOAuthConfig(), signedState);
-      return { ok: false, error: category, reauthUrl: url };
+      return { ok: false, error: category, reauthRequired: true };
     }
     throw new Error(errTxt);
   }

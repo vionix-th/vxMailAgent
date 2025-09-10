@@ -1,9 +1,10 @@
 import { Issuer, generators } from 'openid-client';
-import { getGoogleLoginOAuthConfigOrPrimary, isProd } from '../../config';
+import { getGoogleLoginOAuthConfigOrPrimary, getGoogleOAuthConfig, isProd } from '../../config';
 
 // Cached clients/issuers to avoid repeated discovery
 let googleIssuerPromise: Promise<any> | null = null;
 let googleLoginClientPromise: Promise<any> | null = null;
+let googleAccountClientPromise: Promise<any> | null = null;
 
 export async function getGoogleIssuer(): Promise<any> {
   if (!googleIssuerPromise) {
@@ -34,7 +35,7 @@ export function generateOidcLoginParams() {
   return { state, nonce, code_verifier } as const;
 }
 
-export function buildLoginCookie(payload: { state: string; nonce: string; code_verifier: string }): string {
+export function buildLoginCookie(payload: { state: string; nonce: string; code_verifier: string; rawState?: string }): string {
   // Minimal cookie builder to avoid importing cookie dep here. We can reuse 'cookie' module from utils if desired.
   // But routes will set this return string directly.
   const data = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
@@ -67,6 +68,21 @@ export function parseLoginCookie(cookieHeader?: string): { state: string; nonce:
   } catch {
     return null;
   }
+}
+
+export async function getGoogleAccountClient(): Promise<any> {
+  if (!googleAccountClientPromise) {
+    const issuer = await getGoogleIssuer();
+    const cfg = getGoogleOAuthConfig();
+    googleAccountClientPromise = Promise.resolve(new issuer.Client({
+      client_id: cfg.clientId,
+      client_secret: cfg.clientSecret,
+      redirect_uris: [cfg.redirectUri],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'client_secret_post',
+    }));
+  }
+  return await googleAccountClientPromise;
 }
 
 export function clearLoginCookie(): string {

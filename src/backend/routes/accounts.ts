@@ -11,13 +11,13 @@ import {
   updateAccount as svcUpdateAccount,
   deleteAccount as svcDeleteAccount,
   refreshAccount,
-  initiateGoogleAccountOAuth,
-  initiateOutlookAccountOAuth,
-  handleGoogleAccountCallback,
-  handleOutlookAccountCallback,
   gmailTest,
   outlookTest,
 } from '../services/accounts';
+import {
+  initiateGoogleAccountOAuth,
+  handleGoogleAccountCallback,
+} from '../auth/oidc/flows';
 
  // Redact sensitive token values before sending to clients.
  function sanitizeAccountForClient(a: Account): Account {
@@ -44,9 +44,10 @@ import {
 /** Register routes for managing accounts and tokens. */
 export default function registerAccountsRoutes(app: express.Express) {
   // OAuth (Connect account) - Google
-  app.get('/api/accounts/oauth/google/initiate', errorHandler.wrapAsync((req: express.Request, res: express.Response) => {
+  app.get('/api/accounts/oauth/google/initiate', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const rawState = String(req.query.state || '');
-    const url = initiateGoogleAccountOAuth(rawState);
+    const { url, loginCookie } = await initiateGoogleAccountOAuth(rawState);
+    res.setHeader('Set-Cookie', loginCookie);
     res.json({ url });
   }));
 
@@ -54,28 +55,17 @@ export default function registerAccountsRoutes(app: express.Express) {
     const code = String((req.query as any).code || '');
     const stateToken = String((req.query as any).state || '');
     if (!code) throw new ValidationError('Missing code');
-    await handleGoogleAccountCallback(code, stateToken, req as ReqLike);
+    const cookieHeader = typeof req.headers['cookie'] === 'string' ? req.headers['cookie'] : undefined;
+    logger.info('Google account callback received', { code: code ? 'present' : 'missing', state: stateToken ? 'present' : 'missing' });
+    const account = await handleGoogleAccountCallback(code, stateToken, cookieHeader, req as ReqLike);
+    logger.info('Google account callback completed', { accountId: account.id, email: account.email });
     const origin = (CORS_ORIGIN && CORS_ORIGIN !== '*') ? CORS_ORIGIN : '';
     const location = origin || '/';
     res.redirect(location);
   }));
 
-  // OAuth (Connect account) - Outlook
-  app.get('/api/accounts/oauth/outlook/initiate', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const rawState = String(req.query.state || '');
-    const url = await initiateOutlookAccountOAuth(rawState);
-    res.json({ url });
-  }));
-
-  app.get('/api/accounts/oauth/outlook/callback', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const code = String((req.query as any).code || '');
-    const stateToken = String((req.query as any).state || '');
-    if (!code) throw new ValidationError('Missing code');
-    await handleOutlookAccountCallback(code, stateToken, req as ReqLike);
-    const origin = (CORS_ORIGIN && CORS_ORIGIN !== '*') ? CORS_ORIGIN : '';
-    const location = origin || '/';
-    res.redirect(location);
-  }));
+  // OAuth (Connect account) - Outlook - DISABLED: Legacy implementation removed
+  // TODO: Implement Outlook account onboarding using OIDC+PKCE pattern
 
   app.get('/api/accounts', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
