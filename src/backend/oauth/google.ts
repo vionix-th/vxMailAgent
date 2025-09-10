@@ -1,7 +1,7 @@
-import { OAuthProviderConfig, OAuthTokens, computeExpiryISO, postForm } from './common';
+import type { OAuthProviderConfig, OAuthTokens } from './common';
 import { OAuthError } from '../services/error-handler';
 import { request as httpsRequest } from 'https';
-import { google } from 'googleapis';
+import * as oidc from 'openid-client';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
@@ -12,69 +12,71 @@ const SCOPES = [
   'profile',
 ];
 
-// Provide an OAuth2 client for Google APIs consumers (e.g., Gmail provider)
-export function getGoogleOAuth2Client(clientId: string, clientSecret: string) {
-  return new google.auth.OAuth2(clientId, clientSecret);
+// openid-client Issuer/Client cache
+let googleIssuerPromise: Promise<any> | null = null;
+let googleClientPromise: Promise<any> | null = null;
+
+async function getIssuer() {
+  if (!googleIssuerPromise) {
+    const Issuer: any = (oidc as any).Issuer;
+    googleIssuerPromise = Issuer.discover('https://accounts.google.com');
+  }
+  return await googleIssuerPromise;
+}
+
+async function getClient(cfg: OAuthProviderConfig) {
+  if (!googleClientPromise) {
+    const issuer = await getIssuer();
+    googleClientPromise = Promise.resolve(new issuer.Client({
+      client_id: cfg.clientId,
+      client_secret: cfg.clientSecret,
+      redirect_uris: [cfg.redirectUri],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'client_secret_post',
+    }));
+  }
+  return await googleClientPromise;
 }
 
 export function buildGoogleAuthUrl(cfg: OAuthProviderConfig, state: string): string {
-  const base = 'https://accounts.google.com/o/oauth2/v2/auth';
-  const params = new URLSearchParams({
-    client_id: cfg.clientId,
+  // Build an authorization URL using openid-client
+  // Note: openid-client client instance depends on cfg; but URL generation does not require network.
+  const params: Record<string, string> = {
     redirect_uri: cfg.redirectUri,
-    response_type: 'code',
     scope: SCOPES.join(' '),
     access_type: 'offline',
     include_granted_scopes: 'true',
     prompt: 'consent',
+    response_type: 'code',
     state,
-  });
-  return `${base}?${params.toString()}`;
+  } as const;
+  // Construct manually to avoid awaiting discovery on hot path
+  const base = 'https://accounts.google.com/o/oauth2/v2/auth';
+  const usp = new URLSearchParams(params);
+  return `${base}?${usp.toString()}`;
 }
 
 export async function exchangeGoogleCode(cfg: OAuthProviderConfig, code: string): Promise<OAuthTokens> {
-  const tokenUrl = 'https://oauth2.googleapis.com/token';
-  const json = await postForm<any>(tokenUrl, {
-    client_id: cfg.clientId,
-    client_secret: cfg.clientSecret,
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: cfg.redirectUri,
-  });
-  
-  if (!json.access_token) {
-    throw new OAuthError('No access token in Google response', 'OAUTH_NO_ACCESS_TOKEN', 502);
-  }
-  
-  const accessToken = String(json.access_token);
-  const refreshToken = json.refresh_token ? String(json.refresh_token) : undefined;
-  const expiryISO = typeof json.expires_in === 'number' ? computeExpiryISO(json.expires_in) : computeExpiryISO();
-  
-  if (!refreshToken) {
-    throw new OAuthError('No refresh token in Google response', 'OAUTH_NO_REFRESH_TOKEN', 502);
-  }
-  
-  return { accessToken, refreshToken, expiryISO, raw: json };
+  const client = await getClient(cfg);
+  const tokenSet = await client.callback(cfg.redirectUri, { code }, {});
+  const accessToken = String(tokenSet.access_token || '');
+  const refreshToken = tokenSet.refresh_token ? String(tokenSet.refresh_token) : undefined;
+  const expiresIn = (tokenSet.expires_in && typeof tokenSet.expires_in === 'number') ? tokenSet.expires_in : undefined;
+  const expiryISO = new Date(Date.now() + (expiresIn ? expiresIn : 55 * 60) * 1000).toISOString();
+  if (!accessToken) throw new OAuthError('No access token in Google response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  if (!refreshToken) throw new OAuthError('No refresh token in Google response', 'OAUTH_NO_REFRESH_TOKEN', 502);
+  return { accessToken, refreshToken, expiryISO, raw: tokenSet }; 
 }
 
 export async function refreshGoogleToken(cfg: OAuthProviderConfig, refreshToken: string): Promise<OAuthTokens> {
-  const tokenUrl = 'https://oauth2.googleapis.com/token';
-  const json = await postForm<any>(tokenUrl, {
-    client_id: cfg.clientId,
-    client_secret: cfg.clientSecret,
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-  });
-  
-  if (!json.access_token) {
-    throw new OAuthError('No access token in Google refresh response', 'OAUTH_NO_ACCESS_TOKEN', 502);
-  }
-  
-  const accessToken = String(json.access_token);
-  const newRefresh = json.refresh_token ? String(json.refresh_token) : undefined;
-  const expiryISO = typeof json.expires_in === 'number' ? computeExpiryISO(json.expires_in) : computeExpiryISO();
-  
-  return { accessToken, refreshToken: newRefresh || refreshToken, expiryISO, raw: json };
+  const client = await getClient(cfg);
+  const tokenSet = await client.refresh(refreshToken);
+  const accessToken = String(tokenSet.access_token || '');
+  if (!accessToken) throw new OAuthError('No access token in Google refresh response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  const newRefresh = tokenSet.refresh_token ? String(tokenSet.refresh_token) : undefined;
+  const expiresIn = (tokenSet.expires_in && typeof tokenSet.expires_in === 'number') ? tokenSet.expires_in : undefined;
+  const expiryISO = new Date(Date.now() + (expiresIn ? expiresIn : 55 * 60) * 1000).toISOString();
+  return { accessToken, refreshToken: newRefresh || refreshToken, expiryISO, raw: tokenSet };
 }
 
 /** Check if access token needs refresh based on expiry time. */
@@ -115,32 +117,11 @@ export async function ensureValidGoogleAccessToken(
 
 // Fetch Google OIDC userinfo using the access token
 export async function getGoogleUserInfo(accessToken: string): Promise<any> {
-  return await new Promise((resolve, reject) => {
-    const req = httpsRequest(
-      {
-        method: 'GET',
-        hostname: 'www.googleapis.com',
-        path: '/oauth2/v2/userinfo',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (d) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
-        res.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
-          try {
-            const json = text ? JSON.parse(text) : {};
-            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) resolve(json);
-            else reject(new Error(`HTTP ${res.statusCode} ${res.statusMessage}: ${text}`));
-          } catch (e) {
-            reject(new Error(`Invalid JSON from Google: ${text}`));
-          }
-        });
-      }
-    );
-    req.on('error', (err) => reject(err));
-    req.end();
-  });
+  // Use openid-client userinfo endpoint for profile
+  const issuer = await getIssuer();
+  // Build a transient client without secrets for userinfo
+  const client = new issuer.Client({ client_id: 'anonymous' } as any);
+  return await client.userinfo(accessToken);
 }
 
 // Revoke a Google token (access or refresh) per RFC7009

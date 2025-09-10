@@ -1,7 +1,7 @@
 import type { Account, EmailEnvelope } from '../../../shared/types';
 import type { IMailProvider, FetchOptions } from './base';
 import { getGoogleOAuthConfig } from '../../config';
-import { ensureValidGoogleAccessToken, getGoogleOAuth2Client } from '../../oauth/google';
+import { ensureValidGoogleAccessToken } from '../../oauth/google';
 import { google } from 'googleapis';
 
 export const gmailProvider: IMailProvider = {
@@ -22,10 +22,7 @@ export const gmailProvider: IMailProvider = {
     const q = unread ? 'is:unread' : '';
 
     const cfg = getGoogleOAuthConfig();
-    const oauth2Client = getGoogleOAuth2Client(
-      cfg.clientId,
-      cfg.clientSecret
-    );
+    const oauth2Client = new google.auth.OAuth2(cfg.clientId, cfg.clientSecret);
     oauth2Client.setCredentials({ access_token: account.tokens.accessToken });
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 

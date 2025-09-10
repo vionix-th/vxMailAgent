@@ -1,7 +1,8 @@
-import { OAuthProviderConfig, OAuthTokens, computeExpiryISO, postForm } from './common';
+import type { OAuthProviderConfig, OAuthTokens } from './common';
 import { OAuthError } from '../services/error-handler';
 import { graphRequest } from '../utils/graph';
 import { request as httpsRequest } from 'https';
+import * as oidc from 'openid-client';
 
 const SCOPES = [
   'openid',
@@ -22,50 +23,53 @@ export function buildOutlookAuthUrl(cfg: OAuthProviderConfig, state: string): st
   return url;
 }
 
+let msIssuerPromise: Promise<any> | null = null;
+let msClientPromise: Promise<any> | null = null;
+
+async function getMsIssuer() {
+  if (!msIssuerPromise) {
+    const Issuer: any = (oidc as any).Issuer;
+    // v2.0 endpoint for Microsoft Identity Platform
+    msIssuerPromise = Issuer.discover('https://login.microsoftonline.com/common/v2.0');
+  }
+  return await msIssuerPromise;
+}
+
+async function getMsClient(cfg: OAuthProviderConfig) {
+  if (!msClientPromise) {
+    const issuer = await getMsIssuer();
+    msClientPromise = Promise.resolve(new issuer.Client({
+      client_id: cfg.clientId,
+      client_secret: cfg.clientSecret,
+      redirect_uris: [cfg.redirectUri],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'client_secret_post',
+    }));
+  }
+  return await msClientPromise;
+}
+
 export async function exchangeOutlookCode(cfg: OAuthProviderConfig, code: string): Promise<OAuthTokens> {
-  const tokenUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
-  const json = await postForm<any>(tokenUrl, {
-    client_id: cfg.clientId,
-    client_secret: cfg.clientSecret,
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: cfg.redirectUri,
-    scope: SCOPES.join(' '),
-  });
-  
-  if (!json.access_token) {
-    throw new OAuthError('No access token in Outlook response', 'OAUTH_NO_ACCESS_TOKEN', 502);
-  }
-  
-  const accessToken = String(json.access_token);
-  const refreshToken = json.refresh_token ? String(json.refresh_token) : undefined;
-  const expiryISO = typeof json.expires_in === 'number' ? computeExpiryISO(json.expires_in) : computeExpiryISO();
-  
-  if (!refreshToken) {
-    throw new OAuthError('No refresh token in Outlook response', 'OAUTH_NO_REFRESH_TOKEN', 502);
-  }
-  
-  return { accessToken, refreshToken, expiryISO, raw: json };
+  const client = await getMsClient(cfg);
+  const tokenSet = await client.callback(cfg.redirectUri, { code }, {});
+  const accessToken = String(tokenSet.access_token || '');
+  const refreshToken = tokenSet.refresh_token ? String(tokenSet.refresh_token) : undefined;
+  const expiresIn = (tokenSet.expires_in && typeof tokenSet.expires_in === 'number') ? tokenSet.expires_in : undefined;
+  const expiryISO = new Date(Date.now() + (expiresIn ? expiresIn : 55 * 60) * 1000).toISOString();
+  if (!accessToken) throw new OAuthError('No access token in Outlook response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  if (!refreshToken) throw new OAuthError('No refresh token in Outlook response', 'OAUTH_NO_REFRESH_TOKEN', 502);
+  return { accessToken, refreshToken, expiryISO, raw: tokenSet };
 }
 
 export async function refreshOutlookToken(cfg: OAuthProviderConfig, refreshToken: string): Promise<OAuthTokens> {
-  const tokenUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
-  const json = await postForm<any>(tokenUrl, {
-    client_id: cfg.clientId,
-    client_secret: cfg.clientSecret,
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-  });
-  
-  if (!json.access_token) {
-    throw new OAuthError('No access token in Outlook refresh response', 'OAUTH_NO_ACCESS_TOKEN', 502);
-  }
-  
-  const accessToken = String(json.access_token);
-  const newRefreshToken = json.refresh_token ? String(json.refresh_token) : undefined;
-  const expiryISO = computeExpiryISO(typeof json.expires_in === 'number' ? json.expires_in : undefined);
-  
-  return { accessToken, refreshToken: newRefreshToken || refreshToken, expiryISO, raw: json };
+  const client = await getMsClient(cfg);
+  const tokenSet = await client.refresh(refreshToken);
+  const accessToken = String(tokenSet.access_token || '');
+  if (!accessToken) throw new OAuthError('No access token in Outlook refresh response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  const newRefreshToken = tokenSet.refresh_token ? String(tokenSet.refresh_token) : undefined;
+  const expiresIn = (tokenSet.expires_in && typeof tokenSet.expires_in === 'number') ? tokenSet.expires_in : undefined;
+  const expiryISO = new Date(Date.now() + (expiresIn ? expiresIn : 55 * 60) * 1000).toISOString();
+  return { accessToken, refreshToken: newRefreshToken || refreshToken, expiryISO, raw: tokenSet };
 }
 
 /** Check if Outlook access token needs refresh based on expiry time. */
