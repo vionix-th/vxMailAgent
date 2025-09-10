@@ -19,7 +19,7 @@ function getOptionalIntEnv(key: string, defaultValue: number): number {
 // VX-only configuration
 export const VX_MAILAGENT_KEY = getOptionalEnv('VX_MAILAGENT_KEY', '');
 export const PORT: number = getOptionalIntEnv('PORT', 3001);
-export const HOST = getOptionalEnv('HOST', '172.0.0.1');
+export const HOST = getOptionalEnv('HOST', '0.0.0.0');
 export const CORS_ORIGIN = getOptionalEnv('CORS_ORIGIN', '*');
 export const isProd = getOptionalEnv('NODE_ENV', 'development') === 'production';
 // Feature flags
