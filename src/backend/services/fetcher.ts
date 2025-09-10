@@ -38,7 +38,7 @@ export function initFetcher(
 
   async function fetchEmails() {
     if (fetcherRunning) {
-      logFetch({ timestamp: new Date().toISOString(), level: 'warn', event: 'cycle_skip', message: 'Fetch cycle already running; skipping re-entry' });
+      void logFetch({ timestamp: new Date().toISOString(), level: 'warn', event: 'cycle_skip', message: 'Fetch cycle already running; skipping re-entry' });
       return;
     }
     fetcherRunning = true;
@@ -68,7 +68,7 @@ export function initFetcher(
       
       await emailFetcher.fetchEmails(fetchContext);
     } catch (e) {
-      logFetch({ timestamp: new Date().toISOString(), level: 'error', event: 'cycle_error', message: 'Error during fetch cycle', detail: String(e) });
+      void logFetch({ timestamp: new Date().toISOString(), level: 'error', event: 'cycle_error', message: 'Error during fetch cycle', detail: String(e) });
     } finally {
       fetcherRunning = false;
     }
@@ -79,7 +79,7 @@ export function initFetcher(
     fetcherActive = true;
     fetcherNextRun = new Date(Date.now() + 60000).toISOString();
     fetcherInterval = setInterval(() => void fetchEmails(), 60000);
-    logFetch({ timestamp: new Date().toISOString(), level: 'info', event: 'fetcher_started', message: 'Background fetcher loop started' });
+    void logFetch({ timestamp: new Date().toISOString(), level: 'info', event: 'fetcher_started', message: 'Background fetcher loop started' });
   }
 
   function stopFetcherLoop() {
@@ -87,7 +87,7 @@ export function initFetcher(
     fetcherNextRun = null;
     if (fetcherInterval) clearInterval(fetcherInterval);
     fetcherInterval = null;
-    logFetch({ timestamp: new Date().toISOString(), level: 'info', event: 'fetcher_stopped', message: 'Background fetcher loop stopped' });
+    void logFetch({ timestamp: new Date().toISOString(), level: 'info', event: 'fetcher_stopped', message: 'Background fetcher loop stopped' });
   }
 
   async function getFetcherLog(): Promise<FetcherLogEntry[]> {

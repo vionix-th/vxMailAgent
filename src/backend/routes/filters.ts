@@ -24,7 +24,6 @@ export default function registerFiltersRoutes(app: express.Express, repos: LiveR
           throw new Error(`Invalid filter field: ${filter.field}. Allowed fields: ${allowedFields.join(', ')}`);
         }
         try {
-          // eslint-disable-next-line no-new
           new RegExp(filter.regex, 'i');
         } catch (err) {
           throw new Error(`Invalid regex: ${String(err)}`);

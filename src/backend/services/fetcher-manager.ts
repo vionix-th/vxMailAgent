@@ -103,9 +103,9 @@ export class FetcherManager {
   /**
    * Set fetcher log for user or global
    */
-  setFetcherLog(req: ReqLike, next: any[]): void {
+  async setFetcherLog(req: ReqLike, next: any[]): Promise<void> {
     const fetcher = this.getFetcher(req);
-    fetcher.setFetcherLog(next);
+    await fetcher.setFetcherLog(next);
   }
 
   /**
@@ -122,7 +122,7 @@ export class FetcherManager {
     const repos = await getUserRepoBundle(uid);
     const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
     const fetcher = this.getFetcher(req);
-    fetcher.setFetcherLog(next);
+    await fetcher.setFetcherLog(next);
   }
 
   /**

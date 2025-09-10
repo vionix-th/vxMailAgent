@@ -162,13 +162,11 @@ export class EmailProcessingLogger {
     // Avoid orchestration log which requires emailId.
     // This event is covered by FetcherLog elsewhere.
     // Downgrade to info to avoid violating Option A constraints.
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     (async () => logger.info('Starting email fetch'))();
   }
 
   logFetchComplete(emailCount: number, durationMs: number): void {
     // Same rationale as logFetchStart
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     (async () => logger.info(`Fetch complete: ${emailCount} emails in ${durationMs}ms`, { emailCount, durationMs }))();
   }
 

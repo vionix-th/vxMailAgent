@@ -130,7 +130,7 @@ export function endTrace(id: string, status?: 'ok' | 'error', error?: string, re
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   enqueue(() => repo.update(id, (t) => {
-    t.endedAt = new Date().toISOString();
+    Object.assign(t, { endedAt: new Date().toISOString() });
     if (status) t.status = status;
     if (error) t.error = error;
   }), 'endTrace');

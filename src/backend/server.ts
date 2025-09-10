@@ -59,7 +59,6 @@ export function createServer() {
   });
 
   // Centralized error-handling middleware
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: any, req: any, res: any, _next: any) => {
     const ua = req?.headers?.['user-agent'] as string | undefined;
     const ip = req?.ip || req?.connection?.remoteAddress;
