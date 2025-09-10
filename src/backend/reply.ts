@@ -1,5 +1,5 @@
 import { Reply } from '../shared/types';
-import { logger } from './services/logger';
+import logger from './services/logger';
 
 /**
  * Sends an email reply through the chosen provider.

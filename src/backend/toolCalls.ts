@@ -3,7 +3,7 @@
 import { ToolCallResult, MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
 import { validateAgainstSchema } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
-import { logger } from './services/logger';
+import logger from './services/logger';
 import { WorkspaceService } from './services/workspace-service';
 import { Repository } from './repository/core';
 import { newId } from './utils/id';

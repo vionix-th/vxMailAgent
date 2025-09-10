@@ -153,6 +153,12 @@ export interface EmailEnvelope {
   id: string;
   subject: string;
   from: string;
+  /** Comma-separated recipients (normalized string). */
+  to?: string;
+  /** Comma-separated recipients (normalized string). */
+  cc?: string;
+  /** Comma-separated recipients (normalized string). */
+  bcc?: string;
   date?: string;
   snippet?: string;
   bodyPlain?: string;

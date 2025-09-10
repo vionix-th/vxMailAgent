@@ -39,6 +39,9 @@ export const gmailProvider: IMailProvider = {
       const getHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
       const subject: string = getHeader('Subject');
       const from: string = getHeader('From');
+      const to: string = getHeader('To');
+      const cc: string = getHeader('Cc');
+      const bcc: string = getHeader('Bcc');
       const date: string = getHeader('Date');
       const snippet: string = msgRes.data?.snippet || '';
       const bodies = extractGmailBodies(msgRes.data?.payload);
@@ -48,6 +51,9 @@ export const gmailProvider: IMailProvider = {
         id: String(mid),
         subject,
         from,
+        ...(to ? { to } : {}),
+        ...(cc ? { cc } : {}),
+        ...(bcc ? { bcc } : {}),
         date,
         snippet,
         ...(bodies.bodyPlain ? { bodyPlain: bodies.bodyPlain } : {}),

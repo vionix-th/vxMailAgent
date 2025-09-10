@@ -4,6 +4,9 @@ import logger from './logger';
 export interface EmailContext {
   from: string;
   subject: string;
+  to?: string;
+  cc?: string;
+  bcc?: string;
   bodyPlain?: string;
   bodyHtml?: string;
   snippet?: string;
@@ -24,6 +27,9 @@ export function evaluateFilters(filters: Filter[], ctx: EmailContext): FilterEva
     try {
       switch (f.field) {
         case 'from': fieldValue = ctx.from || ''; break;
+        case 'to': fieldValue = ctx.to || ''; break;
+        case 'cc': fieldValue = ctx.cc || ''; break;
+        case 'bcc': fieldValue = ctx.bcc || ''; break;
         case 'subject': fieldValue = ctx.subject || ''; break;
         case 'body': fieldValue = (ctx.bodyPlain || '') + '\n' + (ctx.bodyHtml || '') + '\n' + (ctx.snippet || ''); break;
         case 'date': fieldValue = ctx.date || ''; break;

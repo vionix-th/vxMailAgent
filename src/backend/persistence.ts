@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { VX_MAILAGENT_KEY, USER_MAX_FILE_SIZE_MB } from './config';
 import { validatePathSafety, resolveDataDir } from './utils/paths';
-import { logger } from './services/logger';
+import logger from './services/logger';
 import { PersistenceError } from './services/error-handler';
 
 export const DATA_DIR = resolveDataDir();

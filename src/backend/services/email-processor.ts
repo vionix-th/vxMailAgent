@@ -11,6 +11,9 @@ export interface EmailEnvelope {
   id: string;
   subject: string;
   from: string;
+  to?: string;
+  cc?: string;
+  bcc?: string;
   date: string;
   snippet: string;
   bodyPlain?: string;
@@ -132,6 +135,9 @@ export class EmailProcessor {
 
     const ctx = {
       from: envelope.from,
+      to: envelope.to ?? undefined,
+      cc: envelope.cc ?? undefined,
+      bcc: envelope.bcc ?? undefined,
       subject: envelope.subject,
       bodyPlain: envelope.bodyPlain ?? undefined,
       bodyHtml: envelope.bodyHtml ?? undefined,

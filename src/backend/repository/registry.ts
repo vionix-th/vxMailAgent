@@ -5,7 +5,7 @@ import fs from 'fs';
 import * as persistence from '../persistence';
 import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES, USER_MAX_CONVERSATIONS } from '../config';
 import { Account, Agent, Director, Filter, Prompt, Imprint, ConversationThread, WorkspaceItem, TemplateItem } from '../../shared/types';
-import { logger } from '../services/logger';
+import logger from '../services/logger';
 
 /**
  * Bundle of all repositories for a single user.

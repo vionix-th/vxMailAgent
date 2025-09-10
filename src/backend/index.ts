@@ -1,4 +1,4 @@
-import { logger } from './services/logger';
+import logger from './services/logger';
 import { PORT, HOST, warnIfInsecure } from './config';
 import { createServer } from './server';
 import { bootstrapFetchers } from './services/fetcher-bootstrap';

@@ -8,7 +8,8 @@ import logger from '../services/logger';
 export function configureSecurityHeaders(app: express.Application): void {
   app.use((req, res, next) => {
     void req; // satisfy noUnusedParameters
-    res.setHeader('Content-Security-Policy', "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'");
+    // Strict CSP for API responses: no scripts/styles/images. Prevent framing and base-uri.
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'");
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });

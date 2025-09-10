@@ -94,7 +94,7 @@ Lint command (backend): `npm run lint` from `src/backend/`.
 
 ### Core Principles
 - **Strict User Isolation**: All data access requires user context; no global fallbacks
-- **Minimal Global State**: Only `users.json` (the user accounts registry) is global; all other data is user-scoped
+- **Minimal Global State**: Only `users.json` (the user accounts registry) and `security-audit.log` (append-only JSONL) are global; all other data is user-scoped
 - **Security First**: All operations validate user context and path safety
 - **Audit Trail**: Comprehensive logging of all operations with user context
 
@@ -327,7 +327,7 @@ Location: `src/backend/routes/helpers.ts`
 
 ### Security Headers (Production)
 - **HTTPS redirect + HSTS (prod only)**: backend redirects HTTP→HTTPS and sets `Strict-Transport-Security: max-age=31536000; includeSubDomains` when `NODE_ENV=production`
-- **Content-Security-Policy**: `script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none'`
+- **Content-Security-Policy**: API responses use a strict policy: `default-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'` (no `unsafe-inline` or `unsafe-eval`).
 - **Referrer-Policy**: `no-referrer`
 
 ### Request Validation, CSRF, and Rate Limiting (Current State)

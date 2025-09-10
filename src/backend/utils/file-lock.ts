@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { logger } from '../services/logger';
+import logger from '../services/logger';
 
 /**
  * File-based mutex implementation for coordinating repository operations.

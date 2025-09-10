@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { logger } from '../services/logger';
+import logger from '../services/logger';
 import * as persistence from '../persistence';
 import { Repository } from './core';
 import { ProviderEvent, Trace, FetcherLogEntry, OrchestrationDiagnosticEntry } from '../../shared/types';

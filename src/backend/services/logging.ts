@@ -4,7 +4,7 @@ import { newId } from '../utils/id';
 import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
 import { requireReq, requireUserRepo } from '../utils/repo-access';
 import type { ReqLike } from '../interfaces';
-import { logger } from './logger';
+import logger from './logger';
 
 // Lightweight async queue to serialize background log persistence
 let logQueue: Promise<void> = Promise.resolve();
