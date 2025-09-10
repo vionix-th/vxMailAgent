@@ -7,7 +7,6 @@ import { TRACE_TTL_DAYS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_
 import { securityAudit } from '../services/security-audit';
 import { SecurityError, RepositoryError } from '../services/error-handler';
 import { withFileLock } from '../utils/file-lock';
-import { validatePathSafety } from '../utils/paths';
 
 /** System-level file repository base with clear system-scoped auditing. */
 export abstract class SystemFileRepoBase {
@@ -231,12 +230,6 @@ export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> 
   async getAll(): Promise<FetcherLogEntry[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const safe = validatePathSafety(this.filePath, this.containerPath);
-        if (!safe) {
-          this.logFileOperation('read', false, 'path_safety_failed');
-          logger.error('FileFetcherLogRepository path safety failed', { filePath: this.filePath, containerPath: this.containerPath });
-          throw new RepositoryError(`Path safety failed for ${this.filePath}`);
-        }
         const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as FetcherLogEntry[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
@@ -304,12 +297,6 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
   async getAll(): Promise<OrchestrationDiagnosticEntry[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const safe = validatePathSafety(this.filePath, this.containerPath);
-        if (!safe) {
-          this.logFileOperation('read', false, 'path_safety_failed');
-          logger.error('FileOrchestrationLogRepository path safety failed', { filePath: this.filePath, containerPath: this.containerPath });
-          throw new RepositoryError(`Path safety failed for ${this.filePath}`);
-        }
         const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationDiagnosticEntry[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
@@ -377,12 +364,6 @@ export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent
   async getAll(): Promise<ProviderEvent[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const safe = validatePathSafety(this.filePath, this.containerPath);
-        if (!safe) {
-          this.logFileOperation('read', false, 'path_safety_failed');
-          logger.error('FileProviderEventsRepository path safety failed', { filePath: this.filePath, containerPath: this.containerPath });
-          throw new RepositoryError(`Path safety failed for ${this.filePath}`);
-        }
         const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
@@ -451,12 +432,6 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
   async getAll(): Promise<Trace[]> {
     try {
       if (fs.existsSync(this.filePath)) {
-        const safe = validatePathSafety(this.filePath, this.containerPath);
-        if (!safe) {
-          this.logFileOperation('read', false, 'path_safety_failed');
-          logger.error('FileTracesRepository path safety failed', { filePath: this.filePath, containerPath: this.containerPath });
-          throw new RepositoryError(`Path safety failed for ${this.filePath}`);
-        }
         const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[]);
         const fileStats = fs.statSync(this.filePath);
         this.logFileOperation('read', true, undefined, fileStats.size);
