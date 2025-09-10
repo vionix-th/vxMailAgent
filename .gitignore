@@ -1,36 +1,10 @@
-.build/
-.vscode/
-Build/
-DerivedData/
-TestResults
-TestResults.xcresult/
 .DS_Store
+.build
+.vscode
 node_modules
-
-# Backend build artifacts
-/src/backend/dist/
-/src/backend/*.log
-/src/backend/accounts.json.enc
-/src/backend/*.env
-/src/backend/coverage/
-
-# Frontend build artifacts
-/src/frontend/dist/
-/src/frontend/node_modules/
-/src/frontend/coverage/
-
-# OS/editor files
-Thumbs.db
-.idea/
-*.swp
-*.swo
+dist
+data
 
 # Misc
 .env
-*.local
 
-# Data
-/data
-src/backend/package-lock.json
-AGENTS.md
-package-lock.json
