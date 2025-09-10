@@ -45,7 +45,15 @@ This section is the operational contract the backend must uphold. It is used as 
  - ESLint enforces this rule for backend sources via flat config `src/backend/eslint.config.cjs` using `no-restricted-syntax` selectors; CI runs lint in `.github/workflows/tests.yml`.
 
 ### Note: ESLint Configuration
-The ESLint configuration for the backend is located in `src/backend/eslint.config.cjs`. This configuration uses the flat config format and pins specific versions of ESLint plugins to ensure consistency across the codebase.
+The ESLint configuration for the backend uses the v9 flat config and lives at `src/backend/eslint.config.cjs`.
+
+Pinned versions (backend):
+- ESLint: `^9`
+- @typescript-eslint/parser: `^8`
+- @typescript-eslint/eslint-plugin: `^8`
+- TypeScript: `~5.7` (pinned for parser compatibility)
+
+Lint command (backend): `npm run lint` from `src/backend/`.
 
 6) Workspace persistence
 
