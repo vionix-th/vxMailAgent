@@ -15,7 +15,13 @@
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
     "lint": "eslint \"**/*.ts\" --max-warnings=0",
     "check": "npm run lint && npm run typecheck && npm run build",
-    "test": "node --test -r ts-node/register **/*.test.ts"
+    "test": "npm run test:unit",
+    "test:unit": "DISABLE_DOTENV=true VX_TEST_MOCK_OPENAI=true TRACE_PERSIST=false npm run build && node --test --test-timeout=90000 --test-concurrency=1 \"tests/*unit.cjs\" \"tests/integration-test-config.cjs\"",
+    "test:unit:compiled": "DISABLE_DOTENV=true VX_TEST_MOCK_OPENAI=true TRACE_PERSIST=false node --test --test-timeout=90000 --test-concurrency=1 \"tests/*unit.cjs\" \"tests/integration-test-config.cjs\"",
+    "test:contract": "DISABLE_DOTENV=true VX_TEST_MOCK_OPENAI=true TRACE_PERSIST=false npm run build && node --test --test-timeout=90000 --test-concurrency=1 \"tests/orchestrator.contract.cjs\"",
+    "test:contract:compiled": "DISABLE_DOTENV=true VX_TEST_MOCK_OPENAI=true TRACE_PERSIST=false node --test --test-timeout=90000 --test-concurrency=1 \"tests/orchestrator.contract.cjs\"",
+    "test:live": "node --test \"tests/*live.cjs\"",
+    "ci": "npm run check && npm run test:unit && npm run test:contract"
   },
   "dependencies": {
     "@azure/msal-node": "^3.7.0",
