@@ -33,14 +33,16 @@ export function buildOrchBase(): Omit<OrchestrationEvent, 'context' | 'outcome' 
  * Build orchestration context from base input.
  */
 export function buildOrchContext(input: OrchBaseInput): OrchestrationContext {
-  return {
-    fetchCycleId: input.fetchCycleId || '',
+  const ctx: OrchestrationContext = {
+    fetchCycleId: input.fetchCycleId,
     emailId: input.emailId,
-    accountId: input.accountId,
     directorId: input.director,
-    agentId: input.agent,
-    conversationId: input.dirThreadId || input.agentThreadId,
   };
+  if (typeof input.accountId !== 'undefined') ctx.accountId = input.accountId;
+  if (typeof input.agent !== 'undefined') ctx.agentId = input.agent;
+  const convId = typeof input.dirThreadId !== 'undefined' ? input.dirThreadId : input.agentThreadId;
+  if (typeof convId !== 'undefined') ctx.conversationId = convId;
+  return ctx;
 }
 
 /**

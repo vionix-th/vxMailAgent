@@ -2,22 +2,15 @@ import express from 'express';
 import { errorHandler, NotFoundError } from '../services/error-handler';
 import { LiveRepos } from '../liveRepos';
 import { ConversationThread, OrchestrationEvent, ProviderEvent, WorkspaceItem, PromptMessage } from '../../shared/types';
+import { repoGetAll, requireReq, ReqLike } from '../utils/repo-access';
 
-interface ConversationDetails {
-  id: string;
-  kind: 'director' | 'agent';
-  status: string;
-  directorId: string;
-  agentId?: string;
-  messages: any[];
-  lastActiveAt: string;
-  endedAt?: string;
-  email: any;
+// Align with design: extend the canonical ConversationThread type
+type ConversationDetails = ConversationThread & {
   providerEvents: ProviderEvent[];
   orchestrationEvents: OrchestrationEvent[];
   workspaceItems: WorkspaceItem[];
   metrics: ConversationMetrics;
-}
+};
 
 interface ConversationMetrics {
   totalTokens: number;
@@ -29,20 +22,11 @@ interface ConversationMetrics {
   toolCallCount: number;
 }
 
-interface ThreadWithContext {
-  id: string;
-  kind: 'director' | 'agent';
-  status: string;
-  directorId: string;
-  agentId?: string;
-  messages: any[];
-  lastActiveAt: string;
-  endedAt?: string;
-  email: any;
+type ThreadWithContext = ConversationThread & {
   fullMessages: PromptMessage[];
   toolCalls: ToolCallTrace[];
   providerEvents: ProviderEvent[];
-}
+};
 
 interface ToolCallTrace {
   id: string;
@@ -67,15 +51,16 @@ export function createConversationsEnhancedRoutes(repos: LiveRepos): express.Rou
     }
 
     // Get related data
-    const [orchestrationEvents, providerEvents, workspaceItems] = await Promise.all([
+    const [orchestrationEvents, providerEvents, allWorkspaceItems] = await Promise.all([
       repos.getOrchestrationLog(req as any).then((events: any[]) => 
         events.filter((e: any) => e.context.conversationId === conversationId)
       ),
       repos.getProviderEvents(req as any).then((events: any[]) => 
         events.filter((e: any) => e.conversationId === conversationId)
       ),
-      Promise.resolve([]) // Workspace items not implemented yet
+      repoGetAll<WorkspaceItem>(requireReq(req as any as ReqLike), 'workspaceItems')
     ]);
+    const workspaceItems = (allWorkspaceItems || []).filter((w: WorkspaceItem) => w?.provenance?.conversationId === conversationId);
 
     // Calculate metrics
     const metrics: ConversationMetrics = {

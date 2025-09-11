@@ -14,6 +14,7 @@ const resources = {
         admin: 'Admin',
         memory: 'Memory',
         results: 'Results',
+        diagnostics: 'Diagnostics',
       },
       adminTabs: {
         diagnostics: 'Diagnostics',

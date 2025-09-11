@@ -29,6 +29,7 @@ const NavigationDrawer: React.FC<Props> = ({ selected, onSelect }) => {
     { key: 'Prompts', label: t('nav.prompts'), icon: <ChatBubbleOutlineIcon fontSize="small" /> },
     { key: 'Directors', label: t('nav.directors'), icon: <AccountTreeIcon fontSize="small" /> },
     { key: 'Filters', label: t('nav.filters'), icon: <FilterAltIcon fontSize="small" /> },
+    { key: 'Diagnostics', label: t('nav.diagnostics') as string, icon: <TroubleshootIcon fontSize="small" /> },
     { key: 'Admin', label: t('nav.admin'), icon: <TroubleshootIcon fontSize="small" /> },
   ];
 
@@ -150,4 +151,3 @@ const NavigationDrawer: React.FC<Props> = ({ selected, onSelect }) => {
 };
 
 export default NavigationDrawer;
-

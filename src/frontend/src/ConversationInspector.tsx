@@ -4,7 +4,7 @@ import {
   Button, Card, CardContent, Accordion, AccordionSummary, AccordionDetails,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   LinearProgress, Divider, Grid, List, ListItem, ListItemText, ListItemIcon,
-  Dialog, DialogTitle, DialogContent, DialogActions, Tab, Tabs, TabPanel
+  Dialog, DialogTitle, DialogContent, DialogActions, Tab, Tabs
 } from '@mui/material';
 import { AnimatePresence, motion } from 'framer-motion';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -19,6 +19,7 @@ import TokenIcon from '@mui/icons-material/Token';
 import CodeIcon from '@mui/icons-material/Code';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import { ConversationThread, OrchestrationEvent, ProviderEvent, WorkspaceItem } from './types/shared';
+import JsonPretty from './components/JsonPretty';
 import { apiFetch } from './utils/http';
 
 interface ConversationDetails extends ConversationThread {
@@ -281,32 +282,10 @@ export default function ConversationInspector({
             </AccordionSummary>
             <AccordionDetails>
               <Stack spacing={2}>
-                {event.request && (
+                {event.type !== 'error' && (
                   <Box>
-                    <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                      <Typography variant="subtitle2">Request</Typography>
-                      <Button
-                        size="small"
-                        startIcon={<CodeIcon />}
-                        onClick={() => handleViewJson(event.request)}
-                      >
-                        View JSON
-                      </Button>
-                    </Stack>
-                  </Box>
-                )}
-                {event.response && (
-                  <Box>
-                    <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                      <Typography variant="subtitle2">Response</Typography>
-                      <Button
-                        size="small"
-                        startIcon={<CodeIcon />}
-                        onClick={() => handleViewJson(event.response)}
-                      >
-                        View JSON
-                      </Button>
-                    </Stack>
+                    <Typography variant="subtitle2" gutterBottom>{event.type === 'request' ? 'Request Payload' : 'Response Payload'}</Typography>
+                    <JsonPretty data={event.payload} filename={`provider-${event.id}.json`} maxHeight={320} />
                   </Box>
                 )}
                 {event.error && (
@@ -470,19 +449,7 @@ export default function ConversationInspector({
       >
         <DialogTitle>JSON Data</DialogTitle>
         <DialogContent>
-          <Box
-            component="pre"
-            sx={{
-              backgroundColor: 'grey.100',
-              p: 2,
-              borderRadius: 1,
-              overflow: 'auto',
-              maxHeight: 400,
-              fontSize: '0.875rem',
-            }}
-          >
-            {JSON.stringify(selectedJson, null, 2)}
-          </Box>
+          <JsonPretty data={selectedJson} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setJsonDialogOpen(false)}>Close</Button>

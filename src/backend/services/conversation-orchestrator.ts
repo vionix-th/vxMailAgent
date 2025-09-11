@@ -96,9 +96,13 @@ export class ConversationOrchestrator {
     this.stepLogger.logEngineStart(threadId, stepType, (context.thread.messages || []).length, emailId, context.thread.directorId);
 
     try {
+      const apiCfg = context.apiConfigs.find((c: any) => c.id === context.thread.apiConfigId);
+      if (!apiCfg) {
+        throw new Error(`API config not found for thread apiConfigId=${context.thread.apiConfigId}`);
+      }
       const result = await conversationEngine.run({
         messages: context.thread.messages as any,
-        apiConfig: context.apiConfigs.find((c: any) => c.id === context.thread.apiConfigId) as any,
+        apiConfig: apiCfg as any,
         role: context.thread.kind === 'director' ? 'director' : 'agent',
         roleCaps: context.thread.kind === 'director' ? { canSpawnAgents: true } : { canSpawnAgents: false },
         toolRegistry: TOOL_DESCRIPTORS,
@@ -252,9 +256,10 @@ export class ConversationOrchestrator {
     }
 
     const lastAssistant = agentResult.finalAssistantMessage as PromptMessage | undefined;
+    const contentMaybe = (typeof lastAssistant?.content === 'string') ? lastAssistant.content : undefined;
     return {
       assistantMessage: lastAssistant || null,
-      content: (typeof lastAssistant?.content === 'string') ? lastAssistant.content : undefined,
+      ...(typeof contentMaybe !== 'undefined' ? { content: contentMaybe } : {}),
     };
   }
 
@@ -268,8 +273,34 @@ export class ConversationOrchestrator {
   ): Promise<ConversationThread> {
     if (!toolCalls || toolCalls.length === 0) return context.thread;
 
+    const unhandled: Array<{ id: string; name: string }> = [];
     for (const toolCall of toolCalls) {
-      await this.processIndividualToolCall(context, userReq, toolCall);
+      const ok = await this.processIndividualToolCall(context, userReq, toolCall);
+      if (!ok) unhandled.push({ id: toolCall.id, name: toolCall.name });
+    }
+
+    // Contract guard: ensure every tool_call gets a tool reply.
+    if (unhandled.length > 0) {
+      const msgs = unhandled.map((tc) => ({
+        role: 'tool',
+        name: tc.name,
+        tool_call_id: tc.id,
+        content: JSON.stringify({ error: 'unsupported_tool_call', detail: `No handler for ${tc.name}` })
+      }));
+      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, msgs as any);
+      try {
+        const emailId = context.thread.email?.id || 'unknown';
+        this.stepLogger.logStepError(
+          context.thread.id,
+          'director_tool',
+          0,
+          `contract_violation_unhandled_tools: ${unhandled.map(u => u.name).join(',')}`,
+          emailId,
+          context.thread.directorId
+        );
+      } catch {
+        // best-effort logging
+      }
     }
 
     return (
@@ -282,14 +313,91 @@ export class ConversationOrchestrator {
     context: ConversationContext,
     userReq: UserRequest,
     toolCall: { id: string; name: string; arguments: string }
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const args = JSON.parse(toolCall.arguments);
       
       if (toolCall.name === 'workspace_add_item') {
         await this.handleWorkspaceAddItem(context, userReq, toolCall, args);
+        return true;
       } else if (toolCall.name === 'workspace_list_items') {
         await this.handleWorkspaceListItems(context, userReq, toolCall, args);
+        return true;
+      } else if (toolCall.name.startsWith('agent__')) {
+        // Dynamic agent delegation: ensure agent thread, run it, and return result to director as tool message
+        const agentId = toolCall.name.slice('agent__'.length);
+        if (!agentId) {
+          const toolErr = {
+            role: 'tool',
+            name: toolCall.name,
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ error: 'Missing agent id in tool call name' })
+          } as any;
+          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErr]);
+          return true;
+        }
+        const agent = context.agents.find((a) => a.id === agentId);
+        if (!agent) {
+          const toolErr = {
+            role: 'tool',
+            name: toolCall.name,
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ error: `Unknown agent: ${agentId}` })
+          } as any;
+          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErr]);
+          return true; // handled with error reply
+        }
+        if (!context.director) {
+          const toolErr = {
+            role: 'tool',
+            name: toolCall.name,
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ error: 'Director context missing' })
+          } as any;
+          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErr]);
+          return true;
+        }
+
+        const conversations = await userReq.repos.getConversations(userReq.reqLike);
+        const nowIso = new Date().toISOString();
+        // Ensure or create the agent child thread under current director thread
+        let ensured;
+        try {
+          ensured = ensureAgentThread(
+            conversations,
+            context.thread.id,
+            context.director,
+            agent as any,
+            context.thread.email,
+            context.prompts as any,
+            context.apiConfigs as any,
+            nowIso,
+            newId,
+            userReq.traceId,
+            userReq.reqLike
+          );
+        } catch (e: any) {
+          const toolErr = {
+            role: 'tool',
+            name: toolCall.name,
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ error: 'Agent configuration invalid', details: String(e?.message || e) })
+          } as any;
+          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErr]);
+          return true;
+        }
+        await userReq.repos.setConversations(userReq.reqLike, ensured.conversations);
+
+        // Run the agent assistant to completion and capture content
+        const agentResult = await this.runAgentAssistant(ensured.agentThread, userReq);
+        const toolMsg = {
+          role: 'tool',
+          name: toolCall.name,
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({ content: agentResult.content ?? null })
+        } as any;
+        await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolMsg]);
+        return true;
       }
     } catch (error: any) {
       logger.error('Error processing director tool call', {
@@ -298,6 +406,7 @@ export class ConversationOrchestrator {
         error: error?.message || String(error)
       });
     }
+    return false;
   }
 
   private async handleWorkspaceAddItem(

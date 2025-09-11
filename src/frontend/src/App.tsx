@@ -10,6 +10,7 @@ import Filters from './Filters';
 import Prompts from './Prompts';
 import Memory from './Memory';
 import AdminConsole from './AdminConsole';
+import UnifiedDiagnosticsRewrite from './UnifiedDiagnosticsRewrite';
 import NavigationDrawer from './components/NavigationDrawer';
 import TopBar from './components/TopBar';
 
@@ -31,6 +32,7 @@ export default function App() {
       case 'Filters': return <Filters />;
       case 'Directors': return <Directors />;
       case 'Prompts': return <Prompts />;
+      case 'Diagnostics': return <UnifiedDiagnosticsRewrite />;
       case 'Admin': return <AdminConsole />;
       default: return <Results />;
     }
@@ -69,4 +71,3 @@ export default function App() {
     </Box>
   );
 }
-

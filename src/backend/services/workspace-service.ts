@@ -24,8 +24,8 @@ export class WorkspaceService {
   constructor(deps: WorkspaceServiceDeps) {
     this.getItems = deps.getItems;
     this.setItems = deps.setItems;
-    this.getConversations = deps.getConversations;
-    this.setConversations = deps.setConversations;
+    if (typeof deps.getConversations !== 'undefined') this.getConversations = deps.getConversations;
+    if (typeof deps.setConversations !== 'undefined') this.setConversations = deps.setConversations;
   }
 
   async listItems(includeDeleted: boolean = false): Promise<WorkspaceItem[]> {
@@ -46,8 +46,8 @@ export class WorkspaceService {
       id: newId(),
       content: input.content,
       metadata: {
-        label: input.metadata.label,
-        description: input.metadata.description,
+        ...(typeof input.metadata.label !== 'undefined' ? { label: input.metadata.label } : {}),
+        ...(typeof input.metadata.description !== 'undefined' ? { description: input.metadata.description } : {}),
         tags: input.metadata.tags || [],
       },
       provenance: input.provenance,

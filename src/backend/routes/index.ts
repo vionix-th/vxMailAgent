@@ -3,7 +3,6 @@ import { ReqLike } from '../utils/repo-access';
 import registerAuthSessionRoutes from './auth-session';
 import registerTestRoutes from './test';
 import registerMemoryRoutes from './memory';
-import registerOrchestrationRoutes from './orchestration';
 import registerSettingsRoutes from './settings';
 import registerAgentsRoutes from './agents';
 import registerFiltersRoutes from './filters';
@@ -15,9 +14,7 @@ import registerWorkspacesRoutes from './workspaces';
 import registerImprintsRoutes from './imprints';
 import registerAccountsRoutes from './accounts';
 import registerFetcherRoutes from './fetcher';
-import registerDiagnosticsRoutes from './diagnostics';
-import registerDiagnosticTracesRoutes from './diagnostic-traces';
-import registerUnifiedDiagnosticsRoutes from './unified-diagnostics';
+// Legacy diagnostics routes removed (forward-only)
 import registerCleanupRoutes from './cleanup';
 import { createEmailRoutes } from './emails';
 import { createConversationsEnhancedRoutes } from './conversations-enhanced';
@@ -30,7 +27,7 @@ export default function registerRoutes(
   app: express.Express, 
   repos: LiveRepos,
   fetcherManager: FetcherManager,
-  services: {
+  _services: {
     setOrchestrationLog: (next: any[], req?: ReqLike) => Promise<void>;
     getTraces: (req?: ReqLike) => Promise<any[]>;
     setTraces: (req: ReqLike, next: any[]) => Promise<void>;
@@ -46,7 +43,7 @@ export default function registerRoutes(
     registerTestRoutes(app, repos);
   }
   registerMemoryRoutes(app, {});
-  registerOrchestrationRoutes(app, repos, services);
+  // Legacy orchestration diagnostics removed
   registerSettingsRoutes(app, {});
   registerAgentsRoutes(app, repos);
   registerFiltersRoutes(app, repos);
@@ -57,9 +54,7 @@ export default function registerRoutes(
   registerWorkspacesRoutes(app, repos);
   registerImprintsRoutes(app, repos);
   registerAccountsRoutes(app);
-  registerDiagnosticsRoutes(app, repos);
-  registerDiagnosticTracesRoutes(app, services);
-  registerUnifiedDiagnosticsRoutes(app, repos, services);
+  // Legacy diagnostics endpoints removed
   registerFetcherRoutes(app, fetcherManager, repos);
   registerCleanupRoutes(app, repos, {
     getFetcherManager: (req: ReqLike) => fetcherManager.getFetcher(req)
@@ -69,4 +64,3 @@ export default function registerRoutes(
   app.use('/api/emails', createEmailRoutes(repos));
   app.use('/api/conversations', createConversationsEnhancedRoutes(repos));
 }
-

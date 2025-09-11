@@ -22,7 +22,9 @@ export default function registerAuthSessionRoutes(app: express.Express) {
 
     const secure = isProd;
     const cookieHeader = typeof req.headers['cookie'] === 'string' ? req.headers['cookie'] : undefined;
-    const { token } = await handleGoogleLoginCallbackV2({ code, state, cookieHeader });
+    const params: { code: string; state: string; cookieHeader?: string } = { code, state };
+    if (typeof cookieHeader === 'string') params.cookieHeader = cookieHeader;
+    const { token } = await handleGoogleLoginCallbackV2(params);
     res.setHeader('Set-Cookie', [
       serializeSessionCookie(token, { maxAgeSec: JWT_EXPIRES_IN_SEC, secure }),
       clearLoginCookie(),

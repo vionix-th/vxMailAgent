@@ -16,6 +16,7 @@ import ErrorIcon from '@mui/icons-material/Error';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { ConversationThread, PromptMessage, ProviderEvent } from './types/shared';
+import JsonPretty from './components/JsonPretty';
 import { apiFetch } from './utils/http';
 
 interface ThreadWithContext extends ConversationThread {
@@ -279,35 +280,22 @@ export default function ThreadInspector({
                   <Stack spacing={2}>
                     <Box>
                       <Typography variant="subtitle2" gutterBottom>Arguments:</Typography>
-                      <Box
-                        component="pre"
-                        sx={{
-                          backgroundColor: 'grey.100',
-                          p: 1,
-                          borderRadius: 1,
-                          overflow: 'auto',
-                          fontSize: '0.75rem',
-                        }}
-                      >
-                        {tc.arguments}
-                      </Box>
+                      {(() => {
+                        try {
+                          const parsed = JSON.parse(tc.arguments);
+                          return <JsonPretty data={parsed} filename={`tool-args-${tc.id}.json`} maxHeight={260} />;
+                        } catch {
+                          return (
+                            <Box component="pre" sx={{ backgroundColor: 'grey.100', p: 1, borderRadius: 1, overflow: 'auto', fontSize: '0.75rem' }}>{tc.arguments}</Box>
+                          );
+                        }
+                      })()}
                     </Box>
                     
                     {tc.result && (
                       <Box>
                         <Typography variant="subtitle2" gutterBottom>Result:</Typography>
-                        <Box
-                          component="pre"
-                          sx={{
-                            backgroundColor: 'success.50',
-                            p: 1,
-                            borderRadius: 1,
-                            overflow: 'auto',
-                            fontSize: '0.75rem',
-                          }}
-                        >
-                          {JSON.stringify(tc.result, null, 2)}
-                        </Box>
+                        <JsonPretty data={tc.result} filename={`tool-result-${tc.id}.json`} maxHeight={260} />
                       </Box>
                     )}
                     
@@ -345,21 +333,25 @@ export default function ThreadInspector({
                     </Typography>
                   </Stack>
                   <Stack direction="row" spacing={1}>
-                    {event.latencyMs && (
+                    {typeof event.latencyMs === 'number' && (
                       <Chip label={`${event.latencyMs}ms`} size="small" />
                     )}
                     {event.usage?.totalTokens && (
-                      <Chip label={`${event.usage.totalTokens} tokens`} size="small" />
+                      <Chip label={`${event.usage.totalTokens} tok`} size="small" />
                     )}
-                    <Button
-                      size="small"
-                      startIcon={<CodeIcon />}
-                      onClick={() => handleViewJson(event)}
-                    >
-                      View
-                    </Button>
                   </Stack>
                 </Stack>
+                {event.type !== 'error' && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="subtitle2" gutterBottom>Payload</Typography>
+                    <JsonPretty data={event.payload} filename={`provider-${event.id}.json`} maxHeight={260} />
+                  </Box>
+                )}
+                {event.error && (
+                  <Alert severity="error" sx={{ mt: 1 }}>
+                    <Typography variant="body2">{event.error}</Typography>
+                  </Alert>
+                )}
               </Box>
             ))}
           </Stack>
@@ -426,24 +418,10 @@ export default function ThreadInspector({
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle>Message Details</DialogTitle>
-        <DialogContent>
-          {selectedMessage && (
-            <Box
-              component="pre"
-              sx={{
-                backgroundColor: 'grey.100',
-                p: 2,
-                borderRadius: 1,
-                overflow: 'auto',
-                maxHeight: 400,
-                fontSize: '0.875rem',
-              }}
-            >
-              {JSON.stringify(selectedMessage, null, 2)}
-            </Box>
-          )}
-        </DialogContent>
+      <DialogTitle>Message Details</DialogTitle>
+      <DialogContent>
+        {selectedMessage && <JsonPretty data={selectedMessage} />}
+      </DialogContent>
         <DialogActions>
           <Button onClick={() => setMessageDialogOpen(false)}>Close</Button>
         </DialogActions>
@@ -456,22 +434,10 @@ export default function ThreadInspector({
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle>JSON Data</DialogTitle>
-        <DialogContent>
-          <Box
-            component="pre"
-            sx={{
-              backgroundColor: 'grey.100',
-              p: 2,
-              borderRadius: 1,
-              overflow: 'auto',
-              maxHeight: 400,
-              fontSize: '0.875rem',
-            }}
-          >
-            {JSON.stringify(selectedJson, null, 2)}
-          </Box>
-        </DialogContent>
+      <DialogTitle>JSON Data</DialogTitle>
+      <DialogContent>
+        <JsonPretty data={selectedJson} />
+      </DialogContent>
         <DialogActions>
           <Button onClick={() => setJsonDialogOpen(false)}>Close</Button>
         </DialogActions>

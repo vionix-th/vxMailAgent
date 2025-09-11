@@ -113,17 +113,19 @@ export default function registerConversationsRoutes(
 
       // Determine the last assistant message for response payload
       const lastAssistant = [...finalThread.messages].reverse().find(m => (m as any).role === 'assistant') as PromptMessage | undefined;
+      const contentMaybe = (typeof lastAssistant?.content === 'string') ? lastAssistant.content : undefined;
+      const toolCallsMaybe = Array.isArray((lastAssistant as any)?.tool_calls) ? (lastAssistant as any).tool_calls : undefined;
       result = {
         assistantMessage: lastAssistant || null,
-        content: (typeof lastAssistant?.content === 'string') ? lastAssistant.content : undefined,
-        toolCalls: Array.isArray((lastAssistant as any)?.tool_calls) ? (lastAssistant as any).tool_calls : undefined
+        ...(typeof contentMaybe !== 'undefined' ? { content: contentMaybe } : {}),
+        ...(typeof toolCallsMaybe !== 'undefined' ? { toolCalls: toolCallsMaybe } : {}),
       };
     } else {
       // Agent path: delegate to orchestrator to centralize behavior
       const agentOut = await orchestrator.runAgentAssistant(thread, userReq);
       result = {
         assistantMessage: agentOut.assistantMessage,
-        content: agentOut.content,
+        ...(typeof agentOut.content !== 'undefined' ? { content: agentOut.content } : {}),
       };
     }
 
@@ -161,4 +163,3 @@ export default function registerConversationsRoutes(
     return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
   }));
 }
-

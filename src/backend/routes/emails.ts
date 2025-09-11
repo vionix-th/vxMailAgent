@@ -34,7 +34,7 @@ export function createEmailRoutes(repos: LiveRepos): express.Router {
     const status = req.query.status as string;
 
     // Get all emails (would need pagination in real implementation)
-    const allEmails = await repos.getEmails(req);
+    const allEmails = await repos.getEmails(req as any);
     
     // Get conversations and orchestration events for correlation
     const conversations = await repos.getConversations(req as any);
@@ -76,7 +76,7 @@ export function createEmailRoutes(repos: LiveRepos): express.Router {
         kind: c.kind,
         status: c.status,
         directorId: c.directorId,
-        agentId: c.kind === 'agent' ? c.agentId : undefined,
+        ...(c.kind === 'agent' ? { agentId: c.agentId } : {}),
         messageCount: c.messages.length,
         tokenUsage: emailProviderEvents
           .filter((e: any) => e.conversationId === c.id)

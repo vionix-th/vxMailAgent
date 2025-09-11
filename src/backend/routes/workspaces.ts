@@ -12,12 +12,21 @@ export interface WorkspacesRoutesDeps {
 
 function createWorkspaceService(req: ReqLike, deps?: WorkspacesRoutesDeps): WorkspaceService {
   const ureq = requireReq(req);
-  return new WorkspaceService({
+  const base = {
     getItems: async () => await repoGetAll<WorkspaceItem>(ureq, 'workspaceItems'),
     setItems: async (next: WorkspaceItem[]) => await repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', next),
-    getConversations: deps ? async () => await deps.getConversations(ureq) : undefined,
-    setConversations: deps ? async (next: ConversationThread[]) => await deps.setConversations(ureq, next) : undefined,
-  });
+  } as const;
+
+  if (!deps) {
+    return new WorkspaceService(base as any);
+  }
+
+  const opt = {
+    getConversations: async () => await deps.getConversations(ureq),
+    setConversations: async (next: ConversationThread[]) => await deps.setConversations(ureq, next),
+  };
+
+  return new WorkspaceService({ ...(base as any), ...opt });
 }
 
 export default function registerWorkspacesRoutes(app: express.Express, deps: WorkspacesRoutesDeps) {
@@ -73,5 +82,4 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     }
   }));
 }
-
 

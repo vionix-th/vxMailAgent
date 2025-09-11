@@ -1,25 +1,28 @@
 import { FetcherLogEntry, OrchestrationEvent, ProviderEvent, OrchestrationContext, OrchestrationOutcome } from '../../shared/types';
 import { ReqLike } from '../interfaces';
-import { repoGetAll, repoSetAll } from '../utils/repo-access';
+import { repoGetAll, repoSetAll, requireUserRepo } from '../utils/repo-access';
+import type { OrchestrationLogRepository, ProviderEventsRepository } from '../repository/fileRepositories';
 import { newId } from '../utils/id';
 import logger from './logger';
 
 // Helper functions for logging
 function logOrch(entry: OrchestrationEvent, req?: ReqLike): void {
-  // Implementation will append to orchestration log
-  if (req) {
-    repoGetAll(req, 'orchestrationLog').then(logs => {
-      repoSetAll(req, 'orchestrationLog', [...logs, entry]);
-    }).catch(e => logger.error('Failed to log orchestration entry', e));
+  if (!req) return;
+  try {
+    const repo = requireUserRepo(req, 'orchestrationLog') as unknown as OrchestrationLogRepository;
+    void repo.append(entry).catch(e => logger.error('Failed to append orchestration entry', e));
+  } catch (e) {
+    logger.error('Failed to resolve orchestration repository', e as any);
   }
 }
 
 function logProviderEvent(event: ProviderEvent, req?: ReqLike): void {
-  // Implementation will append to provider events
-  if (req) {
-    repoGetAll(req, 'providerEvents').then(events => {
-      repoSetAll(req, 'providerEvents', [...events, event]);
-    }).catch(e => logger.error('Failed to log provider event', e));
+  if (!req) return;
+  try {
+    const repo = requireUserRepo(req, 'providerEvents') as unknown as ProviderEventsRepository;
+    void repo.append(event).catch(e => logger.error('Failed to append provider event', e));
+  } catch (e) {
+    logger.error('Failed to resolve provider events repository', e as any);
   }
 }
 
@@ -439,8 +442,8 @@ export class ProviderEventLogger {
       id: newId()
     };
     if (req) {
-      repoGetAll(req, 'fetcherLog').then(logs => {
-        repoSetAll(req, 'fetcherLog', [...logs, fullEntry]);
+      void repoGetAll(req, 'fetcherLog').then(logs => {
+        return repoSetAll(req, 'fetcherLog', [...logs, fullEntry]);
       }).catch(e => logger.error('Failed to log fetcher entry', e));
     }
   }
