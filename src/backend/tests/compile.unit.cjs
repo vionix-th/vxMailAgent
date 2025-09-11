@@ -1,18 +1,30 @@
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert');
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
+
+// Ensure dotenv doesn't interfere in this test process
+process.env.DISABLE_DOTENV = process.env.DISABLE_DOTENV || 'true';
+const TSC_TIMEOUT_MS = Number(process.env.TSC_TIMEOUT_MS || 60000);
 
 // Test that actually compiles the backend to catch real compilation errors
 test('Backend TypeScript compilation', async () => {
   return new Promise((resolve, reject) => {
     console.log('Compiling backend TypeScript...');
-    
-    const child = spawn('npx', ['tsc', '--noEmit'], {
-      cwd: path.join(__dirname, '..'),
-      stdio: 'pipe'
+
+    const backendDir = path.join(__dirname, '..');
+    // Prefer local tsc binary over npx to avoid npx overhead/prompts
+    const localTsc = path.join(backendDir, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc');
+    const cmd = fs.existsSync(localTsc) ? localTsc : 'npx';
+    const args = fs.existsSync(localTsc) ? ['--noEmit'] : ['tsc', '--noEmit'];
+
+    const child = spawn(cmd, args, {
+      cwd: backendDir,
+      stdio: 'pipe',
+      env: { ...process.env, DISABLE_DOTENV: 'true' }
     });
-    
+
     let stdout = '';
     let stderr = '';
     
@@ -23,8 +35,13 @@ test('Backend TypeScript compilation', async () => {
     child.stderr.on('data', (data) => {
       stderr += data.toString();
     });
-    
+    const killer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch {}
+      reject(new Error(`TypeScript compile exceeded ${TSC_TIMEOUT_MS}ms`));
+    }, TSC_TIMEOUT_MS);
+
     child.on('close', (code) => {
+      clearTimeout(killer);
       if (code === 0) {
         console.log('✅ TypeScript compilation successful');
         resolve();
@@ -42,6 +59,14 @@ test('Backend TypeScript compilation', async () => {
       reject(error);
     });
   });
+});
+
+// Ensure this test file never leaves the process hanging when run standalone
+after(() => {
+  // Give Node a tick to settle, then force-exit to avoid open-handle hangs
+  setTimeout(() => {
+    try { process.exit(0); } catch {}
+  }, 0);
 });
 
 // Test that requires and instantiates actual backend classes

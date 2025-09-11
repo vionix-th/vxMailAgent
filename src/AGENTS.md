@@ -13,7 +13,7 @@
 - Backend build: `npm --prefix src/backend run build` → `dist/`; start: `npm --prefix src/backend run start`.
 - Backend quality: `npm --prefix src/backend run lint` • `typecheck` • `typecheck:strict` • `check`.
 - Frontend dev: `npm --prefix src/frontend run dev` • build: `npm --prefix src/frontend run build` • preview: `npm --prefix src/frontend run preview`.
-- Tests: `node src/backend/tests/run-all-tests.cjs`. Live-only: `node --test src/backend/tests/*.live.cjs`.
+- Tests: `npm --prefix src/backend test` (per-file hard runner). Live-only: `node --test src/backend/tests/*.live.cjs`.
 
 ## Coding Style & Naming Conventions
 - Language: TypeScript strict. Use `??` only for typed optionals; never default with `||`.
@@ -52,16 +52,20 @@
   - `TRACE_PERSIST=false` for unit tests (enable selectively when testing traces).
   - Optionally set `VX_MAILAGENT_DATA_DIR` to a temp dir for FS-backed tests.
 - Scripts (from `src/backend/package.json`):
-  - `npm run test:unit` — build + unit tests (no HTTP); uses `--test-timeout=90000 --test-concurrency=1`.
+  - `npm run test:unit` — build + unit tests (no HTTP); single concurrency for stability.
   - `npm run test:unit:compiled` — run unit tests against already built `dist/`.
   - `npm run test:contract` — build + orchestrator contract test (monkey‑patched engine; no network).
   - `npm run test:contract:compiled` — run contract test against already built `dist/`.
+  - `npm run test:hard` — runs each `.cjs` test in a child process with a hard kill after 30s (env `TEST_HARD_TIMEOUT_MS` override). Defaults: `DISABLE_DOTENV=true`, `VX_TEST_MOCK_OPENAI=true`, `VX_TEST_MOCK_PROVIDER=true`, and `TRACE_PERSIST=false`. It also enables strict unhandled rejections and preloads a diagnostics shim to print active handles before a forced kill.
+    - Implementation detail: the runner spawns each test with `detached: true` and, on timeout, attempts to kill the entire process group (`process.kill(-pid, SIGKILL)` on POSIX) so grandchildren cannot keep the runner alive. As a final safeguard, it force‑resolves after the kill to continue the suite.
   - `npm run test:live` — optional live route tests (requires backend running and auth token).
+  - `npm test` maps to `test:hard`.
 - Guidance to avoid hangs:
   - Do not start servers, background loops, or long intervals in unit tests.
   - Avoid FS hot loops; prefer in‑memory repos. If FS is needed, use a temp `VX_MAILAGENT_DATA_DIR` and clean up.
-  - Default test timeout is 90s; anything longer is considered a design issue. Five‑minute timeouts are prohibited.
   - Disable dotenv in tests with `DISABLE_DOTENV=true` to prevent `.env` interference.
+  - Node’s built‑in test timeout can be omitted from standard scripts; prefer `npm run test:hard` to enforce a per‑file hard cutoff and a consistent test environment. If a file times out, the runner will request the child to dump active handles and requests to stderr (`__DIAG__ JSON`) before kill to aid debugging.
+  - The compile test always runs and has its own internal timeout (`TSC_TIMEOUT_MS`, default 60s) using local `node_modules/.bin/tsc --noEmit`.
 
 ### Coverage Expectations
 - Target: 100% backend coverage on core modules. Prioritize:

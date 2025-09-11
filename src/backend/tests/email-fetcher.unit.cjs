@@ -5,6 +5,7 @@ const path = require('path');
 test('email-fetcher: processes one envelope via mock provider (no orchestration run)', async () => {
   process.env.DISABLE_DOTENV = 'true';
   process.env.TRACE_PERSIST = 'false';
+  process.env.VX_TEST_MOCK_PROVIDER = 'true';
   // Patch EmailProcessor to prevent background orchestration
   const epCandidates = [
     path.join(__dirname, '..', 'dist', 'backend', 'services', 'email-processor.js'),
@@ -15,18 +16,6 @@ test('email-fetcher: processes one envelope via mock provider (no orchestration 
   const epMod = require(epPath);
   const origStart = epMod.EmailProcessor.prototype.startDirectorOrchestration;
   epMod.EmailProcessor.prototype.startDirectorOrchestration = function() {};
-
-  // Patch provider to return one envelope
-  const provPath = path.join(__dirname, '..', 'dist', 'backend', 'providers', 'mail.js');
-  const prov = require(provPath);
-  const origGetProvider = prov.getMailProvider;
-  prov.getMailProvider = function(_provider) {
-    return {
-      async fetchUnread(_account, _opts) {
-        return [{ id: 'e1', subject: 'S', from: 'x@y', date: new Date().toISOString(), snippet: '...' }];
-      }
-    };
-  };
 
   const efCandidates = [
     path.join(__dirname, '..', 'dist', 'backend', 'services', 'email-fetcher.js'),
@@ -66,8 +55,5 @@ test('email-fetcher: processes one envelope via mock provider (no orchestration 
   } finally {
     // restore
     epMod.EmailProcessor.prototype.startDirectorOrchestration = origStart;
-    const provR = require(provPath);
-    provR.getMailProvider = origGetProvider;
   }
 });
-
