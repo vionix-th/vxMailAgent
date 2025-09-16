@@ -264,32 +264,21 @@ export function createToolHandler(repos: RepoBundle) {
 }
 
 async function handleCalendarToolCall(payload: any): Promise<ToolCallResult> {
-  // Stub: log and return static result
-  logger.info('[TOOLCALL] calendar', { payload });
-  if (payload.action === 'read') {
-    return { kind: 'calendar', success: true, result: [{ title: 'Stub Event', start: payload.dateRange?.start, end: payload.dateRange?.end }] };
-  } else if (payload.action === 'add') {
-    return { kind: 'calendar', success: true, result: { added: true, event: payload.event } };
-  }
-  return { kind: 'calendar', success: false, result: null, error: 'Invalid calendar action' };
+  // Fail closed: live calendar integration not implemented.
+  logger.info('[TOOLCALL] calendar (not_implemented)', { payload });
+  return { kind: 'calendar', success: false, result: null, error: 'not_implemented' };
 }
 
 async function handleTodoToolCall(payload: any): Promise<ToolCallResult> {
-  logger.info('[TOOLCALL] todo', { payload });
-  if (payload.action === 'add') {
-    return { kind: 'todo', success: true, result: { added: true, task: payload.task } };
-  }
-  return { kind: 'todo', success: false, result: null, error: 'Invalid todo action' };
+  // Fail closed: live todo integration not implemented.
+  logger.info('[TOOLCALL] todo (not_implemented)', { payload });
+  return { kind: 'todo', success: false, result: null, error: 'not_implemented' };
 }
 
 async function handleFilesystemToolCall(payload: any): Promise<ToolCallResult> {
-  logger.info('[TOOLCALL] filesystem', { payload });
-  if (payload.action === 'search') {
-    return { kind: 'filesystem', success: true, result: [{ file: 'stub.txt', path: '/virtual/stub.txt' }] };
-  } else if (payload.action === 'retrieve') {
-    return { kind: 'filesystem', success: true, result: { file: payload.filePath, content: 'stub content' } };
-  }
-  return { kind: 'filesystem', success: false, result: null, error: 'Invalid filesystem action' };
+  // Fail closed: virtual filesystem integration not implemented.
+  logger.info('[TOOLCALL] filesystem (not_implemented)', { payload });
+  return { kind: 'filesystem', success: false, result: null, error: 'not_implemented' };
 }
 
  

@@ -33,13 +33,15 @@ export function createEmailRoutes(repos: LiveRepos): express.Router {
     const offset = Math.max(0, Number(req.query.offset ?? 0));
     const status = req.query.status as string;
 
-    // Get all emails (would need pagination in real implementation)
+    // Get all emails from repo (single source of truth)
     const allEmails = await repos.getEmails(req as any);
     
     // Get conversations and orchestration events for correlation
     const conversations = await repos.getConversations(req as any);
     const orchestrationEvents = await repos.getOrchestrationLog(req as any);
     const providerEvents = await repos.getProviderEvents(req as any);
+
+    // No fallback derivation: if empty, the UI will truthfully reflect no indexed emails.
 
     // Build enhanced email data
     const emailsWithConversations: EmailWithConversations[] = allEmails.map((email: any) => {

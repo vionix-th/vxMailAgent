@@ -49,7 +49,6 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = TOOL_REGISTRY.map((t) => ({
   inputSchema: t.parameters,
   flags: {
     mandatory: t.category === 'mandatory',
-    defaultEnabled: t.category === 'optional',
     directorOnly: false,
   },
 }));

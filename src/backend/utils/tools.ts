@@ -31,9 +31,7 @@ export function buildToolSpecsByFlags(role: ConversationRole, roleCaps: RoleCapa
   void canSpawn;
   const enabled = TOOL_DESCRIPTORS.filter((d) => {
     const f = d.flags;
-    if (f.mandatory) return role === 'director' || !f.directorOnly;
-    if (f.defaultEnabled) return role === 'director' || !f.directorOnly;
-    return false;
+    return f.mandatory && (role === 'director' || !f.directorOnly);
   });
   return enabled.map(toOpenAiToolSpec);
 }

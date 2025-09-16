@@ -34,7 +34,7 @@ interface ToolCallTrace {
   arguments: string;
   result?: any;
   error?: string;
-  timestamp: string;
+  timestamp?: string;
   durationMs?: number;
 }
 
@@ -118,13 +118,29 @@ export function createConversationsEnhancedRoutes(repos: LiveRepos): express.Rou
           const resultMsg = conversation.messages.find((m: any) => 
             m.role === 'tool' && m.tool_call_id === tc.id
           );
-          
+
+          // Safe-parse tool result JSON; do not fabricate timestamps
+          let parsed: any | undefined = undefined;
+          let parseError: string | undefined = undefined;
+          if (resultMsg && typeof resultMsg.content === 'string' && resultMsg.content.trim()) {
+            try {
+              parsed = JSON.parse(resultMsg.content);
+            } catch (e: any) {
+              parseError = 'invalid_tool_result_json';
+            }
+          }
+
+          const timestamp = (typeof msg?.context?.variables?.timestamp === 'string')
+            ? msg.context.variables.timestamp
+            : undefined;
+
           toolCalls.push({
             id: tc.id,
             name: tc.function.name,
             arguments: tc.function.arguments,
-            result: resultMsg ? JSON.parse(resultMsg.content || '{}') : undefined,
-            timestamp: msg.context?.variables?.timestamp || new Date().toISOString(),
+            ...(parsed !== undefined ? { result: parsed } : {}),
+            ...(parseError ? { error: parseError } : {}),
+            ...(timestamp ? { timestamp } : {}),
           });
         });
       }

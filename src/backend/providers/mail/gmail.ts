@@ -44,14 +44,16 @@ export const gmailProvider: IMailProvider = {
       const bodies = extractGmailBodies(msgRes.data?.payload);
       const mid = msg.id || msgRes.data?.id;
       if (!mid) throw new Error('Gmail message missing id');
+      // Do not invent placeholders; return raw header values.
+      // Envelope validation and dropping of invalid items happens in the fetcher.
       envelopes.push({
         id: String(mid),
-        subject: subject || '(no subject)',
-        from: from || '(unknown)',
-        to: to || '',
-        cc: cc,
-        bcc: bcc,
-        date: date || new Date().toISOString(),
+        subject: subject,
+        from: from,
+        to: to,
+        ...(cc ? { cc } : {}),
+        ...(bcc ? { bcc } : {}),
+        date: date,
         snippet: snippet,
         ...bodies,
         attachments: [],

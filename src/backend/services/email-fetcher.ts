@@ -111,6 +111,9 @@ export class EmailFetcher {
         return;
       }
 
+      // Persist/merge envelopes into the email store (source of truth for UI)
+      await this.upsertEmails(envelopes, userReq);
+
       // Process each email
       const prompts = await this.repos.getPrompts(userReq);
       for (const envelope of envelopes) {
@@ -142,6 +145,36 @@ export class EmailFetcher {
         detail: error.message
       });
     }
+  }
+
+  /** Upsert email envelopes by id into the per-user email store. */
+  private async upsertEmails(envelopes: EmailEnvelope[], userReq: UserRequest): Promise<void> {
+    if (!Array.isArray(envelopes) || envelopes.length === 0) return;
+    const existing = await this.repos.getEmails(userReq);
+    const byId = new Map<string, EmailEnvelope>(existing.map(e => [e.id, e] as const));
+    let added = 0, updated = 0;
+    for (const env of envelopes) {
+      const prev = byId.get(env.id);
+      if (!prev) {
+        byId.set(env.id, env);
+        added++;
+      } else {
+        // Prefer newest fields (simple replace)
+        byId.set(env.id, { ...prev, ...env });
+        updated++;
+      }
+    }
+    await this.repos.setEmails(userReq, Array.from(byId.values()));
+    this.logFetch({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      provider: 'system',
+      accountId: 'all',
+      event: 'emails_upserted',
+      message: 'Upserted emails into store',
+      added,
+      updated
+    });
   }
 
   /**
@@ -178,33 +211,71 @@ export class EmailFetcher {
           Math.max(1, PROVIDER_REQUEST_TIMEOUT_MS || 0));
       });
 
-      const envelopes = await Promise.race([fetchPromise, timeoutPromise]);
-      
-      endSpan(traceId, sList, { status: 'ok', response: { count: envelopes.length } }, userReq);
-      
+      const providerEnvelopes = await Promise.race([fetchPromise, timeoutPromise]);
+
+      endSpan(traceId, sList, { status: 'ok', response: { count: providerEnvelopes.length } }, userReq);
+
+      // Validate required fields: subject, from, to, date (no synthesis/coercion).
+      const valid: EmailEnvelope[] = [];
+      let dropped = 0;
+      for (const raw of providerEnvelopes as EmailEnvelope[]) {
+        const env: EmailEnvelope = {
+          id: String((raw as any).id),
+          subject: typeof raw.subject === 'string' ? raw.subject.trim() : '',
+          from: typeof raw.from === 'string' ? raw.from.trim() : '',
+          to: typeof (raw as any).to === 'string' ? (raw as any).to.trim() : '',
+          ...(raw.cc ? { cc: String(raw.cc).trim() } : {}),
+          ...(raw.bcc ? { bcc: String(raw.bcc).trim() } : {}),
+          date: typeof raw.date === 'string' ? raw.date.trim() : '',
+          ...(raw.snippet ? { snippet: String(raw.snippet) } : {}),
+          ...(raw.bodyPlain ? { bodyPlain: raw.bodyPlain } : {}),
+          ...(raw.bodyHtml ? { bodyHtml: raw.bodyHtml } : {}),
+          ...(Array.isArray(raw.attachments) ? { attachments: raw.attachments } : {}),
+        };
+
+        const missing: string[] = [];
+        if (!env.subject) missing.push('subject');
+        if (!env.from) missing.push('from');
+        if (!env.to) missing.push('to');
+        if (!env.date) missing.push('date');
+
+        // Validate date is parseable
+        let invalidDate = false;
+        if (env.date) {
+          const t = Date.parse(env.date);
+          invalidDate = Number.isNaN(t);
+        }
+
+        if (missing.length > 0 || invalidDate) {
+          dropped++;
+          this.logFetch({
+            timestamp: new Date().toISOString(),
+            level: 'warn',
+            provider: account.provider,
+            accountId: account.id,
+            emailId: env.id,
+            event: 'invalid_envelope_dropped',
+            message: 'Envelope failed invariants and was dropped',
+            detail: { missing, invalidDate, sample: { subject: env.subject, from: env.from, to: env.to, date: env.date } },
+          });
+          continue;
+        }
+
+        valid.push(env);
+      }
+
       this.logFetch({
         timestamp: new Date().toISOString(),
-        level: 'info',
+        level: dropped > 0 ? 'warn' : 'info',
         provider: account.provider,
         accountId: account.id,
         event: 'messages_listed',
-        message: 'Listed unread messages',
-        count: envelopes.length
+        message: 'Listed unread messages (post-validation)',
+        count: valid.length,
+        detail: dropped > 0 ? { dropped } : undefined,
       });
 
-      return envelopes.map((env: any) => ({
-        id: env.id,
-        subject: String(env.subject || ''),
-        from: String(env.from || ''),
-        to: String(env.to || ''),
-        ...(env.cc ? { cc: String(env.cc) } : {}),
-        ...(env.bcc ? { bcc: String(env.bcc) } : {}),
-        date: String(env.date || ''),
-        snippet: String(env.snippet || ''),
-        bodyPlain: env.bodyPlain,
-        bodyHtml: env.bodyHtml,
-        attachments: []
-      }));
+      return valid;
 
     } catch (error: any) {
       endSpan(traceId, sList, { status: 'error', error: error.message }, userReq);

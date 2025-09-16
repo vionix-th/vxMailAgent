@@ -17,6 +17,7 @@ export interface LiveRepos {
   getConversations(req?: ReqLike): Promise<ConversationThread[]>;
   setConversations(req: ReqLike, next: ConversationThread[]): Promise<void>;
   getEmails(req?: ReqLike): Promise<EmailEnvelope[]>;
+  setEmails(req: ReqLike, next: EmailEnvelope[]): Promise<void>;
   getProviderEvents(req?: ReqLike): Promise<ProviderEvent[]>;
   getConversationById(req: ReqLike, id: string): Promise<ConversationThread | null>;
   getSettings(req?: ReqLike): Promise<any>;
@@ -69,6 +70,7 @@ export function createLiveRepos(): LiveRepos {
     },
     setFetcherLog: (req: ReqLike, next: any[]) => repoSetAll<any>(requireReq(req), 'fetcherLog', next),
     getEmails: get<EmailEnvelope>('emails'),
+    setEmails: set<EmailEnvelope>('emails'),
     getProviderEvents: async (req?: ReqLike) => {
       const repo = requireUserRepo(requireReq(req), 'providerEvents');
       return await repo.getAll();

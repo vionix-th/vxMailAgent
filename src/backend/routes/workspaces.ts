@@ -67,8 +67,9 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     // Ensure the parent conversation has a workspace association equal to the workspace id
     try {
       await service.updateConversationWorkspaceAssociation(id, id);
-    } catch (e) {
-      // Non-fatal: association is best-effort
+    } catch (e: any) {
+      // Non-fatal: association is best-effort — emit WARN with context
+      logger.warn('workspace association update failed (delete path)', { workspaceId: id, itemId, error: e?.message || String(e) });
     }
 
     if (isHardDelete) {

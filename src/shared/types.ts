@@ -480,7 +480,6 @@ export interface CleanupStats {
 /** Tool categorization flags. */
 export interface ToolFlags {
   mandatory: boolean;       // exposed regardless of per-role allowlists
-  defaultEnabled: boolean;  // exposed by default when not explicitly gated
   directorOnly: boolean;    // true → not exposed to agents
 }
 

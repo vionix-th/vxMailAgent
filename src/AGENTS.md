@@ -26,15 +26,15 @@
 - Required-by-Default: Prefer required fields. Optional fields must be justified, documented inline, and covered by tests. Collections are empty arrays (`[]`), not `undefined`.
 - No Defaults for Invariants: Never mask required identifiers with fallbacks (e.g., `|| ''`, `|| 'unknown'`). Validate and fail fast.
 - Discriminated Unions: Tool payloads and results use action/flag discriminants (e.g., calendar `read` vs `add`) so the type system enforces runtime rules.
-- Tool Metadata: `ToolFlags` fields (`mandatory`, `defaultEnabled`, `directorOnly`) are required booleans; `ToolDescriptor.inputSchema` and `ToolDescriptor.flags` are required.
+- Tool Metadata: `ToolFlags` fields (`mandatory`, `directorOnly`) are required booleans; `ToolDescriptor.inputSchema` and `ToolDescriptor.flags` are required.
 - Secrets Separation: Shared/front-end visible types must not expose secrets (e.g., `apiKey`, OAuth tokens). Define public DTOs at route boundaries (e.g., Settings `apiConfigs` omits keys) and keep secret-bearing types backend-only.
 
 ### PR Checklist (Types & Contracts)
-- [ ] No diagnostic fields in domain types (`traceId`, `spanId`, provider info) — search: `rg -n "traceId\?|spanId\?|provider\?: 'openai'" src/shared`.
-- [ ] No invariant fallbacks: search `rg -n "\|\|\s*''|\|\|\s*'unknown'" src`.
-- [ ] Required arrays (no `?: string[]`) for capability lists; empty arrays used when none.
-- [ ] Tool payloads/results are discriminated unions; validators align with types.
-- [ ] Public route DTOs exclude secret fields (settings/accounts). Review `routes/settings.ts` and similar.
+- No diagnostic fields in domain type
+- No invariant fallbacks: search `rg -n "\|\|\s*''|\|\|\s*'unknown'" src`.
+- Required arrays (no `?: string[]`) for capability lists; empty arrays used when none.
+- Tool payloads/results are discriminated unions; validators align with types.
+- Public route DTOs exclude secret fields (settings/accounts). Review `routes/settings.ts` and similar.
 
 ## Testing Guidelines
 - Framework: Node’s test runner (`node --test`) with CJS helpers.
@@ -67,35 +67,6 @@
   - `VX_TEST_MOCK_OPENAI=true` to avoid network calls and make the engine deterministic.
   - `TRACE_PERSIST=false` for unit tests (enable selectively when testing traces).
   - Optionally set `VX_MAILAGENT_DATA_DIR` to a temp dir for FS-backed tests.
-- Scripts (from `src/backend/package.json`):
-  - `npm run test:unit` — build + unit tests (no HTTP); single concurrency for stability.
-  - `npm run test:unit:compiled` — run unit tests against already built `dist/`.
-  - `npm run test:contract` — build + orchestrator contract test (monkey‑patched engine; no network).
-  - `npm run test:contract:compiled` — run contract test against already built `dist/`.
-  - `npm run test:hard` — runs each `.cjs` test in a child process with a hard kill after 30s (env `TEST_HARD_TIMEOUT_MS` override). Defaults: `DISABLE_DOTENV=true`, `VX_TEST_MOCK_OPENAI=true`, `VX_TEST_MOCK_PROVIDER=true`, and `TRACE_PERSIST=false`. It also enables strict unhandled rejections and preloads a diagnostics shim to print active handles before a forced kill.
-    - Implementation detail: the runner spawns each test with `detached: true` and, on timeout, attempts to kill the entire process group (`process.kill(-pid, SIGKILL)` on POSIX) so grandchildren cannot keep the runner alive. As a final safeguard, it force‑resolves after the kill to continue the suite.
-  - `npm run test:live` — optional live route tests (requires backend running and auth token).
-  - `npm test` maps to `test:hard`.
-- Guidance to avoid hangs:
-  - Do not start servers, background loops, or long intervals in unit tests.
-  - Avoid FS hot loops; prefer in‑memory repos. If FS is needed, use a temp `VX_MAILAGENT_DATA_DIR` and clean up.
-  - Disable dotenv in tests with `DISABLE_DOTENV=true` to prevent `.env` interference.
-  - Node’s built‑in test timeout can be omitted from standard scripts; prefer `npm run test:hard` to enforce a per‑file hard cutoff and a consistent test environment. If a file times out, the runner will request the child to dump active handles and requests to stderr (`__DIAG__ JSON`) before kill to aid debugging.
-  - The compile test always runs and has its own internal timeout (`TSC_TIMEOUT_MS`, default 60s) using local `node_modules/.bin/tsc --noEmit`.
-
-### Coverage Expectations
-- Target: 100% backend coverage on core modules. Prioritize:
-  - `services/`: conversation‑orchestrator (contract + error), orchestration‑agent, email‑processor, email‑fetcher, fetcher‑manager, workspace‑service, logging (+ traces), logging‑handlers.
-  - `repository/`: pruning utilities, file repositories basic read/write with TTL/maxItems.
-  - `utils/`: paths (uid safety + containment), orchestration helpers, id/session helpers where feasible.
-- Tooling: prefer `c8` for coverage. Suggested script:
-  - `test:cov`: `c8 --reporter=text-summary node --test "tests/*unit.cjs" "tests/orchestrator.contract.cjs"` with `VX_TEST_MOCK_OPENAI=true TRACE_PERSIST=false`.
-- Gates: CI runs `check` (lint+types+build) then unit + contract tests. Coverage thresholds may be enforced in CI.
-
-### Do/Don’t for Tests
-- Do: use compiled modules from `dist/backend/*`; isolate with in‑memory repos and minimal `ReqLike`.
-- Do: explicitly assert error messages for invalid config; assert append counts for logging.
-- Don’t: depend on external OAuth/providers in unit tests; don’t rely on read+set logging.
 
 ## Commit & Pull Request Guidelines
 - Commits: Conventional Commits (e.g., `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `security:`). Keep scope focused.
