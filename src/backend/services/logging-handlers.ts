@@ -1,231 +1,35 @@
-import { FetcherLogEntry, OrchestrationEvent, ProviderEvent, OrchestrationContext, OrchestrationOutcome } from '../../shared/types';
+import { FetcherLogEntry, OrchestrationEvent, ProviderEvent, OrchestrationOutcome, DirectorContext } from '../../shared/types';
 import { ReqLike } from '../interfaces';
 import { repoGetAll, repoSetAll, requireUserRepo } from '../utils/repo-access';
 import type { OrchestrationLogRepository, ProviderEventsRepository } from '../repository/fileRepositories';
 import { newId } from '../utils/id';
 import logger from './logger';
+ 
 
-// Helper functions for logging
+// Minimal helpers: callers must provide valid req and fields; failures surface naturally
 function logOrch(entry: OrchestrationEvent, req?: ReqLike): void {
-  if (!req) return;
-  try {
-    const repo = requireUserRepo(req, 'orchestrationLog') as unknown as OrchestrationLogRepository;
-    void repo.append(entry).catch(e => logger.error('Failed to append orchestration entry', e));
-  } catch (e) {
-    logger.error('Failed to resolve orchestration repository', e as any);
-  }
+  const repo = requireUserRepo(req as ReqLike, 'orchestrationLog') as unknown as OrchestrationLogRepository;
+  void repo.append(entry);
 }
 
 function logProviderEvent(event: ProviderEvent, req?: ReqLike): void {
-  if (!req) return;
-  try {
-    const repo = requireUserRepo(req, 'providerEvents') as unknown as ProviderEventsRepository;
-    void repo.append(event).catch(e => logger.error('Failed to append provider event', e));
-  } catch (e) {
-    logger.error('Failed to resolve provider events repository', e as any);
-  }
+  const repo = requireUserRepo(req as ReqLike, 'providerEvents') as unknown as ProviderEventsRepository;
+  void repo.append(event);
 }
 
-export function logOrchestrationStart(directorId: string, emailId: string, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId,
-  };
-  const outcome: OrchestrationOutcome = {
-    success: true,
-    metrics: { action: 'start' },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'director',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
-
-export function logOrchestrationSuccess(directorId: string, emailId: string, result: any, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId,
-  };
-  const outcome: OrchestrationOutcome = {
-    success: true,
-    result,
-    metrics: { action: 'success' },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'director',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
-
-export function logOrchestrationError(directorId: string, emailId: string, error: any, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId,
-  };
-  const outcome: OrchestrationOutcome = {
-    success: false,
-    error,
-    metrics: { action: 'error' },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'director',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
-
-export function logAgentStart(agentId: string, emailId: string, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId: '',
-    agentId,
-  };
-  const outcome: OrchestrationOutcome = {
-    success: true,
-    metrics: { action: 'start' },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'agent',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
-
-export function logAgentSuccess(agentId: string, emailId: string, result: any, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId: '',
-    agentId,
-  };
-  const outcome: OrchestrationOutcome = {
-    success: true,
-    result,
-    metrics: { action: 'success' },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'agent',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
-
-export function logAgentError(agentId: string, emailId: string, error: any, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId: '',
-    agentId,
-  };
-  const outcome: OrchestrationOutcome = {
-    success: false,
-    error,
-    metrics: { action: 'error' },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'agent',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
-
-export function logToolStart(tool: string, emailId: string, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId: '',
-  };
-  const outcome: OrchestrationOutcome = {
-    success: true,
-    metrics: { action: 'start', tool },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'tool',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
-
-export function logToolSuccess(tool: string, emailId: string, result: any, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId: '',
-  };
-  const outcome: OrchestrationOutcome = {
-    success: true,
-    result,
-    metrics: { action: 'success', tool },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'tool',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
-
-export function logToolError(tool: string, emailId: string, error: any, req?: ReqLike): void {
-  const context: OrchestrationContext = {
-    fetchCycleId: '',
-    emailId,
-    directorId: '',
-  };
-  const outcome: OrchestrationOutcome = {
-    success: false,
-    error,
-    metrics: { action: 'error', tool },
-  };
-  const entry: OrchestrationEvent = {
-    id: newId(),
-    timestamp: new Date().toISOString(),
-    phase: 'tool',
-    context,
-    outcome,
-  };
-  logOrch(entry, req);
-}
 
 /**
  * Conversation step logging utilities.
  */
 export class ConversationStepLogger {
-  constructor(private req?: ReqLike, private fetchCycleId?: string) {}
+  constructor(private req: ReqLike | undefined, private runId: string, private accountId: string) {}
 
-  logStepStart(threadId: string, stepType: string, emailId: string, directorId?: string): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
+  logStepStart(threadId: string, stepType: string, emailId: string, directorId: string): void {
+    const context: DirectorContext = {
+      runId: this.runId,
       emailId,
-      directorId: directorId || 'system',
+      accountId: this.accountId,
+      directorId,
       conversationId: threadId,
     };
     const outcome: OrchestrationOutcome = {
@@ -249,12 +53,13 @@ export class ConversationStepLogger {
     shouldContinue: boolean, 
     toolCallCount: number,
     emailId: string,
-    directorId?: string
+    directorId: string
   ): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
+    const context: DirectorContext = {
+      runId: this.runId,
       emailId,
-      directorId: directorId || 'system',
+      accountId: this.accountId,
+      directorId,
       conversationId: threadId,
     };
     const outcome: OrchestrationOutcome = {
@@ -271,13 +76,14 @@ export class ConversationStepLogger {
     logOrch(entry, this.req);
   }
 
-  logStepError(threadId: string, stepType: string, durationMs: number, error: string, emailId: string, directorId?: string): void {
+  logStepError(threadId: string, stepType: string, durationMs: number, error: string, emailId: string, directorId: string): void {
     const isTimeout = error.includes('conversation_step_timeout');
     
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
+    const context: DirectorContext = {
+      runId: this.runId,
       emailId,
-      directorId: directorId || 'system',
+      accountId: this.accountId,
+      directorId,
       conversationId: threadId,
     };
     const outcome: OrchestrationOutcome = {
@@ -295,11 +101,12 @@ export class ConversationStepLogger {
     logOrch(entry, this.req);
   }
 
-  logEngineStart(threadId: string, stepType: string, messageCount: number, emailId: string, directorId?: string): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
+  logEngineStart(threadId: string, stepType: string, messageCount: number, emailId: string, directorId: string): void {
+    const context: DirectorContext = {
+      runId: this.runId,
       emailId,
-      directorId: directorId || 'system',
+      accountId: this.accountId,
+      directorId,
       conversationId: threadId,
     };
     const outcome: OrchestrationOutcome = {
@@ -316,11 +123,12 @@ export class ConversationStepLogger {
     logOrch(entry, this.req);
   }
 
-  logEngineTimeout(threadId: string, stepType: string, timeoutMs: number, emailId: string, directorId?: string): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
+  logEngineTimeout(threadId: string, stepType: string, timeoutMs: number, emailId: string, directorId: string): void {
+    const context: DirectorContext = {
+      runId: this.runId,
       emailId,
-      directorId: directorId || 'system',
+      accountId: this.accountId,
+      directorId,
       conversationId: threadId,
     };
     const outcome: OrchestrationOutcome = {
@@ -338,11 +146,12 @@ export class ConversationStepLogger {
     logOrch(entry, this.req);
   }
 
-  logStepCancelled(threadId: string, durationMs: number, emailId: string, directorId?: string): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
+  logStepCancelled(threadId: string, durationMs: number, emailId: string, directorId: string): void {
+    const context: DirectorContext = {
+      runId: this.runId,
       emailId,
-      directorId: directorId || 'system',
+      accountId: this.accountId,
+      directorId,
       conversationId: threadId,
     };
     const outcome: OrchestrationOutcome = {
@@ -360,11 +169,12 @@ export class ConversationStepLogger {
     logOrch(entry, this.req);
   }
 
-  logStepCancelledShutdown(threadId: string, durationMs: number, emailId: string, directorId?: string): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
+  logStepCancelledShutdown(threadId: string, durationMs: number, emailId: string, directorId: string): void {
+    const context: DirectorContext = {
+      runId: this.runId,
       emailId,
-      directorId: directorId || 'system',
+      accountId: this.accountId,
+      directorId,
       conversationId: threadId,
     };
     const outcome: OrchestrationOutcome = {
@@ -452,83 +262,4 @@ export class ProviderEventLogger {
 /**
  * Email processing logging utilities.
  */
-export class EmailProcessingLogger {
-  constructor(private req?: ReqLike, private fetchCycleId?: string) {}
-
-  logFetchStart(): void {
-    // Fetch start is global and not tied to a single email. Use standard logging.
-    // Avoid orchestration log which requires emailId.
-    // This event is covered by FetcherLog elsewhere.
-    // Downgrade to info to avoid violating Option A constraints.
-    (async () => logger.info('Starting email fetch'))();
-  }
-
-  logFetchComplete(emailCount: number, durationMs: number): void {
-    // Same rationale as logFetchStart
-    (async () => logger.info(`Fetch complete: ${emailCount} emails in ${durationMs}ms`, { emailCount, durationMs }))();
-  }
-
-  logProcessingStart(emailId: string): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
-      emailId,
-      directorId: 'system',
-      agentId: 'processor',
-    };
-    const outcome: OrchestrationOutcome = {
-      success: true,
-      metrics: { emailId, type: 'processing_start' },
-    };
-    const entry: OrchestrationEvent = {
-      id: newId(),
-      timestamp: new Date().toISOString(),
-      phase: 'director',
-      context,
-      outcome,
-    };
-    logOrch(entry, this.req);
-  }
-
-  logProcessingComplete(emailId: string, durationMs: number, threadCount: number): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
-      emailId,
-      directorId: 'system',
-      agentId: 'processor',
-    };
-    const outcome: OrchestrationOutcome = {
-      success: true,
-      metrics: { emailId, durationMs, threadCount, type: 'processing_complete' },
-    };
-    const entry: OrchestrationEvent = {
-      id: newId(),
-      timestamp: new Date().toISOString(),
-      phase: 'director',
-      context,
-      outcome,
-    };
-    logOrch(entry, this.req);
-  }
-
-  logProcessingError(emailId: string, error: string, durationMs: number): void {
-    const context: OrchestrationContext = {
-      fetchCycleId: this.fetchCycleId || 'unknown',
-      emailId,
-      directorId: 'system',
-      agentId: 'processor',
-    };
-    const outcome: OrchestrationOutcome = {
-      success: false,
-      error: { message: error },
-      metrics: { emailId, durationMs, type: 'processing_error' },
-    };
-    const entry: OrchestrationEvent = {
-      id: newId(),
-      timestamp: new Date().toISOString(),
-      phase: 'director',
-      context,
-      outcome,
-    };
-    logOrch(entry, this.req);
-  }
-}
+// EmailProcessingLogger removed as unused

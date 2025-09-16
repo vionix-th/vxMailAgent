@@ -29,8 +29,8 @@ export function createEmailRoutes(repos: LiveRepos): express.Router {
 
   // GET /api/emails - Enhanced email list with conversation summaries
   router.get('/', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
-    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit ?? 50)));
+    const offset = Math.max(0, Number(req.query.offset ?? 0));
     const status = req.query.status as string;
 
     // Get all emails (would need pagination in real implementation)

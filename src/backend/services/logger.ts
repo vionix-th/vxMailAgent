@@ -9,8 +9,10 @@ export type LogContext = {
 export type LogMeta = Record<string, any> | undefined;
 
 function createLogger(): PinoLogger {
-  const isProd = (process.env.NODE_ENV || 'development') === 'production';
-  if (isProd) {
+  const env = process.env.NODE_ENV || 'development';
+  const isProd = env === 'production';
+  const isTest = env === 'test';
+  if (isProd || isTest) {
     return pino({
       level: process.env.LOG_LEVEL || 'info',
       base: { service: 'vxmailagent-backend' },

@@ -31,6 +31,7 @@ export function ensureAgentThread(
   apiConfigs: any[],
   nowIso: string,
   newIdFn: () => string,
+  accountId: string,
   traceId?: string,
   req?: ReqLike,
 ): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } {
@@ -62,7 +63,7 @@ export function ensureAgentThread(
   if (!agentThread) {
     const agentThreadId = newIdFn();
     const nowIso2 = nowIso;
-    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', endedAt: null, lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [] } as ConversationThread;
+    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, accountId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', endedAt: null, lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [] } as ConversationThread;
     conversations = [...conversations, agentThread];
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, agentThreadId } }, req);
     return { conversations, agentThread, isNew };
@@ -97,12 +98,12 @@ export async function runAgentConversation(
   let currentMessages: any[] = [...agentThread.messages];
   let updatedConversations = [...conversations];
   let lastAssistant: any = null;
-  if (initialUserMessage) {
-    const userMsg = { role: 'user', content: initialUserMessage, context: { traceId } };
-    currentMessages.push(userMsg);
-    updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, userMsg);
-    setConversations(updatedConversations);
-  }
+    if (initialUserMessage) {
+      const userMsg = { role: 'user', content: initialUserMessage };
+      currentMessages.push(userMsg);
+      updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, userMsg);
+      setConversations(updatedConversations);
+    }
 
   try {
     while (stepCount < LOOP_MAX) {
@@ -192,28 +193,16 @@ export async function runAgentConversation(
 
         try {
           // Find director and agent info for context enrichment
-          const director = conversations.find(c => c.id === agentThread.parentId);
-          const directorInfo = director ? { id: director.directorId, name: undefined } : { id: agentThread.directorId, name: undefined };
-          
           const argsWithContext = { 
             ...args, 
             conversationId: agentThread.id,
-            // Pass context for workspace item creation
-            context: {
-              email: {
-                id: agentThread.email.id,
-                subject: agentThread.email.subject,
-                from: agentThread.email.from,
-                date: agentThread.email.date
-              },
-              director: directorInfo,
-              agent: {
-                id: agentThread.agentId,
-                name: undefined // Agent name not readily available in this scope
-              },
+            // Canonical provenance for workspace item creation
+            provenance: {
+              emailId: agentThread.email.id,
+              conversationId: agentThread.id,
               createdBy: 'agent' as const,
-              agentId: agentThread.agentId,
-              conversationId: agentThread.id
+              creatorId: agentThread.agentId,
+              toolName: tc.name
             }
           };
           let toolTimeoutId: any;

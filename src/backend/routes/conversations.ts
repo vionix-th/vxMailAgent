@@ -91,7 +91,11 @@ export default function registerConversationsRoutes(
 
     let result: ConversationResult;
     // Use a single orchestrator instance for both branches
-    const orchestrator = new ConversationOrchestrator(reqLike);
+    // Always run with a fresh run id for manual steps; accountId must be present on the thread.
+    const accountId = (thread as any).accountId as string;
+    if (!accountId) throw new ValidationError('accountId missing on conversation thread');
+    const runId = newId();
+    const orchestrator = new ConversationOrchestrator(reqLike, runId, accountId);
     const userReq = createUserRequest(req as any, repos);
     if (thread.kind === 'director') {
       // Delegate director orchestration to ConversationOrchestrator to ensure contract adherence
@@ -108,7 +112,7 @@ export default function registerConversationsRoutes(
         agents,
         apiConfigs: settings.apiConfigs,
         prompts,
-        traceId: thread.traceId || ''
+        traceId: (userReq.traceId || '') as any
       }, userReq, 6);
 
       // Determine the last assistant message for response payload
@@ -129,7 +133,7 @@ export default function registerConversationsRoutes(
       };
     }
 
-    logger.info('POST /api/conversations/:id/assistant replied', { id, length: String(result.content || '').length });
+    logger.info('POST /api/conversations/:id/assistant replied', { id, length: String(result.content ?? '').length });
     return res.json({ 
       success: true, 
       message: result.assistantMessage, 

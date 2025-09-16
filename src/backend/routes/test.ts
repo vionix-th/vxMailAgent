@@ -62,7 +62,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
 
   // POST /api/test/chat — playground endpoint to chat with an ApiConfig using arbitrary messages
   app.post('/api/test/chat', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const apiConfigId = String(req.body?.apiConfigId || '');
+    const apiConfigId = String(req.body?.apiConfigId ?? '');
     const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
     const maxCompletionTokens = typeof req.body?.maxCompletionTokens === 'number' ? req.body.maxCompletionTokens : undefined;
     const includeTools = Array.isArray(req.body?.includeTools) ? req.body.includeTools as Array<'calendar_read'|'calendar_add'|'todo_add'|'filesystem_search'|'filesystem_retrieve'|'memory_search'|'memory_add'|'memory_edit'> : [];
@@ -90,4 +90,3 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     res.json(result);
   }));
 }
-

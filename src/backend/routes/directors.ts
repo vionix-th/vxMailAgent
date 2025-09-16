@@ -24,12 +24,11 @@ export default function registerDirectorsRoutes(app: express.Express, repos: Liv
       },
       afterValidate: (director: Director) => ({
         ...director,
-        promptId: (director as any).promptId || '',
-        enabledToolCalls: sanitizeEnabled((director as any).enabledToolCalls)
+        promptId: (director as any).promptId ?? '',
+        enabledToolCalls: sanitizeEnabled((director as any).enabledToolCalls) ?? [],
       } as Director),
       transformList: (directors: Director[]) => 
-        directors.map(d => ({ ...d, promptId: (d as any).promptId || '' }))
+        directors.map(d => ({ ...d, promptId: (d as any).promptId ?? '' }))
     }
   );
 }
-

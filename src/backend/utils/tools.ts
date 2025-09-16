@@ -30,7 +30,7 @@ export function buildToolSpecsByFlags(role: ConversationRole, roleCaps: RoleCapa
   const canSpawn = roleCaps?.canSpawnAgents === true;
   void canSpawn;
   const enabled = TOOL_DESCRIPTORS.filter((d) => {
-    const f = d.flags || {};
+    const f = d.flags;
     if (f.mandatory) return role === 'director' || !f.directorOnly;
     if (f.defaultEnabled) return role === 'director' || !f.directorOnly;
     return false;

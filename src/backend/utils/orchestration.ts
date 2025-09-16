@@ -11,9 +11,9 @@ export type OrchBaseInput = {
   agentName?: string;
   emailSummary: string;
   emailId: string;
-  accountId?: string;
+  accountId: string;
   email?: EmailEnvelope;
-  fetchCycleId: string;
+  runId: string;
   dirThreadId?: string;
   agentThreadId?: string;
 };
@@ -33,15 +33,18 @@ export function buildOrchBase(): Omit<OrchestrationEvent, 'context' | 'outcome' 
  * Build orchestration context from base input.
  */
 export function buildOrchContext(input: OrchBaseInput): OrchestrationContext {
-  const ctx: OrchestrationContext = {
-    fetchCycleId: input.fetchCycleId,
-    emailId: input.emailId,
-    directorId: input.director,
-  };
-  if (typeof input.accountId !== 'undefined') ctx.accountId = input.accountId;
-  if (typeof input.agent !== 'undefined') ctx.agentId = input.agent;
   const convId = typeof input.dirThreadId !== 'undefined' ? input.dirThreadId : input.agentThreadId;
-  if (typeof convId !== 'undefined') ctx.conversationId = convId;
+  if (!convId) {
+    throw new Error('buildOrchContext: conversationId required');
+  }
+  const ctx: OrchestrationContext = {
+    runId: input.runId,
+    emailId: input.emailId,
+    accountId: input.accountId,
+    directorId: input.director,
+    conversationId: convId,
+  };
+  if (typeof input.agent !== 'undefined') ctx.agentId = input.agent;
   return ctx;
 }
 

@@ -272,7 +272,7 @@ Source of truth: `src/backend/config.ts`, `src/backend/services/logger.ts`, and 
 - **Core**
   - `VX_MAILAGENT_KEY` (default: empty) — 64-char hex. Enables AES-256-GCM at rest. If missing/invalid, backend runs in PLAINTEXT and logs a warning via `warnIfInsecure()`.
   - `PORT` (default: 3001) — backend port.
-  - `CORS_ORIGIN` (default: `*`) — allowed origin for CORS.
+  - `CORS_ORIGIN` (default: `*`) — allowed origin for CORS. **Production must set a concrete origin** (e.g., `https://mail.example.com`). For local dev use `http://localhost:3000` to match Vite; backend warns when relying on the dev default.
   - `VX_MAILAGENT_DATA_DIR` — optional override for `data/` root. If unset, `resolveDataDir()` probes common locations under repo root. See `src/backend/utils/paths.ts`.
 
 - **OAuth: Google (Provider: Gmail/Calendar/Tasks)**
@@ -841,3 +841,21 @@ Response shape:
 - Cleanup endpoints are backed directly by per-user repositories via `LiveRepos`; there is no CleanupService or RepositoryHub abstraction.
 - Workspace purge: `DELETE /api/cleanup/workspace-items` delegates to `WorkspaceService.purgeAll()` for centralized behavior.
 - Canonical endpoints are listed under Cleanup (Admin); they remove logs, conversations, traces, and workspace items by id.
+## Tools and Delegation (Unified Model)
+
+- Single registry (`src/shared/tools.ts`) defines all tools (mandatory vs optional). Optional tools are exposed only if explicitly enabled per director/agent settings.
+- Spec building: The backend uses one builder (`src/backend/utils/tools.ts`). The engine accepts a pre-gated `toolRegistry` from callers (e.g., orchestrator) and falls back to builder defaults when not provided.
+- Routing: All tool calls go through the generic router (`src/backend/toolCalls.ts`) which enforces JSON schema + semantic validation and `TOOL_EXEC_TIMEOUT_MS`.
+- Delegation: Use `delegate_to_agent` to run agent work from a director thread. Dynamic `agent__{id}` function tools are deprecated and no longer injected by the engine.
+
+### Running Unit Tests Directly (shim-free)
+
+For deterministic unit results, bypass the aggregate harness:
+
+```
+NODE_ENV=test VX_TEST_MOCK_OPENAI=true TRACE_PERSIST=false \
+node --test --test-timeout=30000 --test-concurrency=1 \
+src/backend/tests/<file>.cjs
+```
+
+Added tests: `delegate_to_agent.unit.cjs`, `list_agents.unit.cjs`, `list_tools.unit.cjs`, `describe_tool.unit.cjs`.

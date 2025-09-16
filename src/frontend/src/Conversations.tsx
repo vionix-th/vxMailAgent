@@ -169,11 +169,11 @@ export default function Conversations() {
 
   function openEdit(item: WorkspaceItem) {
     setEditTarget(item);
-    setEditLabel((item as any).label || '');
-    setEditDescription((item as any).description || '');
-    setEditData((item as any).data || '');
-    setEditMimeType(item.mimeType || '');
-    setEditEncoding((item.encoding as any) || '');
+    setEditLabel((item as any)?.metadata?.label || '');
+    setEditDescription((item as any)?.metadata?.description || '');
+    setEditData((item as any)?.content?.data || '');
+    setEditMimeType(((item as any)?.content?.mimeType) || '');
+    setEditEncoding((((item as any)?.content?.encoding) as any) || '');
     setEditOpen(true);
   }
 
@@ -184,12 +184,16 @@ export default function Conversations() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          expectedRevision: editTarget.revision ?? 1,
-          label: editLabel || undefined,
-          description: editDescription || undefined,
-          mimeType: editMimeType || undefined,
-          encoding: (editEncoding || undefined) as any,
-          data: editData || undefined,
+          expectedRevision: ((editTarget as any)?.lifecycle?.revision ?? 1) as number,
+          metadata: {
+            ...(editLabel ? { label: editLabel } : {}),
+            ...(editDescription ? { description: editDescription } : {}),
+          },
+          content: {
+            ...(editMimeType ? { mimeType: editMimeType } : {}),
+            ...(editEncoding ? { encoding: editEncoding } : {}),
+            ...(typeof editData === 'string' ? { data: editData } : {}),
+          }
         })
       });
       setEditOpen(false);
@@ -384,25 +388,25 @@ export default function Conversations() {
                     <TableCell>
                       <Typography variant="caption" color="text.secondary">
                         {(() => {
-                          const ctx = a.context as any;
-                          if (!ctx) return '';
-                          const by = ctx.createdBy || '';
-                          const agent = ctx.agentId ? `:${ctx.agentId}` : '';
-                          const tool = ctx.tool ? `/${ctx.tool}` : '';
-                          return `${by}${agent}${tool}`;
+                          const prov = (a as any)?.provenance as any;
+                          if (!prov) return '';
+                          const by = prov.createdBy || '';
+                          const who = prov.creatorId ? `:${prov.creatorId}` : '';
+                          const tool = prov.toolName ? `/${prov.toolName}` : '';
+                          return `${by}${who}${tool}`;
                         })()}
                       </Typography>
                     </TableCell>
-                    <TableCell>{(a.tags || []).map((tTag, i) => <Chip key={i} size="small" label={tTag} sx={{ mr: 0.5 }} />)}</TableCell>
+                    <TableCell>{(((a as any)?.metadata?.tags) || []).map((tTag: any, i: number) => <Chip key={i} size="small" label={String(tTag)} sx={{ mr: 0.5 }} />)}</TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {(() => {
-                          const label = (a as any).label as any;
-                          const desc = (a as any).description as any;
+                          const label = (a as any)?.metadata?.label as any;
+                          const desc = (a as any)?.metadata?.description as any;
                           if (typeof label === 'string' && label.trim()) return label;
                           if (typeof desc === 'string' && desc.trim()) return desc;
-                          const d = (a as any).data as any;
-                          const enc = (a as any).encoding as any;
+                          const d = (a as any)?.content?.data as any;
+                          const enc = (a as any)?.content?.encoding as any;
                           if (typeof d === 'string') {
                             try { return enc === 'base64' ? atob(d) : d; } catch { return d; }
                           }
@@ -410,10 +414,10 @@ export default function Conversations() {
                         })()}
                       </Typography>
                     </TableCell>
-                    <TableCell><Typography variant="caption">{a.mimeType || '-'}</Typography></TableCell>
-                    <TableCell><Typography variant="caption">{a.revision ?? '-'}</Typography></TableCell>
-                    <TableCell><Typography variant="caption">{a.created}</Typography></TableCell>
-                    <TableCell><Typography variant="caption">{a.updated}</Typography></TableCell>
+                    <TableCell><Typography variant="caption">{((a as any)?.content?.mimeType) || '-'}</Typography></TableCell>
+                    <TableCell><Typography variant="caption">{((a as any)?.lifecycle?.revision ?? '-') as any}</Typography></TableCell>
+                    <TableCell><Typography variant="caption">{((a as any)?.lifecycle?.created) as any}</Typography></TableCell>
+                    <TableCell><Typography variant="caption">{((a as any)?.lifecycle?.updated) as any}</Typography></TableCell>
                     {detail.thread.kind === 'director' && (
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">

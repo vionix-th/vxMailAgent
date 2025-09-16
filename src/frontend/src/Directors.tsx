@@ -23,7 +23,7 @@ interface Director {
   agentIds: string[];
   promptId?: string;
   apiConfigId: string;
-  enabledToolCalls?: string[];
+  enabledToolCalls: string[];
 }
 
 interface Agent {
@@ -41,6 +41,7 @@ const emptyDirector: Director = {
   agentIds: [],
   promptId: '',
   apiConfigId: '',
+  enabledToolCalls: [],
 };
 
 export default function Directors() {
@@ -232,15 +233,14 @@ export default function Directors() {
                   key={tool}
                   control={
                     <Checkbox
-                      checked={editing ? ((editing.enabledToolCalls ? editing.enabledToolCalls.includes(tool) : true)) : false}
+                      checked={editing ? (editing.enabledToolCalls ? editing.enabledToolCalls.includes(tool) : false) : false}
                       onChange={(_, checked) => {
                         if (!editing) return;
                         const full = OPTIONAL;
-                        const set = new Set(editing.enabledToolCalls ?? full);
+                        const set = new Set(editing.enabledToolCalls || []);
                         if (checked) set.add(tool); else set.delete(tool);
                         const arr = Array.from(set) as Array<'calendar' | 'todo' | 'filesystem' | 'memory'>;
-                        const nextEnabled = arr.length === full.length ? undefined : arr;
-                        setEditing({ ...editing, enabledToolCalls: nextEnabled as any });
+                        setEditing({ ...editing, enabledToolCalls: arr as any });
                       }}
                     />
                   }

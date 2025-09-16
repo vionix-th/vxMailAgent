@@ -233,7 +233,15 @@ data/
 ```
 
 ### 3.2 Components
-#### 3.2.0 Diagnostics vs Workspace Results
+#### 3.2.0 Tools, Delegation, and Diagnostics
+
+* **Tools (single source of truth)**: Defined in `src/shared/tools.ts` and exposed to the model via a single spec builder. There are two categories:
+  - Mandatory: always available (e.g., workspace operations, meta discovery like `list_agents`, `list_tools`, `describe_tool`, `read_api_docs`).
+  - Optional: exposed only when explicitly enabled per director/agent settings.
+* **Delegation**: Implemented with a single `delegate_to_agent` tool. Directors use this tool to assign work to agent threads. Dynamic per-agent tools (e.g., `agent__{id}`) are deprecated and removed from injection to prevent drift and simplify validation.
+* **Router**: All tool calls go through a single router (`src/backend/toolCalls.ts`) which validates inputs (JSON schema + semantics), enforces execution timeouts, and returns structured results.
+
+#### 3.2.0a Diagnostics vs Workspace Results
 
 * **Diagnostics**: Admin/debug only. Includes structured debug artifacts such as function returns and provider payload summaries.
     - Use Conversation/Workspace endpoints, e.g. `GET /api/conversations/byDirectorEmail?directorId=&emailId=` to locate the thread, then `GET /api/workspaces/:id/items` (and related) to list/preview artifacts.

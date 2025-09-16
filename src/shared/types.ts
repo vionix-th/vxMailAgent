@@ -16,7 +16,7 @@ export interface Director {
   agentIds: string[];
   promptId: string;
   apiConfigId: string;
-  enabledToolCalls?: string[];
+  enabledToolCalls: string[];
 }
 
 export type AgentType = 'openai'; // Future: add other providers as needed
@@ -31,21 +31,24 @@ export interface ToolCallRequest {
   payload: CalendarToolCall | TodoToolCall | FileSystemToolCall | MemoryToolCall;
 }
 
-export interface ToolCallResult {
-  kind: ToolCallKind;
-  success: boolean;
-  result: any;
-  error?: string;
-}
+export type ToolCallResult =
+  | { kind: ToolCallKind; success: true; result: any }
+  | { kind: ToolCallKind; success: false; result: any; error: string };
 
 /** Calendar tool call payload. */
-export interface CalendarToolCall {
-  action: 'read' | 'add';
-  provider: AccountProvider;
-  accountId: string;
-  dateRange?: { start: string; end: string };
-  event?: CalendarEvent;
-}
+export type CalendarToolCall =
+  | {
+      action: 'read';
+      provider: AccountProvider;
+      accountId: string;
+      dateRange: { start: string; end: string };
+    }
+  | {
+      action: 'add';
+      provider: AccountProvider;
+      accountId: string;
+      event: CalendarEvent;
+    };
 
 export interface CalendarEvent {
   title: string;
@@ -71,20 +74,24 @@ export interface TodoTask {
 }
 
 /** File system tool call payload. */
-export interface FileSystemToolCall {
-  action: 'search' | 'retrieve';
-  virtualRoot: string;
-  query: string;
-  filePath?: string;
-}
+export type FileSystemToolCall =
+  | {
+      action: 'search';
+      virtualRoot: string;
+      query: string;
+    }
+  | {
+      action: 'retrieve';
+      virtualRoot: string;
+      filePath: string;
+    };
 
 /** Memory tool call payload. */
-export interface MemoryToolCall {
-  action: 'search' | 'add' | 'edit';
-  scope: MemoryScope;
-  query?: string;
-  entry?: MemoryEntry;
-}
+export type MemoryToolCall =
+  | { action: 'search'; scope: MemoryScope; query: string }
+  | { action: 'add'; scope: MemoryScope; entry: MemoryEntry }
+  | { action: 'add'; scope: MemoryScope; content: string; owner: string; tags?: string[] }
+  | { action: 'edit'; scope: MemoryScope; entry: Pick<MemoryEntry, 'id'> & Partial<MemoryEntry> };
 
 // Orchestration result types for diagnostics/results/attachments/notifications
 export interface OrchestrationResult {
@@ -185,12 +192,12 @@ export interface Reply {
 
 /** Orchestration context (reference-only). */
 export interface OrchestrationContext {
-  fetchCycleId: string;
+  runId: string;
   emailId: string;
-  accountId?: string;
+  accountId: string;
   directorId: string;
   agentId?: string;
-  conversationId?: string;
+  conversationId: string;
 }
 
 /** Orchestration outcome. */
@@ -202,13 +209,30 @@ export interface OrchestrationOutcome {
 }
 
 /** Orchestration event (separated concerns). */
-export interface OrchestrationEvent {
-  id: string;
-  timestamp: string;
-  phase: 'director' | 'agent' | 'tool' | 'result';
-  context: OrchestrationContext;
-  outcome: OrchestrationOutcome;
-}
+export type DirectorContext = {
+  runId: string;
+  emailId: string;
+  accountId: string;
+  directorId: string;
+  conversationId: string;
+  agentId?: never;
+};
+
+export type AgentContext = {
+  runId: string;
+  emailId: string;
+  accountId: string;
+  directorId: string;
+  conversationId: string;
+  agentId: string;
+};
+
+export type ToolOrResultContext = OrchestrationContext; // permissive: may include agentId when tool/result originates from agent
+
+export type OrchestrationEvent =
+  | { id: string; timestamp: string; phase: 'director'; context: DirectorContext; outcome: OrchestrationOutcome }
+  | { id: string; timestamp: string; phase: 'agent'; context: AgentContext; outcome: OrchestrationOutcome }
+  | { id: string; timestamp: string; phase: 'tool' | 'result'; context: ToolOrResultContext; outcome: OrchestrationOutcome };
 
 
 
@@ -220,7 +244,7 @@ export interface FetcherLogEntry {
   timestamp: string;                   // ISO timestamp
   level: FetcherLogLevel;              // severity
   provider?: AccountProvider;          // 'gmail' | 'outlook'
-  accountId?: string;                  // source account id
+  accountId: string;                   // source account id ('all' for aggregate events)
   event: string;                       // e.g., 'cycle_start', 'account_start', 'oauth_refreshed', 'messages_listed', 'message_fetched', 'account_complete', 'cycle_complete'
   message?: string;                    // human-readable message
   emailId?: string;                    // optional related email id
@@ -235,7 +259,7 @@ export interface Agent {
   type: AgentType;
   promptId: string;
   apiConfigId: string;
-  enabledToolCalls?: string[];
+  enabledToolCalls: string[];
 }
 
 /** Chat message used in prompts and transcripts. */
@@ -251,10 +275,8 @@ export interface PromptMessage {
     type: 'function';
     function: { name: string; arguments: string };
   }>;
-  /** Optional per-message diagnostic context. */
+  /** Optional per-message metadata (non-diagnostic). */
   context?: {
-    traceId?: string;
-    spanId?: string;
     toolSpecsHash?: string;
     variables?: Record<string, any>;
   };
@@ -338,16 +360,14 @@ export type ConversationStatus = 'ongoing' | 'completed' | 'failed';
 /** Base conversation thread properties. */
 export interface BaseConversationThread {
   id: string;
+  accountId: string;
   email: EmailEnvelope;
   promptId: string;
   apiConfigId: string;
   startedAt: string;
   lastActiveAt: string;
-  /** Optional correlation to a unified diagnostics Trace. */
-  traceId?: string;
   /** OpenAI-aligned transcript of the conversation. */
   messages: PromptMessage[];
-  provider?: 'openai';
 }
 
 /** Director conversation thread. */
@@ -387,10 +407,12 @@ export interface ProviderEventUsage {
 }
 
 /** Provider request/response/error event. */
+export type LLMProvider = 'openai';
+
 export interface ProviderEvent {
   id: string;
   conversationId: string;
-  provider: 'openai';
+  provider: LLMProvider;
   type: ProviderEventType;
   timestamp: string;
   latencyMs?: number;
@@ -435,7 +457,7 @@ export interface Trace {
   id: string;
   /** Optional linkage to envelope id. */
   emailId?: string;
-  accountId?: string;
+  accountId: string;
   provider?: AccountProvider;
   createdAt: string;
   endedAt?: string;
@@ -457,18 +479,18 @@ export interface CleanupStats {
 
 /** Tool categorization flags. */
 export interface ToolFlags {
-  mandatory?: boolean;
-  defaultEnabled?: boolean;
-  directorOnly?: boolean;
+  mandatory: boolean;       // exposed regardless of per-role allowlists
+  defaultEnabled: boolean;  // exposed by default when not explicitly gated
+  directorOnly: boolean;    // true → not exposed to agents
 }
 
 /** Descriptor for LLM-exposed tools (schema intentionally generic). */
 export interface ToolDescriptor {
   name: string;
   description?: string;
-  inputSchema?: any;
+  inputSchema: any;
   outputSchema?: any;
-  flags?: ToolFlags;
+  flags: ToolFlags;
 }
 
 export type ConversationRole = 'director' | 'agent';

@@ -23,6 +23,7 @@ const emptyAgent: Agent = {
   type: 'openai',
   promptId: '',
   apiConfigId: '',
+  enabledToolCalls: [],
 };
 
 export default function Agents() {
@@ -198,15 +199,14 @@ export default function Agents() {
                     key={tool}
                     control={
                       <Checkbox
-                        checked={editing ? ((editing.enabledToolCalls ? editing.enabledToolCalls.includes(tool) : true)) : false}
+                        checked={editing ? (editing.enabledToolCalls ? editing.enabledToolCalls.includes(tool) : false) : false}
                         onChange={(_, checked) => {
                           if (!editing) return;
                           const full = OPTIONAL;
-                          const set = new Set(editing.enabledToolCalls ?? full);
+                          const set = new Set(editing.enabledToolCalls || []);
                           if (checked) set.add(tool); else set.delete(tool);
                           const arr = Array.from(set) as string[];
-                          const nextEnabled = arr.length === full.length ? undefined : arr;
-                          setEditing({ ...editing, enabledToolCalls: nextEnabled as any });
+                          setEditing({ ...editing, enabledToolCalls: arr as any });
                         }}
                       />
                     }

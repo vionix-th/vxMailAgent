@@ -9,6 +9,8 @@ Email assistant that fetches Gmail/Outlook mail, routes messages through a direc
 
 Backend (`src/backend`)
 - `cp .env.example .env` and fill required secrets (see Env Vars).
+  - **Required** for local login: `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`, `GOOGLE_LOGIN_REDIRECT_URI=http://localhost:3001/api/auth/google/callback`.
+  - **Required** for dev CORS: set `CORS_ORIGIN=http://localhost:3000` (matches the Vite dev server).
 - `npm install`
 - `npm run dev` (listens on `http://localhost:3001` by default)
 - Validate: `GET http://localhost:3001/api/health` returns `{"status":"ok"}`
@@ -63,6 +65,7 @@ See `docs/DEVELOPER.md` for usage patterns and options.
 ## Environment Variables (Backend)
 
 - `VX_MAILAGENT_KEY` — required for encryption: 64‑char hex key to encrypt `data/` at rest. If missing/invalid, data is written in plaintext (dev‑only).
+- `CORS_ORIGIN` — **required** in production. Set to the exact frontend origin (e.g., `https://mail.example.com`). For local dev use `http://localhost:3000`.
 - Google OAuth2 (Provider accounts: Gmail/Calendar/Tasks)
   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
   - `GOOGLE_REDIRECT_URI` → set to `http://localhost:3001/api/accounts/oauth/google/callback` (backend callback)
@@ -227,4 +230,3 @@ See `docs/DEVELOPER.md` for details.
 - TypeScript strict mode across packages; follow the existing two‑space indent and single quotes.
 - Conventional Commits (e.g., `feat(backend): add Outlook OAuth refresh`).
 - Before PRs: run `npm run build` in both `src/backend` and `src/frontend` to type‑check.
-

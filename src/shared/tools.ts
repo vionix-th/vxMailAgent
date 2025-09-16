@@ -19,10 +19,10 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   { name: 'list_tools', category: 'mandatory', description: 'List available tools for the current context.', parameters: { type: 'object', properties: {} } },
   { name: 'describe_tool', category: 'mandatory', description: 'Describe a tool (parameters JSON schema and description).', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
   { name: 'read_api_docs', category: 'mandatory', description: 'Retrieve small relevant doc snippets for the given query from curated sources.', parameters: { type: 'object', properties: { query: { type: 'string' }, topK: { type: 'number' } }, required: ['query'] } },
-  { name: 'validate_tool_params', category: 'mandatory', description: 'Validate params against the tool\'s JSON schema, returning errors if any.', parameters: { type: 'object', properties: { name: { type: 'string' }, params: { type: 'object' } }, required: ['name', 'params'] } },
+  { name: 'delegate_to_agent', category: 'mandatory', description: 'Delegate an instruction to a specific agent by id.', parameters: { type: 'object', properties: { agentId: { type: 'string' }, input: { type: 'string' } }, required: ['agentId','input'] } },
   // Workspace (mandatory)
-  { name: 'workspace_add_item', category: 'mandatory', description: 'Add an item to the shared workspace. Optional display metadata: label, description, mimeType, encoding, data.', parameters: { type: 'object', properties: { label: { type: 'string' }, description: { type: 'string' }, mimeType: { type: 'string' }, encoding: { type: 'string', enum: ['utf8', 'base64', 'binary'] }, data: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } } } },
-  { name: 'workspace_list_items', category: 'mandatory', description: 'List all items in the shared workspace.', parameters: { type: 'object', properties: {} } },
+  { name: 'workspace_add_item', category: 'mandatory', description: 'Add an item to the shared workspace. Optional display metadata: label, description, mimeType, encoding, data.', parameters: { type: 'object', properties: { label: { type: 'string' }, description: { type: 'string' }, mimeType: { type: 'string' }, encoding: { type: 'string', enum: ['utf8', 'base64', 'binary'] }, data: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, provenance: { type: 'object', properties: { emailId: { type: 'string' }, conversationId: { type: 'string' }, createdBy: { type: 'string', enum: ['director', 'agent', 'tool'] }, creatorId: { type: 'string' }, toolName: { type: 'string' } }, required: ['emailId','conversationId','createdBy','creatorId'] } }, required: ['provenance'] } },
+  { name: 'workspace_list_items', category: 'mandatory', description: 'List items in the shared workspace; optionally filter by agent id.', parameters: { type: 'object', properties: { agent_id: { type: 'string' } } } },
   { name: 'workspace_get_item', category: 'mandatory', description: 'Get a single workspace item by id.', parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'workspace_update_item', category: 'mandatory', description: 'Update fields on a workspace item.', parameters: { type: 'object', properties: { id: { type: 'string' }, patch: { type: 'object' }, expectedRevision: { type: 'number' } }, required: ['id', 'patch'] } },
   { name: 'workspace_remove_item', category: 'mandatory', description: 'Remove a workspace item.', parameters: { type: 'object', properties: { id: { type: 'string' }, hardDelete: { type: 'boolean' } }, required: ['id'] } },
@@ -50,6 +50,6 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = TOOL_REGISTRY.map((t) => ({
   flags: {
     mandatory: t.category === 'mandatory',
     defaultEnabled: t.category === 'optional',
+    directorOnly: false,
   },
 }));
-

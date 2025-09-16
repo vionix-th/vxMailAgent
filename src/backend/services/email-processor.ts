@@ -1,4 +1,4 @@
-import { ConversationThread, Agent, Director, Filter, Prompt } from '../../shared/types';
+import { ConversationThread, Agent, Director, Filter, Prompt, EmailEnvelope } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
 import { UserRequest } from '../middleware/user-context';
 import { evaluateFilters, selectDirectorTriggers } from './orchestration-director';
@@ -7,25 +7,11 @@ import type { ReqLike } from '../interfaces';
 import { newId } from '../utils/id';
 import { beginSpan, endSpan } from './logging';
 
-export interface EmailEnvelope {
-  id: string;
-  subject: string;
-  from: string;
-  to?: string;
-  cc?: string;
-  bcc?: string;
-  date: string;
-  snippet: string;
-  bodyPlain?: string;
-  bodyHtml?: string;
-  attachments: any[];
-}
-
 export interface EmailProcessingContext {
   envelope: EmailEnvelope;
   account: any;
   traceId: string;
-  fetchCycleId: string;
+  runId: string;
   filters: Filter[];
   directors: Director[];
   agents: Agent[];
@@ -250,12 +236,13 @@ snippet: ${envelope.snippet}`;
       id: dirThreadId,
       kind: 'director',
       parentId: null,
+      accountId: context.account.id,
       directorId: director.id,
       agentId: null,
       traceId,
       email: envelope,
       promptId: directorPrompt.id,
-      apiConfigId: context.apiConfigs.find(a => a.id === director.apiConfigId)?.id || director.apiConfigId,
+      apiConfigId: context.apiConfigs.find(a => a.id === director.apiConfigId)?.id ?? director.apiConfigId,
       startedAt: nowIso,
       status: 'ongoing',
       endedAt: null,
@@ -318,7 +305,7 @@ snippet: ${envelope.snippet}`;
     userReq: UserRequest
   ): void {
     const orchestratorUserReq = createUserRequest(userReq, this.repos);
-    const orchestrator = new ConversationOrchestrator(userReq as unknown as ReqLike, context.fetchCycleId);
+    const orchestrator = new ConversationOrchestrator(userReq as unknown as ReqLike, context.runId, context.account.id);
     
     // Start orchestration asynchronously - don't block email processing
     setImmediate(async () => {
@@ -326,7 +313,7 @@ snippet: ${envelope.snippet}`;
         await orchestrator.runConversationLoop({
           thread,
           director,
-          traceId: thread.traceId!,
+          traceId: context.traceId,
           agents: context.agents,
           apiConfigs: context.apiConfigs,
           prompts: context.prompts

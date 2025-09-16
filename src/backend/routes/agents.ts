@@ -26,7 +26,7 @@ export default function registerAgentsRoutes(app: express.Express, repos: LiveRe
         const enabled = sanitizeEnabled((agent as any).enabledToolCalls);
         return {
           ...agent,
-          ...(Array.isArray(enabled) ? { enabledToolCalls: enabled } : {}),
+          enabledToolCalls: Array.isArray(enabled) ? enabled : [],
         } as Agent;
       }
     }

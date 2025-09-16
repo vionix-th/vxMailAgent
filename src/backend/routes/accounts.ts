@@ -26,7 +26,7 @@ import {
      tokens: {
        accessToken: a.tokens?.accessToken ? 'REDACTED' : '',
        refreshToken: a.tokens?.refreshToken ? 'REDACTED' : '',
-       expiry: a.tokens?.expiry || '',
+       expiry: a.tokens?.expiry ?? '',
      },
    };
  }
@@ -45,22 +45,22 @@ import {
 export default function registerAccountsRoutes(app: express.Express) {
   // OAuth (Connect account) - Google
   app.get('/api/accounts/oauth/google/initiate', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const rawState = String(req.query.state || '');
+    const rawState = String(req.query.state ?? '');
     const { url, loginCookie } = await initiateGoogleAccountOAuth(rawState);
     res.setHeader('Set-Cookie', loginCookie);
     res.json({ url });
   }));
 
   app.get('/api/accounts/oauth/google/callback', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const code = String((req.query as any).code || '');
-    const stateToken = String((req.query as any).state || '');
+    const code = String((req.query as any).code ?? '');
+    const stateToken = String((req.query as any).state ?? '');
     if (!code) throw new ValidationError('Missing code');
     const cookieHeader = typeof req.headers['cookie'] === 'string' ? req.headers['cookie'] : undefined;
     logger.info('Google account callback received', { code: code ? 'present' : 'missing', state: stateToken ? 'present' : 'missing' });
     const account = await handleGoogleAccountCallback(code, stateToken, cookieHeader, req as ReqLike);
     logger.info('Google account callback completed', { accountId: account.id, email: account.email });
     const origin = (CORS_ORIGIN && CORS_ORIGIN !== '*') ? CORS_ORIGIN : '';
-    const location = origin || '/';
+    const location = origin ?? '/';
     res.redirect(location);
   }));
 
@@ -107,7 +107,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       } as Account;
       await svcUpdateAccount(req as ReqLike, id, next);
     } catch (e: any) {
-      if (String(e?.message || '').toLowerCase().includes('not found')) {
+      if (String(e?.message ?? '').toLowerCase().includes('not found')) {
         throw new NotFoundError('Account not found');
       }
       throw e;
@@ -123,7 +123,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       const { revokeStatus, revokeError } = await svcDeleteAccount(req as ReqLike, id);
       res.json({ success: true, revokeStatus, revokeError });
     } catch (e: any) {
-      if (String(e?.message || '').toLowerCase().includes('not found')) {
+      if (String(e?.message ?? '').toLowerCase().includes('not found')) {
         throw new NotFoundError('Account not found');
       }
       throw e;
@@ -139,7 +139,7 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (svcResult.error === 'missing_refresh_token' || svcResult.error === 'invalid_grant') {
         throw new ValidationError(`Refresh failed: ${svcResult.error}`);
       }
-      throw new Error(svcResult.error || 'Refresh failed');
+      throw new Error(svcResult.error ?? 'Refresh failed');
     }
     const result = svcResult && svcResult.tokens
       ? {
@@ -147,7 +147,7 @@ export default function registerAccountsRoutes(app: express.Express) {
           tokens: {
             accessToken: svcResult.tokens?.accessToken ? 'REDACTED' : '',
             refreshToken: svcResult.tokens?.refreshToken ? 'REDACTED' : '',
-            expiry: svcResult.tokens?.expiry || '',
+            expiry: svcResult.tokens?.expiry ?? '',
           },
         }
       : svcResult;
@@ -161,4 +161,3 @@ export default function registerAccountsRoutes(app: express.Express) {
     res.json(result);
   }));
 }
-

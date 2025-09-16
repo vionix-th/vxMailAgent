@@ -32,7 +32,7 @@ function createWorkspaceService(req: ReqLike, deps?: WorkspacesRoutesDeps): Work
 export default function registerWorkspacesRoutes(app: express.Express, deps: WorkspacesRoutesDeps) {
   // List all workspace items
   app.get('/api/workspaces/:id/items', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const includeDeleted = String(req.query.includeDeleted || 'false').toLowerCase() === 'true';
+    const includeDeleted = String(req.query.includeDeleted ?? 'false').toLowerCase() === 'true';
     const service = createWorkspaceService(req as ReqLike, deps);
     const items = await service.listItems(includeDeleted);
     res.json(items);
@@ -82,4 +82,3 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     }
   }));
 }
-

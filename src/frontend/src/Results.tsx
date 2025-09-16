@@ -29,7 +29,7 @@ import Code from '@mui/icons-material/Code';
 import WarningAmber from '@mui/icons-material/WarningAmber';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { WorkspaceItem } from './types/shared';
+import type { WorkspaceItem, ConversationThread } from './types/shared';
 import { useTranslation } from 'react-i18next';
 import { deleteWorkspaceItem } from './utils/api';
 import { apiFetch } from './utils/http';
@@ -39,6 +39,7 @@ import { apiFetch } from './utils/http';
 export default function Results() {
   const { t, i18n } = useTranslation();
   const [workspaceItems, setWorkspaceItems] = useState<WorkspaceItem[]>([]);
+  const [conversations, setConversations] = useState<ConversationThread[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Selection is at group-level (grouped by email id); stores group keys
@@ -56,7 +57,7 @@ export default function Results() {
   // WorkspaceItem render kind derived strictly from mimeType
   type RenderKind = 'markdown' | 'text' | 'html' | 'json' | 'image' | 'attachment' | 'binary' | 'draft_reply' | 'error';
   const getItemKind = (it: WorkspaceItem): RenderKind => {
-    const mt = String(it.mimeType || '').toLowerCase();
+    const mt = String(((it as any)?.content?.mimeType) || '').toLowerCase();
     if (mt === 'application/vnd.ia.draft-reply+json' || mt === 'application/x-ia-draft-reply+json') return 'draft_reply';
     if (mt === 'application/vnd.ia.error+json') return 'error';
     if (mt.startsWith('image/')) return 'image';
@@ -83,9 +84,10 @@ export default function Results() {
   };
   const getItemTitle = (it: WorkspaceItem): string => {
     const kind = getItemKind(it);
-    const baseName = (it.label || '').trim();
-    const base = baseName || (kind === 'binary' ? (it.mimeType || 'item') : kind);
-    const suffix = Array.isArray(it.tags) && it.tags.length ? ` • ${it.tags.join(', ')}` : '';
+    const label = String(((it as any)?.metadata?.label || '')).trim();
+    const base = label || (kind === 'binary' ? ((((it as any)?.content?.mimeType) as string) || 'item') : kind);
+    const tags = Array.isArray((it as any)?.metadata?.tags) ? (it as any).metadata.tags : [];
+    const suffix = tags.length ? ` • ${tags.join(', ')}` : '';
     return `${base}${suffix}`;
   };
 
@@ -119,6 +121,14 @@ export default function Results() {
   };
 
   useEffect(() => { fetchThreads(); }, []);
+  useEffect(() => {
+    apiFetch('/api/conversations?limit=1000&offset=0')
+      .then((resp: any) => {
+        const arr = Array.isArray(resp?.items) ? resp.items as ConversationThread[] : [];
+        setConversations(arr);
+      })
+      .catch(() => void 0);
+  }, []);
 
   // Delete a single workspace item
   const handleDeleteItem = async (item: WorkspaceItem) => {
@@ -145,7 +155,7 @@ export default function Results() {
       const active = activeGroup;
       if (!active) return;
       const items: WorkspaceItem[] = (workspaceItems || [])
-        .filter((i) => !i.deleted && i.context?.email?.id === active.key && i.context?.director?.id === dirId);
+        .filter((i) => !(i as any)?.lifecycle?.deleted && (i as any)?.provenance?.emailId === active.key && (i as any)?.provenance?.createdBy === 'director' && (i as any)?.provenance?.creatorId === dirId);
       if (!items.length) return;
       const confirmMsg = `Delete ${items.length} item(s) for this director?`;
       if (!window.confirm(confirmMsg)) return;
@@ -168,7 +178,7 @@ export default function Results() {
       const active = activeGroup;
       if (!active) return;
       const items: WorkspaceItem[] = (workspaceItems || [])
-        .filter((i) => !i.deleted && i.context?.email?.id === active.key);
+        .filter((i) => !(i as any)?.lifecycle?.deleted && (i as any)?.provenance?.emailId === active.key);
       if (!items.length) return;
       const confirmMsg = `Delete ${items.length} item(s) for this email?`;
       if (!window.confirm(confirmMsg)) return;
@@ -186,24 +196,31 @@ export default function Results() {
   };
 
   // Group entries purely by write-time email context
+  const convByEmail = useMemo(() => {
+    const m = new Map<string, ConversationThread>();
+    for (const c of conversations) {
+      if (c?.email?.id && !m.has(c.email.id)) m.set(c.email.id, c);
+    }
+    return m;
+  }, [conversations]);
+
   const groups = useMemo(() => {
-    const items = (workspaceItems || []).filter(i => !i.deleted && i?.context?.email?.id);
+    const items = (workspaceItems || []).filter(i => !(i as any)?.lifecycle?.deleted && (i as any)?.provenance?.emailId);
     const m = new Map<string, { key: string; subject: string; from: string; date: string; }>();
     for (const it of items) {
-      const emailId = String(it.context!.email.id);
+      const emailId = String(it.provenance!.emailId);
       const existing = m.get(emailId);
-      const subj = it.context?.email?.subject || t('results.noSubject');
-      const from = it.context?.email?.from || '';
-      const date = it.context?.email?.date || '';
+      const conv = convByEmail.get(emailId);
+      const subj = conv?.email?.subject || t('results.noSubject');
+      const from = conv?.email?.from || '';
+      const date = conv?.email?.date || '';
       if (!existing) m.set(emailId, { key: emailId, subject: subj, from, date });
       else {
-        // keep the latest date if provided
         const keep = parseTime(date) > parseTime(existing.date) ? { key: emailId, subject: subj || existing.subject, from: from || existing.from, date } : existing;
         m.set(emailId, keep);
       }
     }
     const arr = Array.from(m.values());
-    // Sort by email date desc
     arr.sort((a, b) => {
       const ta = parseTime(a.date);
       const tb = parseTime(b.date);
@@ -211,7 +228,7 @@ export default function Results() {
       return ta > tb ? -1 : 1;
     });
     return arr;
-  }, [workspaceItems, t]);
+  }, [workspaceItems, convByEmail, t]);
 
   // Filter groups by subject/from (case-insensitive)
   const filteredGroups = useMemo(() => {
@@ -324,7 +341,8 @@ export default function Results() {
                             // derive director ids from items in this email group
                             const dirIdsSet = new Set<string>();
                             (workspaceItems || []).forEach((it) => {
-                              if (!it.deleted && it.context?.email?.id === g.key && it.context?.director?.id) dirIdsSet.add(String(it.context.director.id));
+                              const w = it as any;
+                              if (!w?.lifecycle?.deleted && w?.provenance?.emailId === g.key && w?.provenance?.createdBy === 'director' && w?.provenance?.creatorId) dirIdsSet.add(String(w.provenance.creatorId));
                             });
                             const dirIds = Array.from(dirIdsSet);
                             // Only keep directors that actually have items (already ensured)
@@ -341,14 +359,14 @@ export default function Results() {
                                 const isDirectorSelected = activeGroupKey === g.key && activeDirectorId === dirId && !activeItemId;
                                 const name = directorNameMap[dirId] || dirId;
                                 const items: WorkspaceItem[] = (workspaceItems || [])
-                                  .filter((i) => !i.deleted && i.context?.email?.id === g.key && i.context?.director?.id === dirId);
+                                  .filter((i) => !(i as any)?.lifecycle?.deleted && (i as any)?.provenance?.emailId === g.key && (i as any)?.provenance?.createdBy === 'director' && (i as any)?.provenance?.creatorId === dirId);
                                 const dirKey = `${g.key}:${dirId}`;
                                 const dirExpanded = expandedDirs[dirKey] ?? true;
                                 const toggleDir = (e: React.MouseEvent) => { e.stopPropagation(); setExpandedDirs((s) => ({ ...s, [dirKey]: !dirExpanded })); };
                                 const sortedItems = (items || []).slice().sort((a: any, b: any) => {
-                                  const ta = (a.created || a.updated || '') as string;
-                                  const tb = (b.created || b.updated || '') as string;
-                                  return (tb || '').localeCompare(ta || '');
+                                  const ta = (a?.lifecycle?.updated || a?.lifecycle?.created || '') as string;
+                                  const tb = (b?.lifecycle?.updated || b?.lifecycle?.created || '') as string;
+                                  return String(tb || '').localeCompare(String(ta || ''));
                                 });
                                 return (
                                   <React.Fragment key={dirId}>
@@ -431,9 +449,10 @@ export default function Results() {
                 const renderItem = (it: WorkspaceItem) => {
                   const kind = getItemKind(it);
                   const decodeText = (): string => {
-                    const d = it.data;
+                    const d = (it as any)?.content?.data as string | undefined;
+                    const enc = ((it as any)?.content?.encoding) as string | undefined;
                     if (typeof d !== 'string') return '';
-                    try { return it.encoding === 'base64' ? atob(d) : d; } catch { return d; }
+                    try { return enc === 'base64' ? atob(d) : d; } catch { return d; }
                   };
                   if (kind === 'markdown' || kind === 'text') {
                     const text = decodeText();
@@ -466,11 +485,12 @@ export default function Results() {
                     return <Box sx={{ mt: 1 }} dangerouslySetInnerHTML={{ __html: html }} />;
                   }
                   if (kind === 'json' || kind === 'error') {
-                    const d = it.data;
+                    const d = (it as any)?.content?.data as string | undefined;
                     let out = '';
                     if (typeof d === 'string') {
                       try {
-                        const s = it.encoding === 'base64' ? atob(d) : d;
+                        const enc = ((it as any)?.content?.encoding) as string | undefined;
+                        const s = enc === 'base64' ? atob(d) : d;
                         try { out = JSON.stringify(JSON.parse(s), null, 2); } catch { out = s; }
                       } catch { out = d; }
                     }
@@ -481,23 +501,23 @@ export default function Results() {
                     );
                   }
                   if (kind === 'image' || kind === 'attachment' || kind === 'binary') {
-                    const mt = (it.mimeType || 'application/octet-stream');
-                    const enc = (it.encoding || 'utf8');
+                    const mt = (((it as any)?.content?.mimeType) || 'application/octet-stream');
+                    const enc = (((it as any)?.content?.encoding) || 'utf8');
                     const dataUrl =
-                      typeof it.data === 'string' && it.data.length
+                      typeof (it as any)?.content?.data === 'string' && ((it as any)?.content?.data as string).length
                         ? (enc === 'base64'
-                            ? `data:${mt};base64,${it.data}`
-                            : `data:${mt},${encodeURIComponent(it.data)}`)
+                            ? `data:${mt};base64,${(it as any)?.content?.data}`
+                            : `data:${mt},${encodeURIComponent((it as any)?.content?.data)}`)
                         : undefined;
                     return (
                       <Box sx={{ mt: 1.5 }}>
-                        <Typography variant="subtitle2">{it.label || (kind === 'image' ? (t('results.image') as string) : (t('results.attachment') as string))}</Typography>
+                        <Typography variant="subtitle2">{((it as any)?.metadata?.label) || (kind === 'image' ? (t('results.image') as string) : (t('results.attachment') as string))}</Typography>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
-                          {dataUrl && (it.mimeType || '')?.toLowerCase?.().startsWith('image/') && (
+                          {dataUrl && ((((it as any)?.content?.mimeType) || '') as string)?.toLowerCase?.().startsWith('image/') && (
                             <img src={dataUrl} alt={t('results.imageAlt')} style={{ maxHeight: 120, borderRadius: 4 }} />
                           )}
                           <a href={dataUrl || '#'} target="_blank" rel="noopener noreferrer">{t('results.open')}</a>
-                          {it.mimeType && <Chip label={it.mimeType} size="small" />}
+                          {((it as any)?.content?.mimeType) && <Chip label={(it as any)?.content?.mimeType} size="small" />}
                         </Box>
                       </Box>
                     );
@@ -505,7 +525,7 @@ export default function Results() {
                   const s = decodeText();
                   return (
                     <Box sx={{ mt: 1 }}>
-                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{s || it.description || ''}</pre>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{s || ((it as any)?.metadata?.description) || ''}</pre>
                     </Box>
                   );
                 };
@@ -513,7 +533,7 @@ export default function Results() {
                 return (
                   <Box>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                      <Typography variant="h6">{item.label || t('results.preview')} · {name}</Typography>
+                      <Typography variant="h6">{((item as any)?.metadata?.label) || t('results.preview')} · {name}</Typography>
                       <Stack direction="row" spacing={1}>
                         <Button size="small" variant="text" onClick={() => setActiveItemId(null)}>{t('results.backToDirector')}</Button>
                         <Button size="small" color="error" variant="outlined" disabled={deleting} onClick={() => handleDeleteItem(item)}>Delete</Button>
@@ -530,7 +550,7 @@ export default function Results() {
                 if (!grp) return <Typography variant="body2" color="text.secondary">{t('results.selectItem')}</Typography>;
                 if (activeDirectorId === 'all') {
                   const items: WorkspaceItem[] = (workspaceItems || [])
-                    .filter((i) => !i.deleted && i.context?.email?.id === grp.key);
+                    .filter((i) => !(i as any)?.lifecycle?.deleted && (i as any)?.provenance?.emailId === grp.key);
                   return (
                     <Box>
                       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
@@ -547,7 +567,7 @@ export default function Results() {
                   const dirId = String(activeDirectorId);
                   const name = directorNameMap[dirId] || dirId;
                   const items: WorkspaceItem[] = (workspaceItems || [])
-                    .filter((i) => !i.deleted && i.context?.email?.id === grp.key && i.context?.director?.id === dirId);
+                    .filter((i) => !(i as any)?.lifecycle?.deleted && (i as any)?.provenance?.emailId === grp.key && (i as any)?.provenance?.createdBy === 'director' && (i as any)?.provenance?.creatorId === dirId);
                   return (
                     <Box>
                       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>

@@ -50,15 +50,18 @@ export interface ConversationStepResult {
  * spawns Agent threads, and persists transcripts and provider diagnostics.
  */
 export class ConversationOrchestrator {
-  private activeSteps = new Map<string, { timeoutId: NodeJS.Timeout; startTime: number; emailId: string; email?: any; directorId?: string }>();
+  private activeSteps = new Map<string, { timeoutId: NodeJS.Timeout; startTime: number; emailId: string; directorId: string }>();
   private stepLogger: ConversationStepLogger;
   private providerLogger: ProviderEventLogger;
+  private runId: string;
+  private accountId: string;
 
-  constructor(
-    req?: ReqLike,
-    private fetchCycleId?: string
-  ) {
-    this.stepLogger = new ConversationStepLogger(req, this.fetchCycleId);
+  constructor(req: ReqLike | undefined, runId: string, accountId: string) {
+    if (!runId) throw new Error('runId required');
+    if (!accountId) throw new Error('accountId required');
+    this.runId = runId;
+    this.accountId = accountId;
+    this.stepLogger = new ConversationStepLogger(req, this.runId, this.accountId);
     this.providerLogger = new ProviderEventLogger(req);
   }
 
@@ -75,7 +78,7 @@ export class ConversationOrchestrator {
     userReq: UserRequest
   ): Promise<ConversationStepResult> {
     const threadId = context.thread.id;
-    const emailId = context.thread.email?.id;
+    const emailId = context.thread.email.id;
     if (!emailId) {
       throw new Error('Thread email missing id');
     }
@@ -89,28 +92,44 @@ export class ConversationOrchestrator {
       this.activeSteps.delete(threadId);
     }, CONVERSATION_STEP_TIMEOUT_MS);
 
-    this.activeSteps.set(threadId, { timeoutId, startTime, emailId, email: context.thread.email, directorId: context.thread.directorId });
+    this.activeSteps.set(threadId, { timeoutId, startTime, emailId, directorId: context.thread.directorId });
 
     const stepType = context.thread.kind === 'director' ? 'director_llm' : 'agent_llm';
     this.stepLogger.logStepStart(threadId, stepType, emailId, context.thread.directorId);
-    this.stepLogger.logEngineStart(threadId, stepType, (context.thread.messages || []).length, emailId, context.thread.directorId);
+    this.stepLogger.logEngineStart(threadId, stepType, context.thread.messages.length, emailId, context.thread.directorId);
 
     try {
       const apiCfg = context.apiConfigs.find((c: any) => c.id === context.thread.apiConfigId);
       if (!apiCfg) {
         throw new Error(`API config not found for thread apiConfigId=${context.thread.apiConfigId}`);
       }
-      const result = await conversationEngine.run({
+      let engineTimeoutId: any;
+      // Gate tool registry: mandatory + explicitly enabled optional by director settings
+      const roleIsDirector = context.thread.kind === 'director';
+      const enabledSet = roleIsDirector && context.director
+        ? new Set<string>(context.director.enabledToolCalls)
+        : new Set<string>();
+      const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabledSet.has(d.name));
+
+      const enginePromise = conversationEngine.run({
         messages: context.thread.messages as any,
         apiConfig: apiCfg as any,
         role: context.thread.kind === 'director' ? 'director' : 'agent',
         roleCaps: context.thread.kind === 'director' ? { canSpawnAgents: true } : { canSpawnAgents: false },
-        toolRegistry: TOOL_DESCRIPTORS,
+        toolRegistry: gatedToolDescriptors,
         context: {
           conversationId: context.thread.id,
           agents: context.agents
         }
       });
+      const engineTimeoutPromise = new Promise<never>((_, reject) => {
+        engineTimeoutId = setTimeout(() => {
+          this.stepLogger.logEngineTimeout(threadId, stepType, CONVERSATION_STEP_TIMEOUT_MS, emailId!, context.thread.directorId);
+          reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`));
+        }, Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
+      });
+      const result = await Promise.race([enginePromise, engineTimeoutPromise]) as any;
+      clearTimeout(engineTimeoutId);
 
       // Log provider request/response
       if (result.request) {
@@ -207,8 +226,8 @@ export class ConversationOrchestrator {
     // Gate tool registry for this agent: mandatory + explicitly enabled optional tools
     const allAgents = await userReq.repos.getAgents(userReq.reqLike);
     const agentCfg = allAgents.find((a: Agent) => a.id === thread.agentId);
-    const enabledSet = new Set<string>(Array.isArray(agentCfg?.enabledToolCalls) ? agentCfg!.enabledToolCalls! : []);
-    const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => (d.flags && d.flags.mandatory) || enabledSet.has(d.name));
+    const enabledSet = new Set<string>(agentCfg?.enabledToolCalls || []);
+    const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabledSet.has(d.name));
 
     const userContent = extractLastUserContent(thread.messages as any);
 
@@ -289,17 +308,21 @@ export class ConversationOrchestrator {
       }));
       await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, msgs as any);
       try {
-        const emailId = context.thread.email?.id || 'unknown';
+        const emailIdStrict = context.thread.email.id; // invariant
         this.stepLogger.logStepError(
           context.thread.id,
           'director_tool',
           0,
           `contract_violation_unhandled_tools: ${unhandled.map(u => u.name).join(',')}`,
-          emailId,
+          emailIdStrict,
           context.thread.directorId
         );
-      } catch {
-        // best-effort logging
+      } catch (e: any) {
+        logger.warn('Contract guard logging failed', {
+          error: e?.message || String(e),
+          conversationId: context.thread.id,
+          unhandled: unhandled.map(u => u.name)
+        });
       }
     }
 
@@ -323,81 +346,35 @@ export class ConversationOrchestrator {
       } else if (toolCall.name === 'workspace_list_items') {
         await this.handleWorkspaceListItems(context, userReq, toolCall, args);
         return true;
-      } else if (toolCall.name.startsWith('agent__')) {
-        // Dynamic agent delegation: ensure agent thread, run it, and return result to director as tool message
-        const agentId = toolCall.name.slice('agent__'.length);
-        if (!agentId) {
-          const toolErr = {
-            role: 'tool',
-            name: toolCall.name,
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: 'Missing agent id in tool call name' })
-          } as any;
-          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErr]);
-          return true;
-        }
-        const agent = context.agents.find((a) => a.id === agentId);
-        if (!agent) {
-          const toolErr = {
-            role: 'tool',
-            name: toolCall.name,
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: `Unknown agent: ${agentId}` })
-          } as any;
-          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErr]);
-          return true; // handled with error reply
-        }
-        if (!context.director) {
-          const toolErr = {
-            role: 'tool',
-            name: toolCall.name,
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: 'Director context missing' })
-          } as any;
-          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErr]);
-          return true;
-        }
-
-        const conversations = await userReq.repos.getConversations(userReq.reqLike);
-        const nowIso = new Date().toISOString();
-        // Ensure or create the agent child thread under current director thread
-        let ensured;
+      } else {
+        // Fallback: route remaining names through generic tool handler to honor contract
+        const handleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)) as any);
         try {
-          ensured = ensureAgentThread(
-            conversations,
-            context.thread.id,
-            context.director,
-            agent as any,
-            context.thread.email,
-            context.prompts as any,
-            context.apiConfigs as any,
-            nowIso,
-            newId,
-            userReq.traceId,
-            userReq.reqLike
-          );
-        } catch (e: any) {
-          const toolErr = {
+          // Server-supplied invariants: always include conversationId and directorId
+          const enriched = {
+            ...args,
+            conversationId: context.thread.id,
+            directorId: context.thread.directorId,
+          };
+          const exec = await handleTool(toolCall.name, enriched);
+          const toolMsg = {
             role: 'tool',
             name: toolCall.name,
             tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: 'Agent configuration invalid', details: String(e?.message || e) })
+            content: JSON.stringify(exec)
           } as any;
-          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErr]);
+          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolMsg]);
+          return true;
+        } catch (e: any) {
+          const toolErrorMsg = {
+            role: 'tool',
+            name: toolCall.name,
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ success: false, error: 'tool handler failed', detail: String(e?.message || e) })
+          } as any;
+          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
           return true;
         }
-        await userReq.repos.setConversations(userReq.reqLike, ensured.conversations);
-
-        // Run the agent assistant to completion and capture content
-        const agentResult = await this.runAgentAssistant(ensured.agentThread, userReq);
-        const toolMsg = {
-          role: 'tool',
-          name: toolCall.name,
-          tool_call_id: toolCall.id,
-          content: JSON.stringify({ content: agentResult.content ?? null })
-        } as any;
-        await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolMsg]);
-        return true;
       }
     } catch (error: any) {
       logger.error('Error processing director tool call', {
@@ -449,6 +426,7 @@ export class ConversationOrchestrator {
         context.apiConfigs as any,
         nowIso,
         () => newId(),
+        this.accountId,
         userReq.traceId,
         userReq.reqLike
       );
@@ -496,14 +474,14 @@ export class ConversationOrchestrator {
     let items: WorkspaceItem[] = Array.isArray(listResult.result) ? (listResult.result as WorkspaceItem[]) : [];
     const agentId = args.agent_id ? String(args.agent_id) : undefined;
     if (agentId) {
-      items = items.filter((it) => String((it as any).context?.agentId || (it as any).agentId) === agentId);
+      items = items.filter((it) => String((it as any).provenance?.creatorId) === agentId);
     }
 
     const toolResponse: PromptMessage = {
       id: newId(),
       role: 'tool',
       tool_call_id: toolCall.id,
-      content: JSON.stringify(listResult)
+      content: JSON.stringify({ success: true, result: items })
     };
 
     await repoAppendMessage(userReq.repos, userReq.reqLike, context.thread.id, toolResponse);
@@ -539,19 +517,12 @@ export class ConversationOrchestrator {
       encoding: typeof args.encoding === 'string' ? args.encoding : 'utf8',
       data: typeof args.data === 'string' ? args.data : (typeof args.content === 'string' ? args.content : undefined),
       tags: Array.isArray(args.tags) ? args.tags : (args.type ? [String(args.type)] : undefined),
-      context: {
-        email: {
-          id: String(context.thread.email?.id || ''),
-          subject: context.thread.email?.subject,
-          from: context.thread.email?.from,
-          date: context.thread.email?.date,
-        },
-        director: { id: context.director?.id || context.thread.directorId, name: context.director?.name },
-        agent: { id: agentId, name: context.agents.find(a => a.id === agentId)?.name },
-        createdBy: 'director',
-        agentId,
-        tool: toolCall?.name || 'workspace_add_item',
+      provenance: {
+        emailId: context.thread.email.id,
         conversationId,
+        createdBy: 'director' as const,
+        creatorId: context.thread.directorId,
+        toolName: toolCall?.name || 'workspace_add_item'
       },
     };
 
@@ -583,8 +554,8 @@ export class ConversationOrchestrator {
       // Gate tool registry for the agent: mandatory + explicitly enabled optional tools
       const allAgents = await userReq.repos.getAgents(userReq.reqLike);
       const agentCfg = allAgents.find((a: Agent) => a.id === agentThread.agentId);
-      const enabledSet = new Set<string>(Array.isArray(agentCfg?.enabledToolCalls) ? agentCfg!.enabledToolCalls! : []);
-      const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => (d.flags && d.flags.mandatory) || enabledSet.has(d.name));
+      const enabledSet = new Set<string>(agentCfg?.enabledToolCalls || []);
+      const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabledSet.has(d.name));
 
       const agentResult = await runAgentConversation(
         agentThread,

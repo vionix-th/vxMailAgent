@@ -2,16 +2,16 @@
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
 import { ToolCallResult, MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
 import { validateAgainstSchema } from './validation';
-import { TOOL_REGISTRY } from '../shared/tools';
+import { TOOL_REGISTRY, TOOL_DESCRIPTORS } from '../shared/tools';
+import { TOOL_EXEC_TIMEOUT_MS } from './config';
 import logger from './services/logger';
 import { WorkspaceService } from './services/workspace-service';
 import { Repository } from './repository/core';
 import { newId } from './utils/id';
+import type { RepoBundle } from './repository/registry';
+import { ensureAgentThread, runAgentConversation } from './services/orchestration-agent';
 
-export function createToolHandler(repos: {
-  memory: Repository<MemoryEntry>;
-  workspaceItems: Repository<WorkspaceItem>;
-}) {
+export function createToolHandler(repos: RepoBundle) {
   async function handleToolByName(name: string, params: any): Promise<ToolCallResult> {
     const spec = TOOL_REGISTRY.find(t => t.name === name) || null;
     if (!spec) return { kind: name, success: false, result: null, error: 'Unknown tool name' };
@@ -22,57 +22,235 @@ export function createToolHandler(repos: {
       return { kind: name, success: false, result: { ok: false, errors: allErrors, received: sanitize(params) }, error: 'Invalid tool params' };
     }
     try {
+      const withTimeout = async <T>(p: Promise<T>): Promise<T> => {
+        let to: any;
+        try {
+          const timed = await Promise.race([
+            p,
+            new Promise<never>((_, reject) => { to = setTimeout(() => reject(new Error(`tool_exec_timeout_${TOOL_EXEC_TIMEOUT_MS}ms`)), Math.max(1, TOOL_EXEC_TIMEOUT_MS || 0)); })
+          ]);
+          return timed as T;
+        } finally {
+          if (to) clearTimeout(to);
+        }
+      };
       switch (name) {
+        // ---- Meta tools ----
+        case 'list_agents': {
+          const directorId = typeof params?.directorId === 'string' ? params.directorId : '';
+          if (!directorId) {
+            return { kind: name, success: false, result: null, error: 'directorId is required' };
+          }
+          const [allAgents, allDirectors] = await Promise.all([
+            repos.agents.getAll(),
+            repos.directors.getAll(),
+          ]);
+          const director = allDirectors.find((d: any) => d.id === directorId);
+          if (!director) return { kind: name, success: false, result: null, error: 'Director not found' };
+          const set = new Set<string>(Array.isArray(director.agentIds) ? director.agentIds : []);
+          const roster = allAgents
+            .filter((a: any) => set.has(a.id))
+            .map((a: any) => ({ id: a.id, name: a.name, apiConfigId: a.apiConfigId }));
+          return { kind: name, success: true, result: roster };
+        }
+        case 'list_tools': {
+          // List tools visible to the current actor (director by default).
+          const directorId = typeof params?.directorId === 'string' ? params.directorId : '';
+          let enabled = new Set<string>();
+          if (directorId) {
+            const allDirectors = await repos.directors.getAll();
+            const d = allDirectors.find((x: any) => x.id === directorId);
+            if (d && Array.isArray(d.enabledToolCalls)) enabled = new Set<string>(d.enabledToolCalls);
+          }
+          const visible = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabled.has(d.name))
+            .map(d => ({ name: d.name, description: d.description }));
+          return { kind: name, success: true, result: visible };
+        }
+        case 'describe_tool': {
+          const tname = typeof params?.name === 'string' ? params.name : '';
+          if (!tname) return { kind: name, success: false, result: null, error: 'name is required' };
+          const desc = TOOL_REGISTRY.find(t => t.name === tname);
+          if (!desc) return { kind: name, success: false, result: null, error: 'tool not found' };
+          return { kind: name, success: true, result: { name: desc.name, description: desc.description, parameters: desc.parameters } };
+        }
+        case 'read_api_docs': {
+          const query = typeof params?.query === 'string' ? params.query : '';
+          const topK = typeof params?.topK === 'number' ? params.topK : 3;
+          if (!query) return { kind: name, success: false, result: null, error: 'query is required' };
+          // Stub: return curated doc pointers; no filesystem access to avoid runtime path issues post-compile.
+          const snippets = [
+            { source: 'docs/DEVELOPER.md', note: 'Backend API and type system overview.' },
+            { source: 'docs/DESIGN.md', note: 'Architecture, data model, and contracts.' },
+            { source: 'README.md', note: 'Quick start and API summary.' },
+          ].slice(0, Math.max(1, Math.min(3, topK)));
+          return { kind: name, success: true, result: { query, matches: snippets } };
+        }
+        case 'delegate_to_agent': {
+          const agentId = typeof params?.agentId === 'string' ? params.agentId : '';
+          const input = typeof params?.input === 'string' ? params.input : '';
+          const parentId = typeof params?.conversationId === 'string' ? params.conversationId : '';
+          const directorId = typeof params?.directorId === 'string' ? params.directorId : '';
+          if (!agentId || !input || !parentId || !directorId) {
+            return { kind: name, success: false, result: null, error: 'Missing agentId, input, conversationId, or directorId' };
+          }
+          const conversations = await repos.conversations.getAll();
+          const parent = conversations.find((c: any) => c.id === parentId);
+          if (!parent) return { kind: name, success: false, result: null, error: 'Parent conversation not found' };
+          const directors = await repos.directors.getAll();
+          const dirObj = directors.find((d: any) => d.id === directorId);
+          if (!dirObj) return { kind: name, success: false, result: null, error: 'Director not found' };
+          const agents = await repos.agents.getAll();
+          const agentObj = agents.find((a: any) => a.id === agentId);
+          if (!agentObj) return { kind: name, success: false, result: null, error: 'Agent not found' };
+          const prompts = await repos.prompts.getAll();
+          const settingsArr = await repos.settings.getAll();
+          const apiConfigs = Array.isArray(settingsArr) && settingsArr[0]?.apiConfigs ? settingsArr[0].apiConfigs : [];
+          const nowIso = new Date().toISOString();
+          let ensured: any;
+          try {
+            ensured = ensureAgentThread(
+              conversations,
+              parent.id,
+              dirObj,
+              agentObj,
+              parent.email,
+              prompts,
+              apiConfigs,
+              nowIso,
+              newId,
+              parent.accountId
+            );
+          } catch (e: any) {
+            return { kind: name, success: false, result: null, error: e?.message || String(e) };
+          }
+          await repos.conversations.setAll(ensured.conversations);
+
+          const agentThread = ensured.agentThread;
+          const apiCfg = apiConfigs.find((c: any) => c.id === agentThread.apiConfigId);
+          if (!apiCfg) return { kind: name, success: false, result: null, error: 'API config not found for agent' };
+          const enabledSet = new Set<string>(agentObj.enabledToolCalls || []);
+          const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabledSet.has(d.name));
+          const setConversations = async (next: any[]) => { await repos.conversations.setAll(next); };
+          const handleTool = createToolHandler(repos);
+          const agentResult = await runAgentConversation(
+            agentThread,
+            input,
+            ensured.conversations,
+            apiCfg,
+            gatedToolDescriptors,
+            setConversations as any,
+            handleTool,
+          );
+          if (agentResult.success) {
+            return { kind: name, success: true, result: { content: agentResult.finalAssistantMessage?.content ?? null } };
+          } else {
+            return { kind: name, success: false, result: null, error: agentResult.error || 'Agent conversation failed' };
+          }
+        }
+        case 'list_agents': {
+          const allAgents = await repos.agents.getAll();
+          const directorId = typeof params?.directorId === 'string' ? params.directorId : undefined;
+          let result = allAgents;
+          if (directorId) {
+            const directors = await repos.directors.getAll();
+            const dir = directors.find((d: any) => d.id === directorId);
+            const set = new Set<string>(Array.isArray(dir?.agentIds) ? dir.agentIds : []);
+            if (set.size) result = allAgents.filter((a: any) => set.has(a.id));
+          }
+          const agentsSlim = result.map((a: any) => ({ id: a.id, name: a.name, apiConfigId: a.apiConfigId }));
+          return { kind: name, success: true, result: agentsSlim };
+        }
+        case 'list_tools': {
+          const directorId = typeof params?.directorId === 'string' ? params.directorId : undefined;
+          let enabled = new Set<string>();
+          if (directorId) {
+            const directors = await repos.directors.getAll();
+            const dir = directors.find((d: any) => d.id === directorId);
+            enabled = new Set<string>((dir?.enabledToolCalls || []));
+          }
+          const core = TOOL_REGISTRY
+            .filter(t => t.category === 'mandatory' || enabled.has(t.name))
+            .map(t => ({ name: t.name, description: t.description }));
+          return { kind: name, success: true, result: core };
+        }
+        case 'describe_tool': {
+          const toolName = typeof params?.name === 'string' ? params.name : '';
+          if (!toolName) return { kind: name, success: false, result: null, error: 'Missing tool name' };
+          const spec = TOOL_REGISTRY.find(t => t.name === toolName);
+          if (!spec) return { kind: name, success: false, result: null, error: 'Tool not found' };
+          return { kind: name, success: true, result: { name: spec.name, description: spec.description, parameters: spec.parameters } };
+        }
+        case 'read_api_docs': {
+          const q = typeof params?.query === 'string' ? params.query.trim() : '';
+          if (!q) return { kind: name, success: false, result: null, error: 'Missing query' };
+          // Stubbed: no live retrieval here; return neutral result structure
+          const topK = typeof params?.topK === 'number' ? Math.max(1, Math.min(10, params.topK)) : 3;
+          const snippets: Array<{ source: string; title: string; excerpt: string }> = [];
+          return { kind: name, success: true, result: { query: q, topK, snippets } };
+        }
+        case 'describe_tool': {
+          const toolName = typeof params?.name === 'string' ? params.name : '';
+          if (!toolName) return { kind: name, success: false, result: null, error: 'Missing name' };
+          const spec2 = TOOL_REGISTRY.find(t => t.name === toolName);
+          if (!spec2) return { kind: name, success: false, result: null, error: `Tool not found: ${toolName}` };
+          return { kind: name, success: true, result: { name: spec2.name, description: spec2.description, parameters: spec2.parameters } };
+        }
+        case 'read_api_docs': {
+          const query = typeof params?.query === 'string' ? params.query : '';
+          const topK = typeof params?.topK === 'number' ? params.topK : 3;
+          const note = 'read_api_docs is a stub; integrate curated sources to enable retrieval.';
+          return { kind: name, success: true, result: { query, topK, note, snippets: [] } };
+        }
         case 'calendar_read': {
-          const r = await handleCalendarToolCall({ ...params, action: 'read' });
+          const r = await withTimeout(handleCalendarToolCall({ ...params, action: 'read' }));
           return { ...r, kind: name };
         }
         case 'calendar_add': {
-          const r = await handleCalendarToolCall({ ...params, action: 'add' });
+          const r = await withTimeout(handleCalendarToolCall({ ...params, action: 'add' }));
           return { ...r, kind: name };
         }
         case 'todo_add': {
-          const r = await handleTodoToolCall({ ...params, action: 'add' });
+          const r = await withTimeout(handleTodoToolCall({ ...params, action: 'add' }));
           return { ...r, kind: name };
         }
         case 'filesystem_search': {
-          const r = await handleFilesystemToolCall({ ...params, action: 'search' });
+          const r = await withTimeout(handleFilesystemToolCall({ ...params, action: 'search' }));
           return { ...r, kind: name };
         }
         case 'filesystem_retrieve': {
-          const r = await handleFilesystemToolCall({ ...params, action: 'retrieve' });
+          const r = await withTimeout(handleFilesystemToolCall({ ...params, action: 'retrieve' }));
           return { ...r, kind: name };
         }
         case 'memory_search': {
-          const r = await handleMemoryToolCall({ ...params, action: 'search' }, repos.memory);
+          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'search' }, repos.memory as unknown as Repository<MemoryEntry>));
           return { ...r, kind: name };
         }
         case 'memory_add': {
-          const r = await handleMemoryToolCall({ ...params, action: 'add' }, repos.memory);
+          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'add' }, repos.memory as unknown as Repository<MemoryEntry>));
           return { ...r, kind: name };
         }
         case 'memory_edit': {
-          const r = await handleMemoryToolCall({ ...params, action: 'edit' }, repos.memory);
+          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'edit' }, repos.memory as unknown as Repository<MemoryEntry>));
           return { ...r, kind: name };
         }
         case 'workspace_add_item': {
-          const r = await handleWorkspaceToolCall({ ...params, action: 'add' }, repos.workspaceItems);
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'add' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
           return { ...r, kind: name };
         }
         case 'workspace_list_items': {
-          const r = await handleWorkspaceToolCall({ ...params, action: 'list' }, repos.workspaceItems);
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'list' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
           return { ...r, kind: name };
         }
         case 'workspace_get_item': {
-          const r = await handleWorkspaceToolCall({ ...params, action: 'get' }, repos.workspaceItems);
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'get' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
           return { ...r, kind: name };
         }
         case 'workspace_update_item': {
-          const r = await handleWorkspaceToolCall({ ...params, action: 'update' }, repos.workspaceItems);
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'update' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
           return { ...r, kind: name };
         }
         case 'workspace_remove_item': {
-          const r = await handleWorkspaceToolCall({ ...params, action: 'remove' }, repos.workspaceItems);
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'remove' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
           return { ...r, kind: name };
         }
         default:
@@ -166,13 +344,14 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<
       const errors: string[] = [];
       if (!base) errors.push('Missing entry or content/query');
       if (base && !base.content) errors.push('Missing content string');
+      if (base && typeof base.owner !== 'string') errors.push('Missing owner');
       const entry: MemoryEntry | null = !errors.length && base ? {
         id: (base as any)?.id || newId(),
         scope: (base.scope as MemoryScope) || scope,
         content: String(base.content),
         created: now,
         updated: now,
-        owner: typeof base.owner === 'string' ? base.owner : 'system',
+        owner: base.owner as string,
         ...(Array.isArray(base.tags) ? { tags: base.tags } : {}),
         ...((base as any)?.relatedEmailId ? { relatedEmailId: (base as any).relatedEmailId } : {}),
         ...(base.metadata ? { metadata: base.metadata } : {}),
@@ -219,15 +398,34 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
       setItems: (next) => workspaceRepo.setAll(next),
     });
     if (payload.action === 'add') {
-      const item = await service.addItem({
-        label: payload.label,
-        description: payload.description,
-        mimeType: payload.mimeType,
-        encoding: payload.encoding,
-        data: payload.data,
-        tags: payload.tags,
-        context: payload.context,
-      } as any);
+      const prov = payload.provenance || {};
+      const emailId = prov?.emailId;
+      const conversationId = prov?.conversationId;
+      const createdBy: 'director' | 'agent' | 'tool' | undefined = prov?.createdBy;
+      const creatorId = prov?.creatorId;
+      if (!emailId || !conversationId || !createdBy || !creatorId) {
+        return { kind: 'workspace', success: false, result: { ok: false, errors: ['Missing provenance (emailId/conversationId/createdBy/creatorId)'], received: sanitize(payload) }, error: 'Invalid workspace add payload' };
+      }
+      const input = {
+        content: {
+          mimeType: payload.mimeType || 'text/plain',
+          encoding: payload.encoding || 'utf8',
+          data: typeof payload.data === 'string' ? payload.data : ''
+        },
+        metadata: {
+          label: payload.label,
+          description: payload.description,
+          tags: Array.isArray(payload.tags) ? payload.tags : []
+        },
+        provenance: {
+          emailId: String(emailId),
+          conversationId: String(conversationId),
+          createdBy,
+          creatorId: String(creatorId),
+          toolName: String(prov?.toolName || 'workspace_add_item')
+        }
+      } as const;
+      const item = await service.addItem(input as any);
       return { kind: 'workspace', success: true, result: { added: true, item } };
     } else if (payload.action === 'list') {
       const items = await service.listItems(false);
@@ -257,9 +455,21 @@ function sanitize(obj: any) {
   }
 }
 
+function baseKind(kind: string): string {
+  // Normalize extended names like calendar_read -> calendar
+  if (!kind) return '';
+  if (kind.startsWith('calendar_')) return 'calendar';
+  if (kind.startsWith('filesystem_')) return 'filesystem';
+  if (kind.startsWith('todo_')) return 'todo';
+  if (kind.startsWith('memory_')) return 'memory';
+  if (kind.startsWith('workspace_')) return 'workspace';
+  return kind;
+}
+
 function validateToolSemantics(kind: string, payload: any): string[] {
   const errs: string[] = [];
-  if (kind === 'calendar') {
+  const k = baseKind(kind);
+  if (k === 'calendar') {
     if (payload.action === 'read') {
       if (!payload.dateRange || typeof payload.dateRange.start !== 'string' || typeof payload.dateRange.end !== 'string') {
         errs.push('calendar: read requires dateRange.start and dateRange.end strings');
@@ -270,16 +480,16 @@ function validateToolSemantics(kind: string, payload: any): string[] {
         errs.push('calendar: add requires event.title, event.start, event.end strings');
       }
     }
-  } else if (kind === 'filesystem') {
+  } else if (k === 'filesystem') {
     if (payload.action === 'search') {
       if (typeof payload.query !== 'string') errs.push('filesystem: search requires query string');
     } else if (payload.action === 'retrieve') {
       if (typeof payload.filePath !== 'string') errs.push('filesystem: retrieve requires filePath string');
     }
-  } else if (kind === 'todo') {
+  } else if (k === 'todo') {
     if (payload.action !== 'add') errs.push('todo: only action add is supported');
     else if (!payload.task || typeof payload.task.title !== 'string') errs.push('todo: add requires task.title string');
-  } else if (kind === 'memory') {
+  } else if (k === 'memory') {
     if (payload.action === 'edit') {
       if (!payload.entry || typeof payload.entry !== 'object' || typeof payload.entry.id !== 'string') {
         errs.push('memory: edit requires entry.id string');

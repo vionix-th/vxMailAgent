@@ -18,8 +18,25 @@ export function configureSecurityHeaders(app: express.Application): void {
 /** CORS configuration honoring CORS_ORIGIN and credentials. */
 export function configureCors(app: express.Application): void {
   const origin = CORS_ORIGIN;
-  if (origin && origin !== '*') app.use(cors({ origin, credentials: true }));
-  else app.use(cors());
+  if (origin && origin !== '*') {
+    app.use(cors({ origin, credentials: true }));
+  } else {
+    // Allowlisted default in development to keep DX smooth; emit a one-time WARN.
+    // AGENTS: Allowlisted Defaults Only — safe, documented, dev-only.
+    const devDefault = 'http://localhost:3000';
+    if (!isProd) {
+      let warned = false;
+      if (!warned) {
+        warned = true;
+        logger.warn('CORS_ORIGIN not set or wildcard in dev; defaulting to http://localhost:3000 with credentials');
+      }
+      app.use(cors({ origin: devDefault, credentials: true }));
+    } else {
+      // In production, require explicit origin; fallback to no credentials.
+      logger.warn('CORS_ORIGIN is wildcard or unset in production; credentials not allowed. Set CORS_ORIGIN to a concrete origin.');
+      app.use(cors());
+    }
+  }
 }
 
 /** JSON parser and lightweight request logging. */

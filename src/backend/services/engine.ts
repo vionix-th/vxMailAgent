@@ -1,50 +1,22 @@
 import { ConversationEngine, ConversationEngineRunInput, ConversationEngineRunResult, ToolDescriptor } from '../../shared/types';
 import { chatCompletion } from '../providers/openai';
-
-/** Convert a tool descriptor to the OpenAI tool specification. */
-function toOpenAiToolSpec(desc: ToolDescriptor): any {
-  return { type: 'function', function: { name: desc.name, description: desc.description, parameters: desc.inputSchema } };
-}
-
-/** Filter tool descriptors based on the actor role. */
-function filterDescriptorsByRole(descs: ToolDescriptor[], role: 'director' | 'agent'): ToolDescriptor[] {
-  return descs.filter((d) => {
-    const f = d.flags || {};
-    if (f.directorOnly && role !== 'director') return false;
-    if (f.mandatory) return true;
-    if (f.defaultEnabled) return true;
-    return false;
-  });
-}
+import { buildToolSpecsByFlags } from '../utils/tools';
 
 /** Conversation engine driving chat completions and tool exposure. */
 export const conversationEngine: ConversationEngine = {
   /** Run a single conversation turn. */
   async run(input: ConversationEngineRunInput): Promise<ConversationEngineRunResult> {
-    const { messages, apiConfig, role, roleCaps, toolRegistry } = input;
-    const enabled = filterDescriptorsByRole(toolRegistry, role);
-    let tools: any[] = enabled.map(toOpenAiToolSpec);
-
-    if (role === 'director' && roleCaps?.canSpawnAgents) {
-      const agents = Array.isArray((input as any).context?.agents) ? (input as any).context.agents : [];
-      if (agents.length) {
-        const dynamicAgentTools = agents.map((a: any) => ({
-          type: 'function',
-          function: {
-            name: `agent__${a.id}`,
-            description: `Call agent ${a.name || a.id} with input`,
-            parameters: {
-              type: 'object',
-              properties: {
-                input: { type: 'string', description: 'Instruction for the agent' },
-              },
-              required: ['input'],
-            },
-          },
-        }));
-        tools = [...tools, ...dynamicAgentTools];
-      }
+    const { messages, apiConfig, role, roleCaps } = input;
+    const toOpenAiToolSpec = (desc: ToolDescriptor): any => ({ type: 'function', function: { name: desc.name, description: desc.description, parameters: desc.inputSchema } });
+    let tools: any[];
+    const provided = (input as any).toolRegistry as ToolDescriptor[] | undefined;
+    if (Array.isArray(provided) && provided.length) {
+      tools = provided.map(toOpenAiToolSpec);
+    } else {
+      tools = buildToolSpecsByFlags(role, roleCaps);
     }
+
+    // Dynamic per-agent tools are deprecated; use delegate_to_agent only
 
     const completionOpts: any = {
       tools,

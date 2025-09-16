@@ -46,11 +46,13 @@ class SecurityAuditService {
 
   constructor() {
     this.logPath = dataPath('security-audit.log');
-    setInterval(() => {
-      this.flush().catch((err) =>
-        logger.error('SECURITY-AUDIT flush failed', { err })
-      );
-    }, this.flushIntervalMs);
+    if ((process.env.NODE_ENV || '').toLowerCase() !== 'test') {
+      setInterval(() => {
+        this.flush().catch((err) =>
+          logger.error('SECURITY-AUDIT flush failed', { err })
+        );
+      }, this.flushIntervalMs);
+    }
   }
 
   private async ensureLogDirectory(): Promise<void> {
