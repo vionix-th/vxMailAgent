@@ -38,6 +38,23 @@ Clean code
 - Separate workspace management, logging, and agent coordination into dedicated services.
 - Enforce strict typing and explicit identifiers; no optional IDs in core entities.
 
+Root‑Cause‑First (RCF) Policy — mandatory
+- Fix producers, not consumers: If output is missing/invalid, repair the component that produces it (ingestion, persistence, orchestration), not the caller.
+- No backfill/synthesis in the backend: Do not fabricate or “derive” primary data from other stores to mask gaps.
+- Minimal delta: Prefer editing existing code over adding new files or layers. Adding code to compensate for bugs is prohibited.
+- Remove palliative code: If you find compensating logic, remove it while fixing the root cause.
+
+Change Gate (must be satisfied before writing code)
+- Defect hypothesis: State the specific broken invariant and where it originates.
+- SOT declaration: Identify the single source of truth touched by the change.
+- Repair location: Name the producer to change and why the route/UI must not compensate.
+- Exit criteria: Define the observable state that proves the fix (without adding logs, guard scripts, or fallbacks).
+
+Prohibited “shortcuts” (reject and escalate)
+- Backend fallbacks (synthesizing missing primaries from other stores).
+- Adding guard/monitor scripts instead of fixing the bug (unless Caesar explicitly asks for guards).
+- Introducing new modules to route around a defect (“shim”, “hotfix layer”, “temporary adapter”).
+
 Documentation
 - docs/DESIGN.md: describes the target/final product and intended behavior.
 - docs/DEVELOPER.md: documents current implementation, APIs, and active development.
@@ -53,6 +70,7 @@ Defaults & validation
 - Validate At Boundaries: Schema‑validate external inputs (env, request, tool params); reject on failure.
 - Safe Defaulting Semantics: Use `??` only for typed optionals; never use `||` for defaulting.
 - Layered Behavior: Backend enforces invariants strictly; UI may degrade while surfacing causes.
+- UI‑only degradation: Any degradation must live in the UI layer. Backend routes never degrade by inventing data.
 - PR Checklist: For each default, document safety, location, and tests for missing‑value and normal paths; log and count default activations.
 
 Comments & sources
@@ -78,6 +96,10 @@ Forward‑only development
 - No backwards compatibility or migrations unless explicitly instructed.
 - Prefer API changes that improve design; update UI to match backend changes.
 - Use Git history for recovery; do not preserve obsolete implementations.
+
+Forward Programming (No Re‑past)
+- Do not paper over past mistakes with new code. If prior work is at fault, modify or remove it directly.
+- If you can’t pinpoint a root cause within two short passes, stop and ask Caesar before adding any new file, script, or layer.
 
 Explicit exclusions
 - Do not add route aliases or deprecated endpoints.
