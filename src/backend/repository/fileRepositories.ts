@@ -308,6 +308,21 @@ export class FileJsonRepository<T> extends PrunableFileRepo<T> implements Reposi
       await this.writeAllUnlocked(next);
     });
   }
+
+  /**
+   * Atomically read-modify-write the JSON list under the repository file lock.
+   */
+  async mutate(updater: (current: T[]) => Promise<T[]> | T[]): Promise<T[]> {
+    return await withFileLock(this.filePath, async () => {
+      // Load the latest snapshot without taking an additional lock; we already hold it.
+      const current = fs.existsSync(this.filePath)
+        ? (await persistence.loadAndDecrypt(this.filePath, this.containerPath) as T[])
+        : [] as T[];
+      const next = await Promise.resolve(updater(Array.isArray(current) ? current : []));
+      await this.writeAllUnlocked(next);
+      return next;
+    });
+  }
 }
 
 /** Repository interface for fetcher logs. */
@@ -689,6 +704,20 @@ class SystemFileJsonRepository<T> extends SystemPrunableFileRepo<T> implements R
   async setAll(next: T[]): Promise<void> {
     await withFileLock(this.filePath, async () => {
       await this.writeAllUnlocked(next);
+    });
+  }
+
+  /**
+   * Atomically read-modify-write the JSON list under the repository file lock.
+   */
+  async mutate(updater: (current: T[]) => Promise<T[]> | T[]): Promise<T[]> {
+    return await withFileLock(this.filePath, async () => {
+      const current = fs.existsSync(this.filePath)
+        ? (await persistence.loadAndDecrypt(this.filePath, this.containerPath) as T[])
+        : [] as T[];
+      const next = await Promise.resolve(updater(Array.isArray(current) ? current : []));
+      await this.writeAllUnlocked(next);
+      return next;
     });
   }
 }

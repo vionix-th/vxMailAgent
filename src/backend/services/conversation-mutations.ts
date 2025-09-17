@@ -64,18 +64,7 @@ export async function repoAppendMessage(
   threadId: string,
   message: PromptMessage,
 ): Promise<ConversationThread | null> {
-  const conversations = await repos.getConversations(req);
-  const idx = conversations.findIndex((c: ConversationThread) => c.id === threadId);
-  if (idx === -1) return null;
-  const updated: ConversationThread = {
-    ...conversations[idx],
-    messages: [...conversations[idx].messages, message],
-    lastActiveAt: new Date().toISOString(),
-  } as ConversationThread;
-  const next = conversations.slice();
-  next[idx] = updated;
-  await repos.setConversations(req, next);
-  return updated;
+  return repos.appendMessagesToConversation(req, threadId, [message]);
 }
 
 export async function repoAppendMessages(
@@ -84,18 +73,7 @@ export async function repoAppendMessages(
   threadId: string,
   messages: PromptMessage[] | any[],
 ): Promise<ConversationThread | null> {
-  const conversations = await repos.getConversations(req);
-  const idx = conversations.findIndex((c: ConversationThread) => c.id === threadId);
-  if (idx === -1) return null;
-  const updated: ConversationThread = {
-    ...conversations[idx],
-    messages: [...conversations[idx].messages, ...(messages || [])],
-    lastActiveAt: new Date().toISOString(),
-  } as ConversationThread;
-  const next = conversations.slice();
-  next[idx] = updated;
-  await repos.setConversations(req, next);
-  return updated;
+  return repos.appendMessagesToConversation(req, threadId, messages as any[]);
 }
 
 export async function repoFinalizeThreadStatus(
@@ -104,19 +82,7 @@ export async function repoFinalizeThreadStatus(
   threadId: string,
   status: 'completed' | 'failed',
 ): Promise<void> {
-  const conversations = await repos.getConversations(req);
-  const idx = conversations.findIndex((c: ConversationThread) => c.id === threadId);
-  if (idx === -1) return;
-  const now = new Date().toISOString();
-  const updated: ConversationThread = {
-    ...conversations[idx],
-    status,
-    endedAt: now,
-    lastActiveAt: now,
-  } as ConversationThread;
-  const next = conversations.slice();
-  next[idx] = updated;
-  await repos.setConversations(req, next);
+  await repos.finalizeThreadStatusAtomic(req, threadId, status);
 }
 
 export async function repoGetThreadById(

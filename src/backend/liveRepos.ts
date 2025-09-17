@@ -1,6 +1,7 @@
 import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent } from '../shared/types';
-import { requireReq, requireUserRepo, repoGetAll, repoSetAll, ReqLike } from './utils/repo-access';
+import { requireReq, requireUserRepo, repoGetAll, repoSetAll, requireRepos, ReqLike } from './utils/repo-access';
 import { RepoBundle } from './repository/registry';
+import type { ConversationThread } from '../shared/types';
 
 export interface LiveRepos {
   getPrompts(req?: ReqLike): Promise<Prompt[]>;
@@ -16,6 +17,10 @@ export interface LiveRepos {
   getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]>;
   getConversations(req?: ReqLike): Promise<ConversationThread[]>;
   setConversations(req: ReqLike, next: ConversationThread[]): Promise<void>;
+  /** Append one or more messages to a thread atomically. */
+  appendMessagesToConversation(req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null>;
+  /** Finalize a thread's status atomically. */
+  finalizeThreadStatusAtomic(req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null>;
   getEmails(req?: ReqLike): Promise<EmailEnvelope[]>;
   setEmails(req: ReqLike, next: EmailEnvelope[]): Promise<void>;
   getProviderEvents(req?: ReqLike): Promise<ProviderEvent[]>;
@@ -50,6 +55,59 @@ export function createLiveRepos(): LiveRepos {
     getOrchestrationLog: get<OrchestrationEvent>('orchestrationLog'),
     getConversations: get<ConversationThread>('conversations'),
     setConversations: set<ConversationThread>('conversations'),
+    appendMessagesToConversation: async (req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null> => {
+      const r = requireReq(req);
+      const bundle = requireRepos(r);
+      const repo = bundle.conversations as unknown as { mutate?: (fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]) => Promise<ConversationThread[]> };
+      if (!repo || typeof repo.mutate !== 'function') {
+        // Fallback (non-atomic): preserve prior behavior if mutate is unavailable
+        const list = await repoGetAll<ConversationThread>(r, 'conversations');
+        const idx = list.findIndex((c) => c.id === threadId);
+        if (idx === -1) return null;
+        const now = new Date().toISOString();
+        const updated: ConversationThread = { ...list[idx], lastActiveAt: now, messages: [...list[idx].messages, ...(messages || [])] } as ConversationThread;
+        const next = list.slice();
+        next[idx] = updated;
+        await repoSetAll<ConversationThread>(r, 'conversations', next);
+        return updated;
+      }
+      const next = await repo.mutate((cur) => {
+        const idx = cur.findIndex((c) => c.id === threadId);
+        if (idx === -1) return cur;
+        const now = new Date().toISOString();
+        const updated: ConversationThread = { ...cur[idx], lastActiveAt: now, messages: [...cur[idx].messages, ...(messages || [])] } as ConversationThread;
+        const out = cur.slice();
+        out[idx] = updated;
+        return out;
+      });
+      return next.find((c) => c.id === threadId) || null;
+    },
+    finalizeThreadStatusAtomic: async (req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null> => {
+      const r = requireReq(req);
+      const bundle = requireRepos(r);
+      const repo = bundle.conversations as unknown as { mutate?: (fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]) => Promise<ConversationThread[]> };
+      if (!repo || typeof repo.mutate !== 'function') {
+        const list = await repoGetAll<ConversationThread>(r, 'conversations');
+        const idx = list.findIndex((c) => c.id === threadId);
+        if (idx === -1) return null;
+        const now = new Date().toISOString();
+        const updated: ConversationThread = { ...list[idx], status, endedAt: now, lastActiveAt: now } as ConversationThread;
+        const next = list.slice();
+        next[idx] = updated;
+        await repoSetAll<ConversationThread>(r, 'conversations', next);
+        return updated;
+      }
+      const next = await repo.mutate((cur) => {
+        const idx = cur.findIndex((c) => c.id === threadId);
+        if (idx === -1) return cur;
+        const now = new Date().toISOString();
+        const updated: ConversationThread = { ...cur[idx], status, endedAt: now, lastActiveAt: now } as ConversationThread;
+        const out = cur.slice();
+        out[idx] = updated;
+        return out;
+      });
+      return next.find((c) => c.id === threadId) || null;
+    },
     getSettings: async (req?: ReqLike) => {
       const r = requireReq(req);
       const arr = await repoGetAll<any>(r, 'settings');
