@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { VX_MAILAGENT_KEY, USER_MAX_FILE_SIZE_MB } from './config';
+import { VX_MAILAGENT_KEY, USER_MAX_FILE_SIZE_MB, isProd } from './config';
 import { validatePathSafety, resolveDataDir } from './utils/paths';
 import logger from './services/logger';
 import { PersistenceError } from './services/error-handler';
@@ -18,6 +18,11 @@ const getKey = (): Buffer | undefined => {
   const key = VX_MAILAGENT_KEY;
   if (!key || key.length !== 64) {
     if (!warnPlaintext) {
+      if (isProd) {
+        const msg = 'VX_MAILAGENT_KEY unset or invalid in production; encrypted persistence required.';
+        logger.error(msg, { envVar: 'VX_MAILAGENT_KEY' });
+        throw new PersistenceError(msg);
+      }
       logger.warn('VX_MAILAGENT_KEY unset or invalid; persistence will use PLAINTEXT mode.', { envVar: 'VX_MAILAGENT_KEY' });
       warnPlaintext = true;
     }

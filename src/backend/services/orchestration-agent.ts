@@ -63,7 +63,7 @@ export function ensureAgentThread(
   if (!agentThread) {
     const agentThreadId = newIdFn();
     const nowIso2 = nowIso;
-    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, accountId, directorId: director.id, agentId: agent.id, traceId, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', endedAt: null, lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [] } as ConversationThread;
+    agentThread = { id: agentThreadId, kind: 'agent', parentId: dirThreadId, accountId, directorId: director.id, agentId: agent.id, email: emailEnvelope as any, promptId: agentPrompt.id, apiConfigId: agentApi.id, startedAt: nowIso2, status: 'ongoing', endedAt: null, lastActiveAt: nowIso2, messages: [...agentPrompt.messages], errors: [] } as ConversationThread;
     conversations = [...conversations, agentThread];
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'ok', response: { created: true, agentThreadId } }, req);
     return { conversations, agentThread, isNew };

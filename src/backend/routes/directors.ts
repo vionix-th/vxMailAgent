@@ -18,17 +18,15 @@ export default function registerDirectorsRoutes(app: express.Express, repos: Liv
     },
     {
       validate: (director: Director) => {
-        if (!director.apiConfigId) {
-          throw new Error('apiConfigId is required for Director');
-        }
+        const pid = String((director as any).promptId || '').trim();
+        if (!pid) throw new Error('promptId is required for Director');
+        const aid = String((director as any).apiConfigId || '').trim();
+        if (!aid) throw new Error('apiConfigId is required for Director');
       },
       afterValidate: (director: Director) => ({
         ...director,
-        promptId: (director as any).promptId ?? '',
         enabledToolCalls: sanitizeEnabled((director as any).enabledToolCalls) ?? [],
       } as Director),
-      transformList: (directors: Director[]) => 
-        directors.map(d => ({ ...d, promptId: (d as any).promptId ?? '' }))
     }
   );
 }

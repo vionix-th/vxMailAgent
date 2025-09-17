@@ -1,12 +1,114 @@
 import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import logger from '../services/logger';
 import * as persistence from '../persistence';
 import { Repository } from './core';
 import { ProviderEvent, Trace, FetcherLogEntry, OrchestrationEvent } from '../../shared/types';
-import { TRACE_TTL_DAYS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_DAYS, ORCHESTRATION_TTL_DAYS } from '../config';
+import { TRACE_TTL_DAYS, PROVIDER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE, FETCHER_TTL_DAYS, ORCHESTRATION_TTL_DAYS, VX_MAILAGENT_KEY, isProd } from '../config';
 import { securityAudit } from '../services/security-audit';
 import { SecurityError, RepositoryError } from '../services/error-handler';
 import { withFileLock } from '../utils/file-lock';
+import { validatePathSafety } from '../utils/paths';
+
+// ---- NDJSON journal helpers (atomic append, optional per-record encryption) ----
+
+const JOURNAL_SUFFIX = '.ndjson';
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 12;
+const ENC = 'base64';
+const COMPACT_JOURNAL_MAX_LINES = 5000; // compact when journal grows beyond this
+
+function journalPath(filePath: string): string {
+  return filePath.replace(/\.json$/i, JOURNAL_SUFFIX);
+}
+
+function getKeyBuf(): Buffer | undefined {
+  return (VX_MAILAGENT_KEY && VX_MAILAGENT_KEY.length === 64) ? Buffer.from(VX_MAILAGENT_KEY, 'hex') : undefined;
+}
+
+function encryptObjectToPayload(obj: any, key: Buffer): string {
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const json = JSON.stringify(obj);
+  const encrypted = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, encrypted]).toString(ENC);
+}
+
+function decryptPayloadToObject(payload: string, key: Buffer): any {
+  const buf = Buffer.from(payload, ENC);
+  const iv = buf.slice(0, IV_LENGTH);
+  const tag = buf.slice(IV_LENGTH, IV_LENGTH + 16);
+  const encrypted = buf.slice(IV_LENGTH + 16);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  const json = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  return JSON.parse(json);
+}
+
+async function appendNdjsonLine(containerPath: string, ndjsonPath: string, entry: any): Promise<void> {
+  if (!validatePathSafety(ndjsonPath, containerPath)) {
+    throw new SecurityError(`Unsafe NDJSON path: ${ndjsonPath}`);
+  }
+  const dir = path.dirname(ndjsonPath);
+  await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+
+  const key = getKeyBuf();
+  if (isProd && !key) {
+    throw new RepositoryError('Encrypted append required in production, but VX_MAILAGENT_KEY is invalid');
+  }
+  const lineObj = key ? { _enc: encryptObjectToPayload(entry, key) } : entry;
+  const line = JSON.stringify(lineObj) + '\n';
+  await fs.promises.appendFile(ndjsonPath, line, { encoding: 'utf8', mode: 0o600, flag: 'a' });
+}
+
+async function readNdjson(containerPath: string, ndjsonPath: string): Promise<any[]> {
+  if (!fs.existsSync(ndjsonPath)) return [];
+  if (!validatePathSafety(ndjsonPath, containerPath)) {
+    throw new SecurityError(`Unsafe NDJSON path: ${ndjsonPath}`);
+  }
+  const text = await fs.promises.readFile(ndjsonPath, 'utf8');
+  const key = getKeyBuf();
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const out: any[] = [];
+  for (const ln of lines) {
+    try {
+      const obj = JSON.parse(ln);
+      if (obj && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, '_enc')) {
+        if (!key) {
+          if (isProd) throw new RepositoryError('Encrypted journal entry encountered without valid key');
+          // dev fallback: skip unreadable encrypted entries
+          continue;
+        }
+        out.push(decryptPayloadToObject(String(obj._enc || ''), key));
+      } else {
+        out.push(obj);
+      }
+    } catch {
+      // tolerate json parse errors on individual lines
+    }
+  }
+  return out;
+}
+
+async function compactJournalIfNeeded<T>(containerPath: string, jsonPath: string, list: T[]): Promise<void> {
+  const ndPath = journalPath(jsonPath);
+  try {
+    if (!fs.existsSync(ndPath)) return;
+    const stat = await fs.promises.stat(ndPath);
+    // rough heuristic: compact by line count estimate (file size / 200 bytes) or if size > 10MB
+    const approxLines = Math.ceil(stat.size / 200);
+    if (approxLines < COMPACT_JOURNAL_MAX_LINES && stat.size < 10 * 1024 * 1024) return;
+  } catch {
+    return;
+  }
+  // Compact: write full snapshot and truncate journal
+  await withFileLock(jsonPath, async () => {
+    await persistence.encryptAndPersist(list, jsonPath, containerPath);
+  });
+  try { await fs.promises.truncate(ndPath, 0); } catch { /* ignore */ }
+}
 
 /** System-level file repository base with clear system-scoped auditing. */
 export abstract class SystemFileRepoBase {
@@ -229,14 +331,15 @@ export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> 
 
   async getAll(): Promise<FetcherLogEntry[]> {
     try {
-      if (fs.existsSync(this.filePath)) {
-        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as FetcherLogEntry[]);
-        const fileStats = fs.statSync(this.filePath);
-        this.logFileOperation('read', true, undefined, fileStats.size);
-        return data;
-      }
-      this.logFileOperation('read', true, 'File does not exist');
-      return [];
+      const snapshot = fs.existsSync(this.filePath)
+        ? (await persistence.loadAndDecrypt(this.filePath, this.containerPath) as FetcherLogEntry[])
+        : [];
+      const journal = await readNdjson(this.containerPath, journalPath(this.filePath)) as FetcherLogEntry[];
+      const merged = this.pruneList([...snapshot, ...journal]);
+      await compactJournalIfNeeded(this.containerPath, this.filePath, merged);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : undefined;
+      this.logFileOperation('read', true, undefined, fileStats?.size);
+      return merged;
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
@@ -267,10 +370,10 @@ export class FileFetcherLogRepository extends PrunableFileRepo<FetcherLogEntry> 
   }
 
   async append(e: FetcherLogEntry): Promise<void> {
-    await withFileLock(this.filePath, async () => {
-      const list = await this.getAll();
-      list.push(e);
-      await this.writeAllUnlocked(list);
+    const ndPath = journalPath(this.filePath);
+    await withFileLock(ndPath, async () => {
+      await appendNdjsonLine(this.containerPath, ndPath, e);
+      this.logFileOperation('write', true);
     });
   }
 }
@@ -296,14 +399,15 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
 
   async getAll(): Promise<OrchestrationEvent[]> {
     try {
-      if (fs.existsSync(this.filePath)) {
-        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationEvent[]);
-        const fileStats = fs.statSync(this.filePath);
-        this.logFileOperation('read', true, undefined, fileStats.size);
-        return data;
-      }
-      this.logFileOperation('read', true, 'File does not exist');
-      return [];
+      const snapshot = fs.existsSync(this.filePath)
+        ? (await persistence.loadAndDecrypt(this.filePath, this.containerPath) as OrchestrationEvent[])
+        : [];
+      const journal = await readNdjson(this.containerPath, journalPath(this.filePath)) as OrchestrationEvent[];
+      const merged = this.pruneList([...snapshot, ...journal]);
+      await compactJournalIfNeeded(this.containerPath, this.filePath, merged);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : undefined;
+      this.logFileOperation('read', true, undefined, fileStats?.size);
+      return merged;
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
@@ -334,10 +438,10 @@ export class FileOrchestrationLogRepository extends PrunableFileRepo<Orchestrati
   }
 
   async append(e: OrchestrationEvent): Promise<void> {
-    await withFileLock(this.filePath, async () => {
-      const list = await this.getAll();
-      list.push(e);
-      await this.writeAllUnlocked(list);
+    const ndPath = journalPath(this.filePath);
+    await withFileLock(ndPath, async () => {
+      await appendNdjsonLine(this.containerPath, ndPath, e);
+      this.logFileOperation('write', true);
     });
   }
 }
@@ -363,14 +467,15 @@ export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent
   
   async getAll(): Promise<ProviderEvent[]> {
     try {
-      if (fs.existsSync(this.filePath)) {
-        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[]);
-        const fileStats = fs.statSync(this.filePath);
-        this.logFileOperation('read', true, undefined, fileStats.size);
-        return data;
-      }
-      this.logFileOperation('read', true, 'File does not exist');
-      return [];
+      const snapshot = fs.existsSync(this.filePath)
+        ? (await persistence.loadAndDecrypt(this.filePath, this.containerPath) as ProviderEvent[])
+        : [];
+      const journal = await readNdjson(this.containerPath, journalPath(this.filePath)) as ProviderEvent[];
+      const merged = this.pruneList([...snapshot, ...journal]);
+      await compactJournalIfNeeded(this.containerPath, this.filePath, merged);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : undefined;
+      this.logFileOperation('read', true, undefined, fileStats?.size);
+      return merged;
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
@@ -401,10 +506,10 @@ export class FileProviderEventsRepository extends PrunableFileRepo<ProviderEvent
   }
 
   async append(ev: ProviderEvent): Promise<void> {
-    await withFileLock(this.filePath, async () => {
-      const list = await this.getAll();
-      list.push(ev);
-      await this.writeAllUnlocked(list);
+    const ndPath = journalPath(this.filePath);
+    await withFileLock(ndPath, async () => {
+      await appendNdjsonLine(this.containerPath, ndPath, ev);
+      this.logFileOperation('write', true);
     });
   }
 }
@@ -431,14 +536,15 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
   
   async getAll(): Promise<Trace[]> {
     try {
-      if (fs.existsSync(this.filePath)) {
-        const data = this.pruneList(await persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[]);
-        const fileStats = fs.statSync(this.filePath);
-        this.logFileOperation('read', true, undefined, fileStats.size);
-        return data;
-      }
-      this.logFileOperation('read', true, 'File does not exist');
-      return [];
+      const snapshot = fs.existsSync(this.filePath)
+        ? (await persistence.loadAndDecrypt(this.filePath, this.containerPath) as Trace[])
+        : [];
+      const journal = await readNdjson(this.containerPath, journalPath(this.filePath)) as Trace[];
+      const merged = this.pruneList([...snapshot, ...journal]);
+      await compactJournalIfNeeded(this.containerPath, this.filePath, merged);
+      const fileStats = fs.existsSync(this.filePath) ? fs.statSync(this.filePath) : undefined;
+      this.logFileOperation('read', true, undefined, fileStats?.size);
+      return merged;
     } catch (e) {
       const error = e as Error;
       this.logFileOperation('read', false, error.message);
@@ -469,10 +575,10 @@ export class FileTracesRepository extends PrunableFileRepo<Trace> implements Tra
   }
 
   async append(t: Trace): Promise<void> {
-    await withFileLock(this.filePath, async () => {
-      const list = await this.getAll();
-      list.push(t);
-      await this.writeAllUnlocked(list);
+    const ndPath = journalPath(this.filePath);
+    await withFileLock(ndPath, async () => {
+      await appendNdjsonLine(this.containerPath, ndPath, t);
+      this.logFileOperation('write', true);
     });
   }
 

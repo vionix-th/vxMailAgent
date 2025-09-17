@@ -183,7 +183,7 @@ export class EmailProcessor {
     }
 
     // Create and persist thread
-    const thread = this.buildDirectorThread(director, envelope, context, traceId);
+    const thread = this.buildDirectorThread(director, envelope, context);
     await this.persistDirectorThread(thread, traceId, userReq);
     
     // Log successful creation
@@ -214,8 +214,7 @@ export class EmailProcessor {
   private buildDirectorThread(
     director: Director,
     envelope: EmailEnvelope,
-    context: EmailProcessingContext,
-    traceId: string
+    context: EmailProcessingContext
   ): ConversationThread {
     const directorPrompt = context.prompts.find(p => p.id === director.promptId)!;
     const dirThreadId = newId();
@@ -239,7 +238,6 @@ snippet: ${envelope.snippet}`;
       accountId: context.account.id,
       directorId: director.id,
       agentId: null,
-      traceId,
       email: envelope,
       promptId: directorPrompt.id,
       apiConfigId: context.apiConfigs.find(a => a.id === director.apiConfigId)?.id ?? director.apiConfigId,

@@ -11,7 +11,7 @@ Scope: Backend only. Producer-first fixes; no shims or compensating layers.
 
 ## P0 — Critical
 
-- [ ] Diagnostics separation: remove `traceId` from persisted conversations
+- [x] Diagnostics separation: remove `traceId` from persisted conversations
   - SOT: `conversations.json` (via `LiveRepos.setConversations`)
   - Repair Location: conversation producers
     - `src/backend/services/email-processor.ts` (thread construction)
@@ -20,7 +20,7 @@ Scope: Backend only. Producer-first fixes; no shims or compensating layers.
   - Exit Criteria: No conversation record contains `traceId`; correlation uses diagnostics repos keyed by `conversationId`.
   - Notes/Risks: Audit all reads of `thread.traceId` and replace with context wiring.
 
-- [ ] Fail-closed encryption + JWT in production
+- [x] Fail-closed encryption + JWT in production
   - SOT: `src/backend/config.ts`, `src/backend/persistence.ts`
   - Repair Location: config bootstrap and persistence key resolution
     - Enforce: if `NODE_ENV=production` and `VX_MAILAGENT_KEY` is not 64-hex → throw at startup.
@@ -28,7 +28,7 @@ Scope: Backend only. Producer-first fixes; no shims or compensating layers.
   - Exit Criteria: Server refuses to start in prod without strong keys; plaintext persistence never used in prod.
   - Notes/Risks: Document dev/test behavior; verify logs do not leak secret values.
 
-- [ ] Atomic append for logs (no read-modify-set)
+- [x] Atomic append for logs (no read-modify-set)
   - SOT: per-user logs under `users/<uid>/logs/*.json`
   - Repair Location: repositories
     - `src/backend/repository/fileRepositories.ts` (append methods for fetcher, providerEvents, orchestration, traces)
@@ -36,7 +36,7 @@ Scope: Backend only. Producer-first fixes; no shims or compensating layers.
   - Exit Criteria: Append path never loads full array; append is atomic; compaction is isolated and idempotent.
   - Notes/Risks: One-time migration; ensure encryption semantics are preserved per-record or per-file as decided.
 
-- [ ] Validate Director/Agent required fields at producer routes
+- [x] Validate Director/Agent required fields at producer routes
   - SOT: `directors.json`, `agents.json`
   - Repair Location: routes
     - `src/backend/routes/directors.ts` (reject empty/missing `promptId` and `apiConfigId`; remove `promptId ?? ''` default)
@@ -97,4 +97,3 @@ Scope: Backend only. Producer-first fixes; no shims or compensating layers.
 - Include: focused producer changes, minimal deltas, updated docs where needed.
 - Exclude: UI shims/adapters, consumer-side compensation, unrelated refactors.
 - Each PR includes: SOT touched, repair location rationale, exit criteria, and risk notes.
-

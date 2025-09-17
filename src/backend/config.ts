@@ -44,7 +44,8 @@ export const OUTLOOK_CLIENT_SECRET = getOptionalEnv('OUTLOOK_CLIENT_SECRET', '')
 export const OUTLOOK_REDIRECT_URI = getOptionalEnv('OUTLOOK_REDIRECT_URI', '');
 
 // Auth / Sessions (JWT)
-export const JWT_SECRET = getOptionalEnv('JWT_SECRET', 'dev-insecure-jwt');
+export const DEFAULT_JWT_SECRET = 'dev-insecure-jwt';
+export const JWT_SECRET = getOptionalEnv('JWT_SECRET', DEFAULT_JWT_SECRET);
 export const JWT_EXPIRES_IN_SEC = getOptionalIntEnv('JWT_EXPIRES_IN_SEC', 86400); // 24h default
 
 // Diagnostics / Tracing configuration
@@ -169,10 +170,31 @@ export function envSummary() {
 }
 
 export function warnIfInsecure() {
-  if (!VX_MAILAGENT_KEY || VX_MAILAGENT_KEY.length !== 64) {
+  const keyInvalid = !VX_MAILAGENT_KEY || VX_MAILAGENT_KEY.length !== 64;
+  const jwtInsecure = JWT_SECRET === DEFAULT_JWT_SECRET;
+
+  if (isProd) {
+    if (keyInvalid) {
+      const msg = 'VX_MAILAGENT_KEY missing or invalid in production (require 64-char hex). Refusing to start.';
+      logger.error(msg, { envVar: 'VX_MAILAGENT_KEY' });
+      throw new Error(msg);
+    }
+    if (jwtInsecure) {
+      const msg = 'JWT_SECRET uses insecure default in production. Set a strong secret. Refusing to start.';
+      logger.error(msg, { envVar: 'JWT_SECRET' });
+      throw new Error(msg);
+    }
+    return; // Production checks passed
+  }
+
+  // Non-production: warn but continue
+  if (keyInvalid) {
     logger.warn('Encryption key missing or invalid; persistence will use PLAINTEXT mode. Backend will run WITHOUT encryption.', {
       hint: 'Expect 64 hex in VX_MAILAGENT_KEY',
       envVar: 'VX_MAILAGENT_KEY',
     });
+  }
+  if (jwtInsecure) {
+    logger.warn('JWT_SECRET uses a development default. Do not use in production.', { envVar: 'JWT_SECRET' });
   }
 }
