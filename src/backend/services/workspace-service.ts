@@ -40,6 +40,11 @@ export class WorkspaceService {
 
   async addItem(input: WorkspaceItemInput): Promise<WorkspaceItem> {
     this.validateEncoding(input.content.encoding);
+    // Enforce array semantics for tags when provided
+    const tagsAny = (input as any)?.metadata?.tags;
+    if (typeof tagsAny !== 'undefined' && !Array.isArray(tagsAny)) {
+      throw new ValidationError('metadata.tags must be an array of strings');
+    }
 
     const nowIso = () => new Date().toISOString();
     const item: WorkspaceItem = {
@@ -48,7 +53,7 @@ export class WorkspaceService {
       metadata: {
         ...(typeof input.metadata.label !== 'undefined' ? { label: input.metadata.label } : {}),
         ...(typeof input.metadata.description !== 'undefined' ? { description: input.metadata.description } : {}),
-        tags: input.metadata.tags || [],
+        tags: Array.isArray(input.metadata.tags) ? input.metadata.tags : [],
       },
       provenance: input.provenance,
       lifecycle: {
@@ -67,6 +72,11 @@ export class WorkspaceService {
   async updateItem(id: string, patch: Partial<WorkspaceItem>, expectedRevision?: number): Promise<WorkspaceItem> {
     if (patch.content && typeof patch.content.encoding !== 'undefined') {
       this.validateEncoding(patch.content.encoding);
+    }
+    // Enforce array semantics if tags provided in patch
+    const pTags = (patch as any)?.metadata?.tags;
+    if (typeof pTags !== 'undefined' && !Array.isArray(pTags)) {
+      throw new ValidationError('metadata.tags must be an array of strings');
     }
 
     const items = await this.getItems();

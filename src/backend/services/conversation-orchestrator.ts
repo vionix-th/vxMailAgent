@@ -544,7 +544,8 @@ export class ConversationOrchestrator {
       mimeType: typeof args.mimeType === 'string' ? args.mimeType : (typeof args.content === 'string' && !args.mimeType ? 'text/plain' : args.mimeType),
       encoding: typeof args.encoding === 'string' ? args.encoding : 'utf8',
       data: typeof args.data === 'string' ? args.data : (typeof args.content === 'string' ? args.content : undefined),
-      tags: Array.isArray(args.tags) ? args.tags : (args.type ? [String(args.type)] : undefined),
+      // Do not coerce non-array tags; pass through for schema validation to reject
+      ...(typeof args.tags !== 'undefined' ? { tags: Array.isArray(args.tags) ? args.tags : (args as any).tags } : {}),
       provenance: {
         emailId: context.thread.email.id,
         conversationId,
