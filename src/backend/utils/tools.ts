@@ -1,5 +1,5 @@
 import { TOOL_REGISTRY, OPTIONAL_TOOL_NAMES, TOOL_DESCRIPTORS } from '../../shared/tools';
-import { ConversationRole, RoleCapabilities, ToolDescriptor } from '../../shared/types';
+import { ConversationRole, ToolDescriptor } from '../../shared/types';
 
 export type OptionalTool = typeof OPTIONAL_TOOL_NAMES[number];
 
@@ -26,12 +26,11 @@ function toOpenAiToolSpec(desc: ToolDescriptor): any {
  * Select tool specs for the given role based on descriptor flags.
  * Role capabilities are currently unused but reserved for future expansion.
  */
-export function buildToolSpecsByFlags(role: ConversationRole, roleCaps: RoleCapabilities): any[] {
-  const canSpawn = roleCaps?.canSpawnAgents === true;
-  void canSpawn;
-  const enabled = TOOL_DESCRIPTORS.filter((d) => {
-    const f = d.flags;
-    return f.mandatory && (role === 'director' || !f.directorOnly);
-  });
-  return enabled.map(toOpenAiToolSpec);
+export function filterToolDescriptorsByRole(role: ConversationRole): ToolDescriptor[] {
+  // Registry-driven gating only: directorOnly tools require director role.
+  return TOOL_DESCRIPTORS.filter((d) => !(d.flags.directorOnly && role !== 'director'));
+}
+
+export function buildToolSpecsByFlags(role: ConversationRole): any[] {
+  return filterToolDescriptorsByRole(role).map(toOpenAiToolSpec);
 }

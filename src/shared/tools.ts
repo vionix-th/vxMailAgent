@@ -11,6 +11,8 @@ export interface ToolSpec {
   category: ToolCategory;
   description: string;
   parameters: any;
+  /** Optional role gating for this tool; defaults to available to all roles. */
+  directorOnly?: boolean;
 }
 
 export const TOOL_REGISTRY: ToolSpec[] = [
@@ -19,7 +21,7 @@ export const TOOL_REGISTRY: ToolSpec[] = [
   { name: 'list_tools', category: 'mandatory', description: 'List available tools for the current context.', parameters: { type: 'object', properties: {} } },
   { name: 'describe_tool', category: 'mandatory', description: 'Describe a tool (parameters JSON schema and description).', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
   { name: 'read_api_docs', category: 'mandatory', description: 'Retrieve small relevant doc snippets for the given query from curated sources.', parameters: { type: 'object', properties: { query: { type: 'string' }, topK: { type: 'number' } }, required: ['query'] } },
-  { name: 'delegate_to_agent', category: 'mandatory', description: 'Delegate an instruction to a specific agent by id.', parameters: { type: 'object', properties: { agentId: { type: 'string' }, input: { type: 'string' } }, required: ['agentId','input'] } },
+  { name: 'delegate_to_agent', category: 'mandatory', description: 'Delegate an instruction to a specific agent by id.', parameters: { type: 'object', properties: { agentId: { type: 'string' }, input: { type: 'string' } }, required: ['agentId','input'] }, directorOnly: true },
   // Workspace (mandatory)
   { name: 'workspace_add_item', category: 'mandatory', description: 'Add an item to the shared workspace. Optional display metadata: label, description, mimeType, encoding, data.', parameters: { type: 'object', properties: { label: { type: 'string' }, description: { type: 'string' }, mimeType: { type: 'string' }, encoding: { type: 'string', enum: ['utf8', 'base64', 'binary'] }, data: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, provenance: { type: 'object', properties: { emailId: { type: 'string' }, conversationId: { type: 'string' }, createdBy: { type: 'string', enum: ['director', 'agent', 'tool'] }, creatorId: { type: 'string' }, toolName: { type: 'string' } }, required: ['emailId','conversationId','createdBy','creatorId'] } }, required: ['provenance'] } },
   { name: 'workspace_list_items', category: 'mandatory', description: 'List items in the shared workspace; optionally filter by agent id.', parameters: { type: 'object', properties: { agent_id: { type: 'string' } } } },
@@ -49,6 +51,6 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = TOOL_REGISTRY.map((t) => ({
   inputSchema: t.parameters,
   flags: {
     mandatory: t.category === 'mandatory',
-    directorOnly: false,
+    directorOnly: !!t.directorOnly,
   },
 }));

@@ -46,12 +46,12 @@ Scope: Backend only. Producer-first fixes; no shims or compensating layers.
 
 ## P1 — High
 
-- [ ] Consolidate duplicated tool handlers
+- [x] Consolidate duplicated tool handlers
   - SOT: `src/shared/tools.ts` (`TOOL_REGISTRY`, `TOOL_DESCRIPTORS`)
   - Repair Location: `src/backend/toolCalls.ts` (single implementation for `list_tools`, `describe_tool`, `read_api_docs`)
   - Exit Criteria: One code path per tool; behavior consistent across director/agent contexts.
 
-- [ ] Settings loader fail-closed on corruption
+- [x] Settings loader fail-closed on corruption
   - SOT: `settings.json`
   - Repair Location: `src/backend/services/settings.ts`
   - Exit Criteria: Corrupt/unreadable settings propagate a 500; only absent settings return defaults.

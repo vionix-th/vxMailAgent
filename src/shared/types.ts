@@ -495,16 +495,12 @@ export interface ToolDescriptor {
 export type ConversationRole = 'director' | 'agent';
 
 /** Engine-level role capabilities (orchestration powers). */
-export interface RoleCapabilities {
-  canSpawnAgents: boolean;
-}
 
 /** Conversation engine input. */
 export interface ConversationEngineRunInput {
   messages: PromptMessage[];
   apiConfig: ApiConfig;
   role: ConversationRole;
-  roleCaps: RoleCapabilities;
   toolRegistry: ToolDescriptor[];
   /** Optional context bag for diagnostics and prompt construction. */
   context?: Record<string, any>;

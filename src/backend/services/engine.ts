@@ -6,14 +6,14 @@ import { buildToolSpecsByFlags } from '../utils/tools';
 export const conversationEngine: ConversationEngine = {
   /** Run a single conversation turn. */
   async run(input: ConversationEngineRunInput): Promise<ConversationEngineRunResult> {
-    const { messages, apiConfig, role, roleCaps } = input;
+    const { messages, apiConfig, role } = input;
     const toOpenAiToolSpec = (desc: ToolDescriptor): any => ({ type: 'function', function: { name: desc.name, description: desc.description, parameters: desc.inputSchema } });
     let tools: any[];
     const provided = (input as any).toolRegistry as ToolDescriptor[] | undefined;
     if (Array.isArray(provided) && provided.length) {
       tools = provided.map(toOpenAiToolSpec);
     } else {
-      tools = buildToolSpecsByFlags(role, roleCaps);
+      tools = buildToolSpecsByFlags(role);
     }
 
     // Dynamic per-agent tools are deprecated; use delegate_to_agent only

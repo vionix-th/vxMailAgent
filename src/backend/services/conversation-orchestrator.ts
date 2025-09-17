@@ -1,6 +1,7 @@
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem } from '../../shared/types';
 import { runAgentConversation, ensureAgentThread } from './orchestration-agent';
-import { TOOL_DESCRIPTORS } from '../../shared/tools';
+// Tool descriptors are filtered via filterToolDescriptorsByRole
+import { filterToolDescriptorsByRole } from '../utils/tools';
 import { createToolHandler } from '../toolCalls';
 import { requireReq, requireRepos } from '../utils/repo-access';
 import logger from './logger';
@@ -104,18 +105,14 @@ export class ConversationOrchestrator {
         throw new Error(`API config not found for thread apiConfigId=${context.thread.apiConfigId}`);
       }
       let engineTimeoutId: any;
-      // Gate tool registry: mandatory + explicitly enabled optional by director settings
-      const roleIsDirector = context.thread.kind === 'director';
-      const enabledSet = roleIsDirector && context.director
-        ? new Set<string>(context.director.enabledToolCalls)
-        : new Set<string>();
-      const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabledSet.has(d.name));
+      // Equal tool exposure for director and agent, except spawning further agents (director-only)
+      const role = context.thread.kind === 'director' ? 'director' : 'agent';
+      const gatedToolDescriptors = filterToolDescriptorsByRole(role);
 
       const enginePromise = conversationEngine.run({
         messages: context.thread.messages as any,
         apiConfig: apiCfg as any,
-        role: context.thread.kind === 'director' ? 'director' : 'agent',
-        roleCaps: context.thread.kind === 'director' ? { canSpawnAgents: true } : { canSpawnAgents: false },
+        role,
         toolRegistry: gatedToolDescriptors,
         context: {
           conversationId: context.thread.id,
@@ -223,11 +220,8 @@ export class ConversationOrchestrator {
       throw new Error('API config not found');
     }
 
-    // Gate tool registry for this agent: mandatory + explicitly enabled optional tools
-    const allAgents = await userReq.repos.getAgents(userReq.reqLike);
-    const agentCfg = allAgents.find((a: Agent) => a.id === thread.agentId);
-    const enabledSet = new Set<string>(agentCfg?.enabledToolCalls || []);
-    const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabledSet.has(d.name));
+    // Equal tool exposure for agent, except spawning further agents (disabled)
+    const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
 
     const userContent = extractLastUserContent(thread.messages as any);
 
@@ -551,11 +545,8 @@ export class ConversationOrchestrator {
         return;
       }
 
-      // Gate tool registry for the agent: mandatory + explicitly enabled optional tools
-      const allAgents = await userReq.repos.getAgents(userReq.reqLike);
-      const agentCfg = allAgents.find((a: Agent) => a.id === agentThread.agentId);
-      const enabledSet = new Set<string>(agentCfg?.enabledToolCalls || []);
-      const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabledSet.has(d.name));
+      // Equal tool exposure for agent, except spawning further agents (disabled)
+      const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
 
       const agentResult = await runAgentConversation(
         agentThread,

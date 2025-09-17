@@ -2,7 +2,8 @@
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
 import { ToolCallResult, MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
 import { validateAgainstSchema } from './validation';
-import { TOOL_REGISTRY, TOOL_DESCRIPTORS } from '../shared/tools';
+import { TOOL_REGISTRY } from '../shared/tools';
+import { filterToolDescriptorsByRole } from './utils/tools';
 import { TOOL_EXEC_TIMEOUT_MS } from './config';
 import logger from './services/logger';
 import { WorkspaceService } from './services/workspace-service';
@@ -54,16 +55,10 @@ export function createToolHandler(repos: RepoBundle) {
           return { kind: name, success: true, result: roster };
         }
         case 'list_tools': {
-          // List tools visible to the current actor (director by default).
-          const directorId = typeof params?.directorId === 'string' ? params.directorId : '';
-          let enabled = new Set<string>();
-          if (directorId) {
-            const allDirectors = await repos.directors.getAll();
-            const d = allDirectors.find((x: any) => x.id === directorId);
-            if (d && Array.isArray(d.enabledToolCalls)) enabled = new Set<string>(d.enabledToolCalls);
-          }
-          const visible = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabled.has(d.name))
-            .map(d => ({ name: d.name, description: d.description }));
+          // No director/agent discrimination except director-only tools from registry
+          const roleRaw = typeof params?.role === 'string' ? params.role.toLowerCase() : '';
+          const role = roleRaw === 'director' ? 'director' as const : 'agent' as const;
+          const visible = filterToolDescriptorsByRole(role).map(d => ({ name: d.name, description: d.description }));
           return { kind: name, success: true, result: visible };
         }
         case 'describe_tool': {
@@ -128,8 +123,7 @@ export function createToolHandler(repos: RepoBundle) {
           const agentThread = ensured.agentThread;
           const apiCfg = apiConfigs.find((c: any) => c.id === agentThread.apiConfigId);
           if (!apiCfg) return { kind: name, success: false, result: null, error: 'API config not found for agent' };
-          const enabledSet = new Set<string>(agentObj.enabledToolCalls || []);
-          const gatedToolDescriptors = TOOL_DESCRIPTORS.filter(d => d.flags.mandatory || enabledSet.has(d.name));
+          const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
           const setConversations = async (next: any[]) => { await repos.conversations.setAll(next); };
           const handleTool = createToolHandler(repos);
           const agentResult = await runAgentConversation(
@@ -160,47 +154,7 @@ export function createToolHandler(repos: RepoBundle) {
           const agentsSlim = result.map((a: any) => ({ id: a.id, name: a.name, apiConfigId: a.apiConfigId }));
           return { kind: name, success: true, result: agentsSlim };
         }
-        case 'list_tools': {
-          const directorId = typeof params?.directorId === 'string' ? params.directorId : undefined;
-          let enabled = new Set<string>();
-          if (directorId) {
-            const directors = await repos.directors.getAll();
-            const dir = directors.find((d: any) => d.id === directorId);
-            enabled = new Set<string>((dir?.enabledToolCalls || []));
-          }
-          const core = TOOL_REGISTRY
-            .filter(t => t.category === 'mandatory' || enabled.has(t.name))
-            .map(t => ({ name: t.name, description: t.description }));
-          return { kind: name, success: true, result: core };
-        }
-        case 'describe_tool': {
-          const toolName = typeof params?.name === 'string' ? params.name : '';
-          if (!toolName) return { kind: name, success: false, result: null, error: 'Missing tool name' };
-          const spec = TOOL_REGISTRY.find(t => t.name === toolName);
-          if (!spec) return { kind: name, success: false, result: null, error: 'Tool not found' };
-          return { kind: name, success: true, result: { name: spec.name, description: spec.description, parameters: spec.parameters } };
-        }
-        case 'read_api_docs': {
-          const q = typeof params?.query === 'string' ? params.query.trim() : '';
-          if (!q) return { kind: name, success: false, result: null, error: 'Missing query' };
-          // Stubbed: no live retrieval here; return neutral result structure
-          const topK = typeof params?.topK === 'number' ? Math.max(1, Math.min(10, params.topK)) : 3;
-          const snippets: Array<{ source: string; title: string; excerpt: string }> = [];
-          return { kind: name, success: true, result: { query: q, topK, snippets } };
-        }
-        case 'describe_tool': {
-          const toolName = typeof params?.name === 'string' ? params.name : '';
-          if (!toolName) return { kind: name, success: false, result: null, error: 'Missing name' };
-          const spec2 = TOOL_REGISTRY.find(t => t.name === toolName);
-          if (!spec2) return { kind: name, success: false, result: null, error: `Tool not found: ${toolName}` };
-          return { kind: name, success: true, result: { name: spec2.name, description: spec2.description, parameters: spec2.parameters } };
-        }
-        case 'read_api_docs': {
-          const query = typeof params?.query === 'string' ? params.query : '';
-          const topK = typeof params?.topK === 'number' ? params.topK : 3;
-          const note = 'read_api_docs is a stub; integrate curated sources to enable retrieval.';
-          return { kind: name, success: true, result: { query, topK, note, snippets: [] } };
-        }
+        // duplicated meta-tool cases removed: canonical implementations are above
         case 'calendar_read': {
           const r = await withTimeout(handleCalendarToolCall({ ...params, action: 'read' }));
           return { ...r, kind: name };

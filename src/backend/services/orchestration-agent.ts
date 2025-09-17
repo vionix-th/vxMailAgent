@@ -115,7 +115,6 @@ export async function runAgentConversation(
         messages: currentMessages,
         apiConfig,
         role: 'agent',
-        roleCaps: { canSpawnAgents: false },
         toolRegistry,
         context: { conversationId: agentThread.id, traceId },
       });
