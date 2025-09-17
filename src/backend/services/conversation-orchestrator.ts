@@ -334,8 +334,7 @@ export class ConversationOrchestrator {
       const args = JSON.parse(toolCall.arguments);
       
       if (toolCall.name === 'workspace_add_item') {
-        await this.handleWorkspaceAddItem(context, userReq, toolCall, args);
-        return true;
+        return await this.handleWorkspaceAddItem(context, userReq, toolCall, args);
       } else if (toolCall.name === 'workspace_list_items') {
         await this.handleWorkspaceListItems(context, userReq, toolCall, args);
         return true;
@@ -384,24 +383,45 @@ export class ConversationOrchestrator {
     userReq: UserRequest,
     toolCall: { id: string; name: string; arguments: string },
     args: any
-  ): Promise<void> {
+  ): Promise<boolean> {
     const agentId = args.agent_id;
     if (!agentId) {
-      logger.warn('workspace_add_item missing agent_id', { toolCallId: toolCall.id });
-      return;
+      const toolErrorMsg = {
+        role: 'tool',
+        name: toolCall.name,
+        tool_call_id: toolCall.id,
+        content: JSON.stringify({ success: false, error: 'missing_agent_id' })
+      };
+      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_missing_agent_id', context.thread.email.id, context.thread.directorId); } catch {}
+      return true;
     }
 
     const agent = await this.validateAgent(agentId, userReq);
     if (!agent) {
-      logger.warn('Agent not found for workspace_add_item', { agentId, toolCallId: toolCall.id });
-      return;
+      const toolErrorMsg = {
+        role: 'tool',
+        name: toolCall.name,
+        tool_call_id: toolCall.id,
+        content: JSON.stringify({ success: false, error: 'agent_not_found', agent_id: String(agentId) })
+      };
+      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_agent_not_found', context.thread.email.id, context.thread.directorId); } catch {}
+      return true;
     }
 
     // Resolve director configuration for ensureAgentThread
     const director = context.director || null;
     if (!director) {
-      logger.warn('Director not available in context for workspace_add_item', { toolCallId: toolCall.id });
-      return;
+      const toolErrorMsg = {
+        role: 'tool',
+        name: toolCall.name,
+        tool_call_id: toolCall.id,
+        content: JSON.stringify({ success: false, error: 'director_context_missing' })
+      };
+      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_director_context_missing', context.thread.email.id, context.thread.directorId); } catch {}
+      return true;
     }
 
     // Fetch current conversations snapshot
@@ -427,15 +447,29 @@ export class ConversationOrchestrator {
       agentThread = ensure.agentThread;
       await userReq.repos.setConversations(userReq.reqLike, conversations);
     } catch (e: any) {
-      await this.injectAgentErrorMessage(context.thread, toolCall.id, e?.message || String(e), userReq);
-      return;
+      const toolErrorMsg = {
+        role: 'tool',
+        name: toolCall.name,
+        tool_call_id: toolCall.id,
+        content: JSON.stringify({ success: false, error: 'ensure_agent_thread_failed', detail: String(e?.message || e) })
+      };
+      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_ensure_agent_failed', context.thread.email.id, context.thread.directorId); } catch {}
+      return true;
     }
 
     // Persist workspace item via helper (validates schema and writes to repo)
     const addedItem = await this.createWorkspaceItem(context, args, agentId, agentThread.id, userReq, { id: toolCall.id, name: toolCall.name });
     if (!addedItem) {
-      await this.injectAgentErrorMessage(context.thread, toolCall.id, 'Failed to add workspace item', userReq);
-      return;
+      const toolErrorMsg = {
+        role: 'tool',
+        name: toolCall.name,
+        tool_call_id: toolCall.id,
+        content: JSON.stringify({ success: false, error: 'workspace_add_failed' })
+      };
+      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_failed', context.thread.email.id, context.thread.directorId); } catch {}
+      return true;
     }
 
     // Inject tool response back into director thread for continuity
@@ -449,6 +483,7 @@ export class ConversationOrchestrator {
 
     // Run the agent conversation after item creation
     await this.executeAgentConversation(context.thread, agentThread, args, toolCall, userReq);
+    return true;
   }
 
   private async handleWorkspaceListItems(
