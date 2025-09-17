@@ -331,10 +331,9 @@ export interface User {
   lastLoginAt: string;
 }
 
-export interface ApiConfig {
+export interface ApiConfigPublic {
   id: string;
   name: string;
-  apiKey: string;
   model: string;
   /** Optional maximum output tokens for chat completions (maps to OpenAI max_completion_tokens). */
   maxCompletionTokens?: number;
@@ -499,7 +498,7 @@ export type ConversationRole = 'director' | 'agent';
 /** Conversation engine input. */
 export interface ConversationEngineRunInput {
   messages: PromptMessage[];
-  apiConfig: ApiConfig;
+  apiConfig: ApiConfigPublic;
   role: ConversationRole;
   toolRegistry: ToolDescriptor[];
   /** Optional context bag for diagnostics and prompt construction. */
@@ -520,5 +519,5 @@ export interface ConversationEngineRunResult {
 }
 
 export interface ConversationEngine {
-  run(input: ConversationEngineRunInput): Promise<ConversationEngineRunResult>;
+  run(input: ConversationEngineRunInput, secrets: { apiKey: string }): Promise<ConversationEngineRunResult>;
 }

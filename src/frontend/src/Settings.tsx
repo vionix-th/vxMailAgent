@@ -4,14 +4,14 @@ import {
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-import { ApiConfig } from './types/shared';
+import { ApiConfigPublic } from './types/shared';
 import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats } from './utils/api';
 import log from './utils/log';
 import { apiFetch } from './utils/http';
 
 interface SettingsData {
   virtualRoot?: string;
-  apiConfigs?: ApiConfig[];
+  apiConfigs?: ApiConfigPublic[];
   sessionTimeoutMinutes?: number;
 }
 
@@ -93,19 +93,19 @@ export default function Settings() {
   };
 
   // API Configs management handlers
-  const [editingApiConfig, setEditingApiConfig] = useState<ApiConfig | null>(null);
+  const [editingApiConfig, setEditingApiConfig] = useState<ApiConfigPublic | null>(null);
   const [addingApiConfig, setAddingApiConfig] = useState(false);
-  const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfig>({ id: '', name: '', apiKey: '', model: '' });
+  const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfigPublic>({ id: '', name: '', model: '' } as any);
 
-  const handleApiConfigChange = (field: keyof ApiConfig) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleApiConfigChange = (field: keyof ApiConfigPublic) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setApiConfigDraft(d => ({ ...d, [field]: e.target.value }));
   };
-  const handleApiConfigChangeNumber = (field: keyof ApiConfig) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleApiConfigChangeNumber = (field: keyof ApiConfigPublic) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
     const num = v === '' ? undefined : Number(v);
     setApiConfigDraft(d => ({ ...d, [field]: (Number.isFinite(num as number) ? (num as number) : undefined) as any }));
   };
-  const handleApiConfigEdit = (cfg: ApiConfig) => {
+  const handleApiConfigEdit = (cfg: ApiConfigPublic) => {
     setEditingApiConfig(cfg);
     setAddingApiConfig(false);
     setApiConfigDraft(cfg);
@@ -133,10 +133,10 @@ export default function Settings() {
   const handleApiConfigAdd = () => {
     setAddingApiConfig(true);
     setEditingApiConfig(null);
-    setApiConfigDraft({ id: '', name: '', apiKey: '', model: '' });
+    setApiConfigDraft({ id: '', name: '', model: '' } as any);
   };
   const handleApiConfigSave = async () => {
-    let nextApiConfigs: ApiConfig[];
+    let nextApiConfigs: ApiConfigPublic[];
     if (editingApiConfig) {
       nextApiConfigs = (settings.apiConfigs || []).map(c => c.id === editingApiConfig.id ? apiConfigDraft : c);
     } else {
@@ -146,7 +146,7 @@ export default function Settings() {
     setSettings(nextSettings);
     setEditingApiConfig(null);
     setAddingApiConfig(false);
-    setApiConfigDraft({ id: '', name: '', apiKey: '', model: '' });
+    setApiConfigDraft({ id: '', name: '', model: '' } as any);
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -166,7 +166,7 @@ export default function Settings() {
   const handleApiConfigCancel = () => {
     setEditingApiConfig(null);
     setAddingApiConfig(false);
-    setApiConfigDraft({ id: '', name: '', apiKey: '', model: '' });
+    setApiConfigDraft({ id: '', name: '', model: '' } as any);
   };
 
   // Unified cleanup handlers
@@ -271,7 +271,7 @@ export default function Settings() {
               {typeof (cfg as any).maxCompletionTokens === 'number' && (
                 <Typography variant="body2" color="text.secondary">{t('settings.apiConfigs.labels.maxTokens')}: {(cfg as any).maxCompletionTokens}</Typography>
               )}
-              <Typography variant="body2" color="text.secondary">{t('settings.apiConfigs.labels.key')}: {cfg.apiKey ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : <em>{t('settings.apiConfigs.labels.notSet')}</em>}</Typography>
+              {/* apiKey is secret and not part of public settings */}
             </Box>
             <Button size="small" variant="outlined" onClick={() => handleApiConfigEdit(cfg)}>{t('actions.edit')}</Button>
             <Button size="small" color="error" variant="outlined" onClick={() => handleApiConfigDelete(cfg.id)}>{t('actions.delete')}</Button>
@@ -303,7 +303,7 @@ export default function Settings() {
           <Typography variant="subtitle1" gutterBottom>{editingApiConfig ? t('settings.apiConfigs.editTitle') : t('settings.apiConfigs.addTitle')}</Typography>
           <TextField label={t('settings.apiConfigs.fields.name')} value={apiConfigDraft.name} onChange={handleApiConfigChange('name')} fullWidth margin="normal" />
           <TextField label={t('settings.apiConfigs.fields.model')} value={apiConfigDraft.model} onChange={handleApiConfigChange('model')} fullWidth margin="normal" />
-          <TextField label={t('settings.apiConfigs.fields.apiKey')} value={apiConfigDraft.apiKey} onChange={handleApiConfigChange('apiKey')} fullWidth margin="normal" type="password" autoComplete="off" />
+          {/* apiKey editing is backend-only; not exposed in public type */}
           <TextField
             label={t('settings.apiConfigs.fields.maxOutputTokens')}
             type="number"

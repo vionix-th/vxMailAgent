@@ -1,4 +1,4 @@
-import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem } from '../../shared/types';
+import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfigPublic } from '../../shared/types';
 import { runAgentConversation, ensureAgentThread } from './orchestration-agent';
 // Tool descriptors are filtered via filterToolDescriptorsByRole
 import { filterToolDescriptorsByRole } from '../utils/tools';
@@ -109,16 +109,19 @@ export class ConversationOrchestrator {
       const role = context.thread.kind === 'director' ? 'director' : 'agent';
       const gatedToolDescriptors = filterToolDescriptorsByRole(role);
 
-      const enginePromise = conversationEngine.run({
-        messages: context.thread.messages as any,
-        apiConfig: apiCfg as any,
+      const apiConfigPublic: ApiConfigPublic = { id: apiCfg.id, name: apiCfg.name, model: apiCfg.model, ...(typeof apiCfg.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiCfg.maxCompletionTokens } : {}) };
+      const engineInput = {
+        messages: context.thread.messages,
+        apiConfig: apiConfigPublic,
         role,
         toolRegistry: gatedToolDescriptors,
         context: {
           conversationId: context.thread.id,
-          agents: context.agents
+          agents: context.agents,
         }
-      });
+      };
+      const engineInvoke = (input: any) => conversationEngine.run(input, { apiKey: apiCfg.apiKey });
+      const enginePromise = engineInvoke(engineInput as any);
       const engineTimeoutPromise = new Promise<never>((_, reject) => {
         engineTimeoutId = setTimeout(() => {
           this.stepLogger.logEngineTimeout(threadId, stepType, CONVERSATION_STEP_TIMEOUT_MS, emailId!, context.thread.directorId);
@@ -229,11 +232,12 @@ export class ConversationOrchestrator {
       thread,
       userContent,
       await userReq.repos.getConversations(userReq.reqLike),
-      apiConfig,
+      { id: apiConfig.id, name: apiConfig.name, model: apiConfig.model, ...(typeof apiConfig.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiConfig.maxCompletionTokens } : {}) } as ApiConfigPublic,
       gatedToolDescriptors,
       async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
       createToolHandler(requireRepos(requireReq(userReq.reqLike))),
       userReq.traceId,
+      { apiKey: apiConfig.apiKey },
       async (ev: ProviderEvent) => {
         try {
           const t = (ev as any).type;
@@ -552,11 +556,12 @@ export class ConversationOrchestrator {
         agentThread,
         args.content || args.title || 'New task assigned',
         await userReq.repos.getConversations(userReq.reqLike),
-        apiConfig,
+        { id: apiConfig.id, name: apiConfig.name, model: apiConfig.model, ...(typeof apiConfig.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiConfig.maxCompletionTokens } : {}) } as any,
         gatedToolDescriptors,
         async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
         createToolHandler(requireRepos(requireReq(userReq.reqLike))),
         userReq.traceId,
+        apiConfig.apiKey,
         async (ev: ProviderEvent) => {
           try {
             const t = (ev as any).type;

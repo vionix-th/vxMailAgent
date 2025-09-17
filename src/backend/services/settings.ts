@@ -1,12 +1,12 @@
 import logger from './logger';
 import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
 
-import type { ApiConfig } from '../../shared/types';
+import type { ApiConfigPublic } from '../../shared/types';
 
 /** Application settings loaded from disk. */
 export interface Settings {
   virtualRoot: string;
-  apiConfigs: ApiConfig[];
+  apiConfigs: ApiConfigPublic[];
   signatures: Record<string, string>;
   fetcherAutoStart: boolean;
   sessionTimeoutMinutes: number;
@@ -20,7 +20,7 @@ export async function loadSettings(req?: ReqLike): Promise<Settings> {
   // Only default when absent; do not mask corruption/errors (repoGetAll would have thrown)
   const settings = (Array.isArray(all) && all[0]) ? all[0] : defaultSettings();
   // Normalize defaults
-  if (!Array.isArray(settings.apiConfigs)) settings.apiConfigs = [] as ApiConfig[];
+  if (!Array.isArray(settings.apiConfigs)) settings.apiConfigs = [] as ApiConfigPublic[];
   if (!settings.signatures || typeof settings.signatures !== 'object') settings.signatures = {};
   if (typeof settings.fetcherAutoStart !== 'boolean') settings.fetcherAutoStart = true;
   if (typeof settings.sessionTimeoutMinutes !== 'number') settings.sessionTimeoutMinutes = 15;
@@ -44,7 +44,7 @@ export async function saveSettings(settings: Settings, req: ReqLike): Promise<vo
 function defaultSettings(): Settings {
   return {
     virtualRoot: '',
-    apiConfigs: [] as ApiConfig[],
+    apiConfigs: [] as ApiConfigPublic[],
     signatures: {},
     fetcherAutoStart: true,
     sessionTimeoutMinutes: 15,

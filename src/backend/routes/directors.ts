@@ -18,9 +18,9 @@ export default function registerDirectorsRoutes(app: express.Express, repos: Liv
     },
     {
       validate: (director: Director) => {
-        const pid = String((director as any).promptId || '').trim();
+        const pid = String((director as any).promptId ?? '').trim();
         if (!pid) throw new Error('promptId is required for Director');
-        const aid = String((director as any).apiConfigId || '').trim();
+        const aid = String((director as any).apiConfigId ?? '').trim();
         if (!aid) throw new Error('apiConfigId is required for Director');
       },
       afterValidate: (director: Director) => ({

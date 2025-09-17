@@ -10,7 +10,7 @@ export interface AuthenticatedRequest extends Request {
 // Cookie and bearer parsing centralized in utils/session.ts
 
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const path = (req as any).path || req.url || '';
+  const path = (req as any).path ?? req.url ?? '';
   // Public endpoints: auth session endpoints and health
   if (
     path.startsWith('/api/auth/') ||

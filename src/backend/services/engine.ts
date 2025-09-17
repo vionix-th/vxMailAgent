@@ -5,7 +5,7 @@ import { buildToolSpecsByFlags } from '../utils/tools';
 /** Conversation engine driving chat completions and tool exposure. */
 export const conversationEngine: ConversationEngine = {
   /** Run a single conversation turn. */
-  async run(input: ConversationEngineRunInput): Promise<ConversationEngineRunResult> {
+  async run(input: ConversationEngineRunInput, secrets: { apiKey: string }): Promise<ConversationEngineRunResult> {
     const { messages, apiConfig, role } = input;
     const toOpenAiToolSpec = (desc: ToolDescriptor): any => ({ type: 'function', function: { name: desc.name, description: desc.description, parameters: desc.inputSchema } });
     let tools: any[];
@@ -23,7 +23,11 @@ export const conversationEngine: ConversationEngine = {
       tool_choice: tools && tools.length ? 'auto' : 'none',
       ...(typeof apiConfig.maxCompletionTokens === 'number' ? { max_completion_tokens: apiConfig.maxCompletionTokens } : {}),
     };
-    const result = await chatCompletion(apiConfig.apiKey, apiConfig.model, messages as any, completionOpts);
+    const apiKey = secrets?.apiKey ?? '';
+    if (!apiKey || typeof apiKey !== 'string') {
+      throw new Error('Missing API key for provider');
+    }
+    const result = await chatCompletion(apiKey, apiConfig.model, messages as any, completionOpts);
 
     const assistant = result.assistantMessage as any;
     const updatedMessages = [...messages, assistant];

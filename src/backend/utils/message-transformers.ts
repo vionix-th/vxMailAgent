@@ -62,7 +62,7 @@ export function createToolResultMessage(toolCallId: string, result: any): Prompt
  */
 export function extractLastUserContent(messages: any[]): string {
   const lastUserMessage = messages.filter(m => m.role === 'user').pop();
-  return lastUserMessage?.content || '';
+  return lastUserMessage?.content ?? '';
 }
 
 /**

@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import logger from './services/logger';
 
 // Allow disabling dotenv in test environments to avoid .env interference
-if (String(process.env.DISABLE_DOTENV || '').toLowerCase() !== 'true') {
+if (String(process.env.DISABLE_DOTENV ?? '').toLowerCase() !== 'true') {
   dotenv.config();
 }
 

@@ -81,7 +81,7 @@ async function readNdjson(containerPath: string, ndjsonPath: string): Promise<an
           // dev fallback: skip unreadable encrypted entries
           continue;
         }
-        out.push(decryptPayloadToObject(String(obj._enc || ''), key));
+        out.push(decryptPayloadToObject(String(obj._enc ?? ''), key));
       } else {
         out.push(obj);
       }

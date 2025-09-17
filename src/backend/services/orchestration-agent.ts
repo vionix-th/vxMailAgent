@@ -1,4 +1,4 @@
-import { ConversationThread, Agent, Director, Prompt } from '../../shared/types';
+import { ConversationThread, Agent, Director, Prompt, ApiConfigPublic } from '../../shared/types';
 import { beginSpan, endSpan } from './logging';
 import logger from './logger';
 import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
@@ -86,11 +86,12 @@ export async function runAgentConversation(
   agentThread: ConversationThread,
   initialUserMessage: string,
   conversations: ConversationThread[],
-  apiConfig: any,
+  apiConfig: ApiConfigPublic,
   toolRegistry: any[],
   setConversations: (next: ConversationThread[]) => void,
   handleTool: (name: string, params: any) => Promise<any>,
-  traceId?: string,
+  traceId: string | undefined,
+  secrets: { apiKey: string },
   logProviderEvent?: (event: any) => void,
 ): Promise<AgentConversationResult> {
   const LOOP_MAX = 6;
@@ -111,13 +112,14 @@ export async function runAgentConversation(
 
       const t0 = Date.now();
       let stepTimeoutId: any;
-      const stepPromise = conversationEngine.run({
-        messages: currentMessages,
-        apiConfig,
-        role: 'agent',
-        toolRegistry,
-        context: { conversationId: agentThread.id, traceId },
-      });
+  const engineInput = {
+    messages: currentMessages,
+    apiConfig,
+    role: 'agent',
+    toolRegistry,
+    context: { conversationId: agentThread.id, traceId },
+  };
+      const stepPromise = conversationEngine.run(engineInput as any, secrets);
       const stepTimeoutPromise = new Promise<never>((_, reject) => {
         stepTimeoutId = setTimeout(() => reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`)), Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
       });

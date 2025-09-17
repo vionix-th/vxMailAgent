@@ -46,7 +46,7 @@ class SecurityAuditService {
 
   constructor() {
     this.logPath = dataPath('security-audit.log');
-    if ((process.env.NODE_ENV || '').toLowerCase() !== 'test') {
+  if ((process.env.NODE_ENV ?? '').toLowerCase() !== 'test') {
       setInterval(() => {
         this.flush().catch((err) =>
           logger.error('SECURITY-AUDIT flush failed', { err })

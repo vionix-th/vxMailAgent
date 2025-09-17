@@ -133,11 +133,11 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     const resp = await chatCompletion(api.apiKey, api.model, [...optimizerMessages as any[], targetMsg, affordances, appContext, current, instruction], {
       max_completion_tokens: (typeof (api as any)?.maxCompletionTokens === 'number' ? (api as any).maxCompletionTokens : undefined),
     });
-    const text = String((resp as any)?.assistantMessage?.content || '').trim();
+    const text = String((resp as any)?.assistantMessage?.content ?? '').trim();
     let improved: { messages?: Array<{ role: string; content: string }>; notes?: string } = {};
     try { improved = JSON.parse(text); } catch { throw new Error('Assistant returned non-JSON'); }
     if (!improved || !Array.isArray(improved.messages)) throw new Error('Assistant returned invalid JSON');
     const next: Prompt = { ...prompt, messages: improved.messages as any };
-    return res.json({ improved: next, notes: improved.notes || '' });
+    return res.json({ improved: next, notes: improved.notes ?? '' });
   }));
 }

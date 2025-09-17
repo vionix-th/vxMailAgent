@@ -56,8 +56,8 @@ export default function registerConversationsRoutes(
 
   // GET /api/conversations/byDirectorEmail?directorId=&emailId=
   app.get('/api/conversations/byDirectorEmail', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const directorId = String(req.query.directorId || '').trim();
-    const emailId = String(req.query.emailId || '').trim();
+    const directorId = String(req.query.directorId ?? '').trim();
+    const emailId = String(req.query.emailId ?? '').trim();
     if (!directorId || !emailId) throw new ValidationError('directorId and emailId are required');
     const threads = (await repos.getConversations(req as any as ReqLike)).filter(
       (c) => c.kind === 'director' && c.directorId === directorId && (c.email as any)?.id === emailId
@@ -71,7 +71,7 @@ export default function registerConversationsRoutes(
   // POST /api/conversations/:id/messages  { content: string }
   app.post('/api/conversations/:id/messages', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const content = String(req.body?.content || '');
+    const content = String(req.body?.content ?? '');
     if (!content.trim()) throw new ValidationError('Message content is required');
     const conversations = await repos.getConversations(req as any as ReqLike);
     const exists = conversations.some((c) => c.id === id);
@@ -112,7 +112,7 @@ export default function registerConversationsRoutes(
         agents,
         apiConfigs: settings.apiConfigs,
         prompts,
-        traceId: (userReq.traceId || '') as any
+        traceId: (userReq.traceId ?? '') as any
       }, userReq, 6);
 
       // Determine the last assistant message for response payload

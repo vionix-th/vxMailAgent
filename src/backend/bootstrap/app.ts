@@ -55,7 +55,7 @@ export function configureHttpsEnforcement(app: express.Application): void {
 
   app.enable('trust proxy');
   app.use((req, res, next) => {
-    const xfProto = String(req.headers['x-forwarded-proto'] || '');
+  const xfProto = String(req.headers['x-forwarded-proto'] ?? '');
     if (req.secure || xfProto === 'https') return next();
     const host = req.headers.host;
     res.redirect(301, `https://${host}${req.url}`);

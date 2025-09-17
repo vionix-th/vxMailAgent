@@ -33,23 +33,23 @@ export const outlookProvider: IMailProvider = {
         `/v1.0/me/messages/${encodeURIComponent(m.id)}?$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,bodyPreview,body`,
         account.tokens.accessToken
       );
-      const subject: string = String(full.subject || '');
+      const subject: string = String(full.subject ?? '');
       const fromAddr = full?.from?.emailAddress || {};
-      const fromName = String(fromAddr.name || '').trim();
-      const fromEmail = String(fromAddr.address || '').trim();
+      const fromName = String(fromAddr.name ?? '').trim();
+      const fromEmail = String(fromAddr.address ?? '').trim();
       const from: string = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
-      const date: string = String(full.receivedDateTime || '');
-      const snippet: string = String(full.bodyPreview || '');
-      const contentType: string = String(full?.body?.contentType || '').toLowerCase();
-      const content: string = String(full?.body?.content || '');
+      const date: string = String(full.receivedDateTime ?? '');
+      const snippet: string = String(full.bodyPreview ?? '');
+      const contentType: string = String(full?.body?.contentType ?? '').toLowerCase();
+      const content: string = String(full?.body?.content ?? '');
       const to: string = Array.isArray(full?.toRecipients)
-        ? full.toRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : r?.emailAddress?.address || '')).filter(Boolean).join(', ')
+        ? full.toRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : (r?.emailAddress?.address ?? ''))).filter(Boolean).join(', ')
         : '';
       const cc: string = Array.isArray(full?.ccRecipients)
-        ? full.ccRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : r?.emailAddress?.address || '')).filter(Boolean).join(', ')
+        ? full.ccRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : (r?.emailAddress?.address ?? ''))).filter(Boolean).join(', ')
         : '';
       const bcc: string = Array.isArray(full?.bccRecipients)
-        ? full.bccRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : r?.emailAddress?.address || '')).filter(Boolean).join(', ')
+        ? full.bccRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : (r?.emailAddress?.address ?? ''))).filter(Boolean).join(', ')
         : '';
 
       const mid = full.id || m.id;

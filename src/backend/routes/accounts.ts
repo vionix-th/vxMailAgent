@@ -26,7 +26,7 @@ import {
      tokens: {
        accessToken: a.tokens?.accessToken ? 'REDACTED' : '',
        refreshToken: a.tokens?.refreshToken ? 'REDACTED' : '',
-       expiry: a.tokens?.expiry ?? '',
+      expiry: a.tokens?.expiry ?? '',
      },
    };
  }

@@ -1,7 +1,7 @@
 // Tool call handlers for calendar, todo, filesystem, memory
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
-import { ToolCallResult, MemoryEntry, MemoryScope, WorkspaceItem } from '../shared/types';
-import { validateAgainstSchema } from './validation';
+import { ToolCallResult, MemoryEntry, MemoryScope, WorkspaceItem, ApiConfigPublic, ConversationThread } from '../shared/types';
+import { validateAgainstSchema, validateWorkspaceProvenance } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
 import { filterToolDescriptorsByRole } from './utils/tools';
 import { TOOL_EXEC_TIMEOUT_MS } from './config';
@@ -124,16 +124,18 @@ export function createToolHandler(repos: RepoBundle) {
           const apiCfg = apiConfigs.find((c: any) => c.id === agentThread.apiConfigId);
           if (!apiCfg) return { kind: name, success: false, result: null, error: 'API config not found for agent' };
           const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
-          const setConversations = async (next: any[]) => { await repos.conversations.setAll(next); };
+          const setConversations = async (next: ConversationThread[]) => { await repos.conversations.setAll(next); };
           const handleTool = createToolHandler(repos);
           const agentResult = await runAgentConversation(
             agentThread,
             input,
             ensured.conversations,
-            apiCfg,
+            { id: apiCfg.id, name: apiCfg.name, model: apiCfg.model, ...(typeof apiCfg.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiCfg.maxCompletionTokens } : {}) } as ApiConfigPublic,
             gatedToolDescriptors,
             setConversations as any,
             handleTool,
+            undefined,
+            { apiKey: apiCfg.apiKey },
           );
           if (agentResult.success) {
             return { kind: name, success: true, result: { content: agentResult.finalAssistantMessage?.content ?? null } };
@@ -341,31 +343,28 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
       setItems: (next) => workspaceRepo.setAll(next),
     });
     if (payload.action === 'add') {
-      const prov = payload.provenance || {};
-      const emailId = prov?.emailId;
-      const conversationId = prov?.conversationId;
-      const createdBy: 'director' | 'agent' | 'tool' | undefined = prov?.createdBy;
-      const creatorId = prov?.creatorId;
-      if (!emailId || !conversationId || !createdBy || !creatorId) {
-        return { kind: 'workspace', success: false, result: { ok: false, errors: ['Missing provenance (emailId/conversationId/createdBy/creatorId)'], received: sanitize(payload) }, error: 'Invalid workspace add payload' };
+      const prov = payload?.provenance || {};
+      const provErrors = validateWorkspaceProvenance(prov);
+      if (provErrors.length) {
+        return { kind: 'workspace', success: false, result: { ok: false, errors: provErrors, received: sanitize(payload) }, error: 'Invalid workspace add payload' };
       }
       const input = {
         content: {
-          mimeType: payload.mimeType || 'text/plain',
-          encoding: payload.encoding || 'utf8',
+          mimeType: typeof payload.mimeType === 'string' ? payload.mimeType : 'text/plain',
+          encoding: typeof payload.encoding === 'string' ? payload.encoding : 'utf8',
           data: typeof payload.data === 'string' ? payload.data : ''
         },
         metadata: {
-          label: payload.label,
-          description: payload.description,
+          ...(typeof payload.label === 'string' ? { label: payload.label } : {}),
+          ...(typeof payload.description === 'string' ? { description: payload.description } : {}),
           tags: Array.isArray(payload.tags) ? payload.tags : []
         },
         provenance: {
-          emailId: String(emailId),
-          conversationId: String(conversationId),
-          createdBy,
-          creatorId: String(creatorId),
-          toolName: String(prov?.toolName || 'workspace_add_item')
+          emailId: prov.emailId,
+          conversationId: prov.conversationId,
+          createdBy: prov.createdBy,
+          creatorId: prov.creatorId,
+          ...(typeof prov.toolName === 'string' ? { toolName: prov.toolName } : { toolName: 'workspace_add_item' })
         }
       } as const;
       const item = await service.addItem(input as any);

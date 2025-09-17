@@ -33,14 +33,14 @@ export const gmailProvider: IMailProvider = {
     for (const msg of items) {
       const msgRes = await gmail.users.messages.get({ userId: 'me', id: String(msg.id) });
       const headers = msgRes.data?.payload?.headers ?? [];
-      const getHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
+      const getHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? '';
       const subject: string = getHeader('Subject');
       const from: string = getHeader('From');
       const to: string = getHeader('To');
       const cc: string = getHeader('Cc');
       const bcc: string = getHeader('Bcc');
       const date: string = getHeader('Date');
-      const snippet: string = msgRes.data?.snippet || '';
+      const snippet: string = msgRes.data?.snippet ?? '';
       const bodies = extractGmailBodies(msgRes.data?.payload);
       const mid = msg.id || msgRes.data?.id;
       if (!mid) throw new Error('Gmail message missing id');

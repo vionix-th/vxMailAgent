@@ -33,7 +33,7 @@ export class UserContextError extends Error {
 export async function attachUserContext(req: UserRequest, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     // Allow public endpoints (auth/health) to proceed without user context
-    const path = (req as any).path || req.url || '';
+    const path = (req as any).path ?? req.url ?? '';
     if (
       path.startsWith('/api/auth/') ||
       path === '/api/auth/whoami' ||

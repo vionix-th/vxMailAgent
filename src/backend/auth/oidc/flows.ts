@@ -42,8 +42,8 @@ export async function handleGoogleLoginCallback(params: { code: string; state: s
   const cfg = getGoogleLoginOAuthConfigOrPrimary();
   const tokenSet = await client.callback(cfg.redirectUri, { code, state }, { code_verifier: stored.code_verifier, state, nonce: stored.nonce });
   const info: any = await client.userinfo(tokenSet);
-  const subOrId: string = info?.sub || info?.id || '';
-  const email: string = info?.email || '';
+  const subOrId: string = (info?.sub ?? info?.id ?? '') as string;
+  const email: string = (info?.email ?? '') as string;
   if (!subOrId || !email) throw new ValidationError('OIDC profile missing id or email');
   const uid = `google:${subOrId}`;
   const nowIso = new Date().toISOString();
@@ -98,7 +98,7 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
   });
   
   const info: any = await client.userinfo(tokenSet);
-  const email: string = info?.email || '';
+  const email: string = (info?.email ?? '') as string;
   if (!email) throw new ValidationError('Google profile missing email address');
   
   const account: Account = {
@@ -107,8 +107,8 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
     email,
     signature: '',
     tokens: {
-      accessToken: String(tokenSet.access_token || ''),
-      refreshToken: String(tokenSet.refresh_token || ''),
+      accessToken: String(tokenSet.access_token ?? ''),
+      refreshToken: String(tokenSet.refresh_token ?? ''),
       expiry: new Date(Date.now() + ((tokenSet.expires_in as number || 3600) * 1000)).toISOString(),
     },
   } as Account;

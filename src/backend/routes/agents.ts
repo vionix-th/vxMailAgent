@@ -18,9 +18,9 @@ export default function registerAgentsRoutes(app: express.Express, repos: LiveRe
     },
     {
       validate: (agent: Agent) => {
-        const pid = String((agent as any).promptId || '').trim();
+        const pid = String((agent as any).promptId ?? '').trim();
         if (!pid) throw new Error('promptId is required for Agent');
-        const aid = String((agent as any).apiConfigId || '').trim();
+        const aid = String((agent as any).apiConfigId ?? '').trim();
         if (!aid) throw new Error('apiConfigId is required for Agent');
       },
       afterValidate: (agent: Agent) => {

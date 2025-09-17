@@ -25,10 +25,18 @@ export async function graphRequest<T = any>(
     } as any,
   };
   const payload = typeof body === 'string' ? body : undefined;
+  const MAX_BYTES = 1_000_000; // 1MB guard
   const json = await new Promise<any>((resolve, reject) => {
     const req = https.request(options as any, (res: any) => {
       const chunks: Buffer[] = [];
+      let total = 0;
       res.on('data', (d: any) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
+      res.on('data', (d: any) => {
+        total += Buffer.byteLength(d);
+        if (total > MAX_BYTES) {
+          req.destroy(new Error('graph_response_too_large'));
+        }
+      });
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
         try {

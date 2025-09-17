@@ -559,15 +559,13 @@ These examples illustrate final, unambiguous shapes. Field omissions are intenti
 ```
 
 ### ApiConfig
-```json
-{
-  "id": "cfg-openai-001",
-  "name": "OpenAI Default",
-  "model": "gpt-4o-mini",
-  "apiKey": "sk-...",
-  "maxOutputTokens": 1024
-}
-```
+
+Two shapes enforce secret separation:
+- ApiConfigPublic (response DTO): id, name, model, maxCompletionTokens?
+- Persisted backend configs include an apiKey field, but no secret-bearing type is exported. The engine receives secrets via a separate parameter.
+
+Engine invocation passes the key separately and never embeds it in the input:
+- conversationEngine.run(input: ConversationEngineRunInput, secrets: { apiKey: string })
 
 ### Filter
 ```json

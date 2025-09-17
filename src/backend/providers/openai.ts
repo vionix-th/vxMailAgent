@@ -30,7 +30,7 @@ export async function chatCompletion(
     const response = await openai.chat.completions.create(payload, { signal: controller.signal });
     clearTimeout(t);
     const choice = response.choices?.[0];
-    const content = choice?.message?.content || '';
+    const content = choice?.message?.content ?? '';
     const toolCalls = (choice?.message as any)?.tool_calls?.map((tc: any) => ({
       id: tc.id,
       name: tc.function?.name,

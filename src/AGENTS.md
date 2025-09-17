@@ -28,6 +28,8 @@
 - Discriminated Unions: Tool payloads and results use action/flag discriminants (e.g., calendar `read` vs `add`) so the type system enforces runtime rules.
 - Tool Metadata: `ToolFlags` fields (`mandatory`, `directorOnly`) are required booleans; `ToolDescriptor.inputSchema` and `ToolDescriptor.flags` are required.
 - Secrets Separation: Shared/front-end visible types must not expose secrets (e.g., `apiKey`, OAuth tokens). Define public DTOs at route boundaries (e.g., Settings `apiConfigs` omits keys) and keep secret-bearing types backend-only.
+  - Engine boundary: call `conversationEngine.run(input, { apiKey })`. Do not embed secrets in `input` (context/messages/apiConfig). Missing keys must throw.
+  - Tool exposure: Directors and Agents share the same tools except those marked `directorOnly` in the registry (e.g., `delegate_to_agent`). Do not add role-specific filters elsewhere.
 
 ### PR Checklist (Types & Contracts)
 - No diagnostic fields in domain type

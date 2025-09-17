@@ -49,3 +49,17 @@ export function validateAgainstSchema(
   }
   return errors;
 }
+
+/** Validate workspace provenance payload. Returns a list of errors. */
+export function validateWorkspaceProvenance(prov: any): string[] {
+  const errors: string[] = [];
+  if (!prov || typeof prov !== 'object') return ['provenance: expected object'];
+  const required = ['emailId', 'conversationId', 'createdBy', 'creatorId'] as const;
+  for (const k of required) {
+    if (typeof prov[k] !== 'string' || prov[k].trim().length === 0) errors.push(`provenance.${k}: required string`);
+  }
+  if (typeof prov.createdBy === 'string' && !['director', 'agent', 'tool'].includes(prov.createdBy)) {
+    errors.push('provenance.createdBy: expected one of director|agent|tool');
+  }
+  return errors;
+}
