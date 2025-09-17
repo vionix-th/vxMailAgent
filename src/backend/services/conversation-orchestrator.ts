@@ -96,8 +96,8 @@ export class ConversationOrchestrator {
     this.activeSteps.set(threadId, { timeoutId, startTime, emailId, directorId: context.thread.directorId });
 
     const stepType = context.thread.kind === 'director' ? 'director_llm' : 'agent_llm';
-    this.stepLogger.logStepStart(threadId, stepType, emailId, context.thread.directorId);
-    this.stepLogger.logEngineStart(threadId, stepType, context.thread.messages.length, emailId, context.thread.directorId);
+    await this.stepLogger.logStepStart(threadId, stepType, emailId, context.thread.directorId);
+    await this.stepLogger.logEngineStart(threadId, stepType, context.thread.messages.length, emailId, context.thread.directorId);
 
     try {
       const apiCfg = context.apiConfigs.find((c: any) => c.id === context.thread.apiConfigId);
@@ -133,10 +133,10 @@ export class ConversationOrchestrator {
 
       // Log provider request/response
       if (result.request) {
-        this.providerLogger.logRequest(threadId, result.request);
+        await this.providerLogger.logRequest(threadId, result.request);
       }
       if (result.response) {
-        this.providerLogger.logResponse(threadId, Date.now() - startTime, result.response, result.response?.usage);
+        await this.providerLogger.logResponse(threadId, Date.now() - startTime, result.response, result.response?.usage);
       }
 
       // Update thread with new messages
@@ -153,7 +153,7 @@ export class ConversationOrchestrator {
 
       const finalThread = (await repoGetThreadById(userReq.repos, userReq.reqLike, threadId)) || updatedThread;
       
-      this.stepLogger.logStepComplete(threadId, stepType, Date.now() - startTime, shouldContinue, toolCallCount, emailId, context.thread.directorId);
+      await this.stepLogger.logStepComplete(threadId, stepType, Date.now() - startTime, shouldContinue, toolCallCount, emailId, context.thread.directorId);
 
       return {
         updatedThread: finalThread,
@@ -163,7 +163,7 @@ export class ConversationOrchestrator {
       };
 
     } catch (error: any) {
-      this.stepLogger.logStepError(threadId, stepType, Date.now() - startTime, error?.message || String(error), emailId, context.thread.directorId);
+      await this.stepLogger.logStepError(threadId, stepType, Date.now() - startTime, error?.message || String(error), emailId, context.thread.directorId);
       return {
         updatedThread: context.thread,
         success: false,
@@ -198,7 +198,9 @@ export class ConversationOrchestrator {
 
       if (!stepResult.success) {
         await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, currentThread.id, 'failed');
-        break;
+        // Propagate the specific error up to the caller to surface actionable failure
+        const err = new Error(stepResult.error || 'conversation_step_failed');
+        throw err;
       }
       if (!stepResult.shouldContinue) {
         await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, currentThread.id, 'completed');
@@ -239,31 +241,24 @@ export class ConversationOrchestrator {
       userReq.traceId,
       { apiKey: apiConfig.apiKey },
       async (ev: ProviderEvent) => {
-        try {
-          const t = (ev as any).type;
-          if (t === 'request') {
-            this.providerLogger.logRequest(thread.id, (ev as any).payload);
-          } else if (t === 'response') {
-            this.providerLogger.logResponse(
-              thread.id,
-              (ev as any).latencyMs,
-              (ev as any).payload,
-              (ev as any).usage
-            );
-          } else if (t === 'error') {
-            this.providerLogger.logError(
-              thread.id,
-              String((ev as any).error),
-              (ev as any).latencyMs
-            );
-          } else {
-            logger.warn('Unknown provider event type', { type: t, conversationId: thread.id });
-          }
-        } catch (e: any) {
-          logger.warn('Provider event logging failed', {
-            error: e?.message || String(e),
-            conversationId: thread.id,
-          });
+        const t = (ev as any).type;
+        if (t === 'request') {
+          await this.providerLogger.logRequest(thread.id, (ev as any).payload);
+        } else if (t === 'response') {
+          await this.providerLogger.logResponse(
+            thread.id,
+            (ev as any).latencyMs,
+            (ev as any).payload,
+            (ev as any).usage
+          );
+        } else if (t === 'error') {
+          await this.providerLogger.logError(
+            thread.id,
+            String((ev as any).error),
+            (ev as any).latencyMs
+          );
+        } else {
+          logger.warn('Unknown provider event type', { type: t, conversationId: thread.id });
         }
       }
     );
@@ -307,7 +302,7 @@ export class ConversationOrchestrator {
       await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, msgs as any);
       try {
         const emailIdStrict = context.thread.email.id; // invariant
-        this.stepLogger.logStepError(
+        await this.stepLogger.logStepError(
           context.thread.id,
           'director_tool',
           0,

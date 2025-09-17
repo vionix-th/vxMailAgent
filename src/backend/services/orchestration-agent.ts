@@ -130,38 +130,31 @@ export async function runAgentConversation(
       const now = new Date().toISOString();
 
       if (logProviderEvent) {
-        try {
-          if (result.request) {
-            logProviderEvent({
-              id: newId(),
-              conversationId: agentThread.id,
-              provider: 'openai',
-              type: 'request',
-              timestamp: now,
-              payload: result.request,
-            });
-          }
-          const usage = (result.response && (result.response as any).usage) || undefined;
-          logProviderEvent({
+        if (result.request) {
+          await logProviderEvent({
             id: newId(),
             conversationId: agentThread.id,
             provider: 'openai',
-            type: 'response',
+            type: 'request',
             timestamp: now,
-            latencyMs,
-            usage: usage ? {
-              promptTokens: usage.prompt_tokens,
-              completionTokens: usage.completion_tokens,
-              totalTokens: usage.total_tokens,
-            } : undefined,
-            payload: result.response,
-          });
-        } catch (e: any) {
-          logger.warn('ORCHESTRATION provider event logging failed', {
-            error: e?.message || String(e),
-            conversationId: agentThread.id,
+            payload: result.request,
           });
         }
+        const usage = (result.response && (result.response as any).usage) || undefined;
+        await logProviderEvent({
+          id: newId(),
+          conversationId: agentThread.id,
+          provider: 'openai',
+          type: 'response',
+          timestamp: now,
+          latencyMs,
+          usage: usage ? {
+            promptTokens: usage.prompt_tokens,
+            completionTokens: usage.completion_tokens,
+            totalTokens: usage.total_tokens,
+          } : undefined,
+          payload: result.response,
+        });
       }
 
       const assistant = result.assistantMessage;
@@ -255,22 +248,15 @@ export async function runAgentConversation(
       });
     }
     if (logProviderEvent) {
-      try {
-        const now = new Date().toISOString();
-        logProviderEvent({
-          id: newId(),
-          conversationId: agentThread.id,
-          provider: 'openai',
-          type: 'error',
-          timestamp: now,
-          error: String(e?.message || e),
-        });
-      } catch (e3: any) {
-        logger.warn('ORCHESTRATION provider error-event logging failed', {
-          error: e3?.message || String(e3),
-          conversationId: agentThread.id,
-        });
-      }
+      const now = new Date().toISOString();
+      await logProviderEvent({
+        id: newId(),
+        conversationId: agentThread.id,
+        provider: 'openai',
+        type: 'error',
+        timestamp: now,
+        error: String(e?.message || e),
+      });
     }
     return {
       finalMessages: currentMessages,

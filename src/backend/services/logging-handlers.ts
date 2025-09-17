@@ -6,15 +6,15 @@ import { newId } from '../utils/id';
 import logger from './logger';
  
 
-// Minimal helpers: callers must provide valid req and fields; failures surface naturally
-function logOrch(entry: OrchestrationEvent, req?: ReqLike): void {
+// Helpers now await repository writes so failures propagate to callers
+async function logOrch(entry: OrchestrationEvent, req?: ReqLike): Promise<void> {
   const repo = requireUserRepo(req as ReqLike, 'orchestrationLog') as unknown as OrchestrationLogRepository;
-  void repo.append(entry);
+  await repo.append(entry);
 }
 
-function logProviderEvent(event: ProviderEvent, req?: ReqLike): void {
+async function logProviderEvent(event: ProviderEvent, req?: ReqLike): Promise<void> {
   const repo = requireUserRepo(req as ReqLike, 'providerEvents') as unknown as ProviderEventsRepository;
-  void repo.append(event);
+  await repo.append(event);
 }
 
 
@@ -24,7 +24,7 @@ function logProviderEvent(event: ProviderEvent, req?: ReqLike): void {
 export class ConversationStepLogger {
   constructor(private req: ReqLike | undefined, private runId: string, private accountId: string) {}
 
-  logStepStart(threadId: string, stepType: string, emailId: string, directorId: string): void {
+  async logStepStart(threadId: string, stepType: string, emailId: string, directorId: string): Promise<void> {
     const context: DirectorContext = {
       runId: this.runId,
       emailId,
@@ -43,10 +43,10 @@ export class ConversationStepLogger {
       context,
       outcome,
     };
-    logOrch(entry, this.req);
+    await logOrch(entry, this.req);
   }
 
-  logStepComplete(
+  async logStepComplete(
     threadId: string, 
     stepType: string, 
     durationMs: number, 
@@ -54,7 +54,7 @@ export class ConversationStepLogger {
     toolCallCount: number,
     emailId: string,
     directorId: string
-  ): void {
+  ): Promise<void> {
     const context: DirectorContext = {
       runId: this.runId,
       emailId,
@@ -73,10 +73,10 @@ export class ConversationStepLogger {
       context,
       outcome,
     };
-    logOrch(entry, this.req);
+    await logOrch(entry, this.req);
   }
 
-  logStepError(threadId: string, stepType: string, durationMs: number, error: string, emailId: string, directorId: string): void {
+  async logStepError(threadId: string, stepType: string, durationMs: number, error: string, emailId: string, directorId: string): Promise<void> {
     const isTimeout = error.includes('conversation_step_timeout');
     
     const context: DirectorContext = {
@@ -98,10 +98,10 @@ export class ConversationStepLogger {
       context,
       outcome,
     };
-    logOrch(entry, this.req);
+    await logOrch(entry, this.req);
   }
 
-  logEngineStart(threadId: string, stepType: string, messageCount: number, emailId: string, directorId: string): void {
+  async logEngineStart(threadId: string, stepType: string, messageCount: number, emailId: string, directorId: string): Promise<void> {
     const context: DirectorContext = {
       runId: this.runId,
       emailId,
@@ -120,10 +120,10 @@ export class ConversationStepLogger {
       context,
       outcome,
     };
-    logOrch(entry, this.req);
+    await logOrch(entry, this.req);
   }
 
-  logEngineTimeout(threadId: string, stepType: string, timeoutMs: number, emailId: string, directorId: string): void {
+  async logEngineTimeout(threadId: string, stepType: string, timeoutMs: number, emailId: string, directorId: string): Promise<void> {
     const context: DirectorContext = {
       runId: this.runId,
       emailId,
@@ -143,10 +143,10 @@ export class ConversationStepLogger {
       context,
       outcome,
     };
-    logOrch(entry, this.req);
+    await logOrch(entry, this.req);
   }
 
-  logStepCancelled(threadId: string, durationMs: number, emailId: string, directorId: string): void {
+  async logStepCancelled(threadId: string, durationMs: number, emailId: string, directorId: string): Promise<void> {
     const context: DirectorContext = {
       runId: this.runId,
       emailId,
@@ -166,10 +166,10 @@ export class ConversationStepLogger {
       context,
       outcome,
     };
-    logOrch(entry, this.req);
+    await logOrch(entry, this.req);
   }
 
-  logStepCancelledShutdown(threadId: string, durationMs: number, emailId: string, directorId: string): void {
+  async logStepCancelledShutdown(threadId: string, durationMs: number, emailId: string, directorId: string): Promise<void> {
     const context: DirectorContext = {
       runId: this.runId,
       emailId,
@@ -189,7 +189,7 @@ export class ConversationStepLogger {
       context,
       outcome,
     };
-    logOrch(entry, this.req);
+    await logOrch(entry, this.req);
   }
 }
 
@@ -199,8 +199,8 @@ export class ConversationStepLogger {
 export class ProviderEventLogger {
   constructor(private req?: ReqLike) {}
 
-  logRequest(conversationId: string, payload: any): void {
-    logProviderEvent({
+  async logRequest(conversationId: string, payload: any): Promise<void> {
+    await logProviderEvent({
       id: newId(),
       conversationId,
       provider: 'openai',
@@ -210,13 +210,13 @@ export class ProviderEventLogger {
     }, this.req);
   }
 
-  logResponse(
+  async logResponse(
     conversationId: string, 
     latencyMs: number, 
     payload: any, 
     usage?: any
-  ): void {
-    logProviderEvent({
+  ): Promise<void> {
+    await logProviderEvent({
       id: newId(),
       conversationId,
       provider: 'openai',
@@ -234,8 +234,8 @@ export class ProviderEventLogger {
     }, this.req);
   }
 
-  logError(conversationId: string, error: string, latencyMs?: number): void {
-    logProviderEvent({
+  async logError(conversationId: string, error: string, latencyMs?: number): Promise<void> {
+    await logProviderEvent({
       id: newId(),
       conversationId,
       provider: 'openai',
