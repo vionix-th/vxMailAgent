@@ -38,9 +38,27 @@ export default function registerConversationsRoutes(
   // GET /api/conversations?limit=&offset=
   app.get('/api/conversations', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const q = req.query as Record<string, string>;
+    // Validate: limit must be integer 1..1000 when provided; offset must be integer >=0 when provided.
+    const rawLimit = q.limit;
+    const rawOffset = q.offset;
+    const hasLimit = typeof rawLimit !== 'undefined';
+    const hasOffset = typeof rawOffset !== 'undefined';
+
+    if (hasLimit) {
+      if (!/^\d+$/.test(String(rawLimit || ''))) throw new ValidationError('limit must be an integer');
+      const n = Number(rawLimit);
+      if (!(n >= 1 && n <= 1000)) throw new ValidationError('limit must be between 1 and 1000');
+    }
+    if (hasOffset) {
+      if (!/^\d+$/.test(String(rawOffset || ''))) throw new ValidationError('offset must be a non-negative integer');
+      const n = Number(rawOffset);
+      if (n < 0) throw new ValidationError('offset must be a non-negative integer');
+    }
+
+    const limit = hasLimit ? Number(rawLimit) : 200;
+    const offset = hasOffset ? Number(rawOffset) : 0;
+
     const list = await repos.getConversations(req as any as ReqLike);
-    const limit = Math.max(0, Math.min(1000, Number(q.limit) || 200));
-    const offset = Math.max(0, Number(q.offset) || 0);
     const paged = list.slice(offset, offset + limit);
     return res.json({ total: list.length, items: paged });
   }));
