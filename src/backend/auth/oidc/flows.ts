@@ -97,6 +97,17 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
     nonce: stored.nonce 
   });
   
+  // Enforce token completeness: both access and refresh tokens are mandatory
+  const accessToken = String(tokenSet.access_token ?? '');
+  const refreshToken = String(tokenSet.refresh_token ?? '');
+  if (!accessToken) {
+    throw new ValidationError('No access token in Google response');
+  }
+  if (!refreshToken) {
+    // Require offline access; callers should initiate with prompt=consent + access_type=offline
+    throw new ValidationError('No refresh token in Google response');
+  }
+
   const info: any = await client.userinfo(tokenSet);
   const email: string = (info?.email ?? '') as string;
   if (!email) throw new ValidationError('Google profile missing email address');
@@ -107,8 +118,8 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
     email,
     signature: '',
     tokens: {
-      accessToken: String(tokenSet.access_token ?? ''),
-      refreshToken: String(tokenSet.refresh_token ?? ''),
+      accessToken,
+      refreshToken,
       expiry: new Date(Date.now() + ((tokenSet.expires_in as number || 3600) * 1000)).toISOString(),
     },
   } as Account;
