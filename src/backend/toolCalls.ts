@@ -37,23 +37,7 @@ export function createToolHandler(repos: RepoBundle) {
       };
       switch (name) {
         // ---- Meta tools ----
-        case 'list_agents': {
-          const directorId = typeof params?.directorId === 'string' ? params.directorId : '';
-          if (!directorId) {
-            return { kind: name, success: false, result: null, error: 'directorId is required' };
-          }
-          const [allAgents, allDirectors] = await Promise.all([
-            repos.agents.getAll(),
-            repos.directors.getAll(),
-          ]);
-          const director = allDirectors.find((d: any) => d.id === directorId);
-          if (!director) return { kind: name, success: false, result: null, error: 'Director not found' };
-          const set = new Set<string>(Array.isArray(director.agentIds) ? director.agentIds : []);
-          const roster = allAgents
-            .filter((a: any) => set.has(a.id))
-            .map((a: any) => ({ id: a.id, name: a.name, apiConfigId: a.apiConfigId }));
-          return { kind: name, success: true, result: roster };
-        }
+        // consolidated 'list_agents' implementation lives below
         case 'list_tools': {
           // No director/agent discrimination except director-only tools from registry
           const roleRaw = typeof params?.role === 'string' ? params.role.toLowerCase() : '';
@@ -150,8 +134,9 @@ export function createToolHandler(repos: RepoBundle) {
           if (directorId) {
             const directors = await repos.directors.getAll();
             const dir = directors.find((d: any) => d.id === directorId);
-            const set = new Set<string>(Array.isArray(dir?.agentIds) ? dir.agentIds : []);
-            if (set.size) result = allAgents.filter((a: any) => set.has(a.id));
+            if (!dir) return { kind: name, success: false, result: null, error: 'Director not found' };
+            const set = new Set<string>(Array.isArray(dir.agentIds) ? dir.agentIds : []);
+            result = allAgents.filter((a: any) => set.has(a.id));
           }
           const agentsSlim = result.map((a: any) => ({ id: a.id, name: a.name, apiConfigId: a.apiConfigId }));
           return { kind: name, success: true, result: agentsSlim };
