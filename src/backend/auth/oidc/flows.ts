@@ -98,12 +98,12 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
   });
   
   // Enforce token completeness: both access and refresh tokens are mandatory
-  const accessToken = String(tokenSet.access_token ?? '');
-  const refreshToken = String(tokenSet.refresh_token ?? '');
-  if (!accessToken) {
+  const accessToken = tokenSet.access_token as string | undefined;
+  const refreshToken = tokenSet.refresh_token as string | undefined;
+  if (typeof accessToken !== 'string' || accessToken.length === 0) {
     throw new ValidationError('No access token in Google response');
   }
-  if (!refreshToken) {
+  if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
     // Require offline access; callers should initiate with prompt=consent + access_type=offline
     throw new ValidationError('No refresh token in Google response');
   }

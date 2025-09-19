@@ -52,20 +52,26 @@ async function getMsClient(cfg: OAuthProviderConfig) {
 export async function exchangeOutlookCode(cfg: OAuthProviderConfig, code: string): Promise<OAuthTokens> {
   const client = await getMsClient(cfg);
   const tokenSet = await client.callback(cfg.redirectUri, { code }, {});
-  const accessToken = String(tokenSet.access_token || '');
-  const refreshToken = tokenSet.refresh_token ? String(tokenSet.refresh_token) : undefined;
+  const accessToken = tokenSet.access_token as string | undefined;
+  const refreshToken = tokenSet.refresh_token as string | undefined;
   const expiresIn = (tokenSet.expires_in && typeof tokenSet.expires_in === 'number') ? tokenSet.expires_in : undefined;
   const expiryISO = new Date(Date.now() + (expiresIn ? expiresIn : 55 * 60) * 1000).toISOString();
-  if (!accessToken) throw new OAuthError('No access token in Outlook response', 'OAUTH_NO_ACCESS_TOKEN', 502);
-  if (!refreshToken) throw new OAuthError('No refresh token in Outlook response', 'OAUTH_NO_REFRESH_TOKEN', 502);
+  if (typeof accessToken !== 'string' || accessToken.length === 0) {
+    throw new OAuthError('No access token in Outlook response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  }
+  if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
+    throw new OAuthError('No refresh token in Outlook response', 'OAUTH_NO_REFRESH_TOKEN', 502);
+  }
   return { accessToken, refreshToken, expiryISO, raw: tokenSet };
 }
 
 export async function refreshOutlookToken(cfg: OAuthProviderConfig, refreshToken: string): Promise<OAuthTokens> {
   const client = await getMsClient(cfg);
   const tokenSet = await client.refresh(refreshToken);
-  const accessToken = String(tokenSet.access_token || '');
-  if (!accessToken) throw new OAuthError('No access token in Outlook refresh response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  const accessToken = tokenSet.access_token as string | undefined;
+  if (typeof accessToken !== 'string' || accessToken.length === 0) {
+    throw new OAuthError('No access token in Outlook refresh response', 'OAUTH_NO_ACCESS_TOKEN', 502);
+  }
   const newRefreshToken = tokenSet.refresh_token ? String(tokenSet.refresh_token) : undefined;
   const expiresIn = (tokenSet.expires_in && typeof tokenSet.expires_in === 'number') ? tokenSet.expires_in : undefined;
   const expiryISO = new Date(Date.now() + (expiresIn ? expiresIn : 55 * 60) * 1000).toISOString();
