@@ -63,15 +63,45 @@ Error handling
 - Add proper error handling and reporting; never silently swallow errors.
 - Validate all external inputs early and fail fast with descriptive errors.
 
-Defaults & validation
-- No Defaults For Invariants: Missing/invalid required inputs/config cause startup/runtime errors with actionable messages.
+Defaults & validation (authoritative)
+- No Defaults For Invariants: Missing/invalid required inputs/config cause startup/runtime errors with actionable messages. Do not “fix” by inserting defaults.
 - Allowlisted Defaults Only: Defaults must be spec‑approved, neutral, documented inline, covered by tests, and emit a one‑time WARN with key+value.
 - Fail Closed: Prefer explicit errors over silent fallbacks; escalate to callers.
 - Validate At Boundaries: Schema‑validate external inputs (env, request, tool params); reject on failure.
-- Safe Defaulting Semantics: Use `??` only for typed optionals; never use `||` for defaulting.
+- Safe Defaulting Semantics: Use `??` only for truly optional, typed fields. Never use `||` for defaulting. Do not convert `||`→`??` while keeping the same default on invariants — defaulting itself is forbidden for invariants.
 - Layered Behavior: Backend enforces invariants strictly; UI may degrade while surfacing causes.
 - UI‑only degradation: Any degradation must live in the UI layer. Backend routes never degrade by inventing data.
 - PR Checklist: For each default, document safety, location, and tests for missing‑value and normal paths; log and count default activations.
+
+### Invariants & Defaulting — Do/Don’t (binding)
+
+Forbidden patterns (reject and remove):
+- `x || ''`, `x || "unknown"`, `x || []`, `x || {}` for required identifiers, secrets, tokens, IDs, dates, or file paths.
+- `x ?? ''` (or any string/array/object) on invariants.
+- `String(x || '')`, `String(x ?? '')` coercions for invariants.
+- Defaulted destructuring on invariants, e.g. `const { token = '' } = tokenSet`.
+- Silent sanitize that converts absence into presence (e.g., trimming/normalizing then using the value without re‑validation).
+
+Allowed patterns:
+- Boundary‑first validation with explicit errors. Example:
+  - Do: `const t = tokenSet.access_token; if (typeof t !== 'string' || !t) throw new OAuthError('No access token', 'OAUTH_NO_ACCESS_TOKEN', 502);`
+  - Don’t: `const t = String(tokenSet.access_token || '');`
+- For typed optionals only (never invariants): `const q = typeof req.query.q === 'string' ? req.query.q : undefined; // ok`
+
+LLM Checklist before writing code (must pass):
+1) Identify invariants touched (tokens/secrets, IDs, dates, required params, file paths). If any can be missing → fail fast; do not default.
+2) If introducing defaults, confirm they’re allowlisted, neutral, and spec‑approved; add a one‑time WARN and tests. Otherwise, remove the default.
+3) Search for accidental defaults:
+   - `rg -n "\|\|\s*''|\|\|\s*\"\"|\|\|\s*\[\]|\|\|\s*\{\}" src`
+   - `rg -n "\?\?\s*['\"]|String\(.*\|\||String\(.*\?\?" src`
+   - `rg -n ":\s*\w+\s*=\s*''" src`
+4) If a default is present to satisfy TypeScript, remove it and strengthen runtime validation or types instead.
+
+Examples (OAuth/secrets/IDs):
+- Do: `const id = req.params.id; if (!id) throw new ValidationError('id required');`
+- Don’t: `const id = req.params.id || '';`
+- Do: `const key = process.env.JWT_SECRET; if (!key) throw new Error('JWT_SECRET required');`
+- Don’t: `const key = process.env.JWT_SECRET || 'dev';`
 
 Comments & sources
 - Only add comments where they add value; do not comment self‑evident code.

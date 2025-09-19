@@ -16,7 +16,7 @@
 - Tests: `npm --prefix src/backend test` (per-file hard runner). Live-only: `node --test src/backend/tests/*.live.cjs`.
 
 ## Coding Style & Naming Conventions
-- Language: TypeScript strict. Use `??` only for typed optionals; never default with `||`.
+- Language: TypeScript strict. Use `??` only for truly optional, typed fields; never default invariants with `||` or `??`.
 - Indentation: 2 spaces; files `kebab-case.ts`; types `PascalCase`; functions/vars `camelCase`; env `UPPER_SNAKE`.
 - Lint: `src/backend/eslint.config.cjs` enforces error handling and bans direct thread mutations (use `services/conversation-mutations.ts`). Fix warnings before commit.
 
@@ -24,7 +24,7 @@
 - Domain vs Diagnostics: Domain models must never embed diagnostics or tracing fields (no `traceId`, `spanId`, provider events). Diagnostics reference domain by id (e.g., `conversationId`, `runId`, `accountId`) — not the other way around.
 - Run Identity: Use `runId` (required) to correlate orchestration steps; avoid legacy names like `fetchCycleId` in new code.
 - Required-by-Default: Prefer required fields. Optional fields must be justified, documented inline, and covered by tests. Collections are empty arrays (`[]`), not `undefined`.
-- No Defaults for Invariants: Never mask required identifiers with fallbacks (e.g., `|| ''`, `|| 'unknown'`). Validate and fail fast.
+- No Defaults for Invariants: Never mask required identifiers with fallbacks (e.g., `|| ''`, `|| 'unknown'`, `x ?? ''`). Validate and fail fast. Do not convert `||`→`??` while keeping the same default on invariants.
 - Discriminated Unions: Tool payloads and results use action/flag discriminants (e.g., calendar `read` vs `add`) so the type system enforces runtime rules.
 - Tool Metadata: `ToolFlags` fields (`mandatory`, `directorOnly`) are required booleans; `ToolDescriptor.inputSchema` and `ToolDescriptor.flags` are required.
 - Secrets Separation: Shared/front-end visible types must not expose secrets (e.g., `apiKey`, OAuth tokens). Define public DTOs at route boundaries (e.g., Settings `apiConfigs` omits keys) and keep secret-bearing types backend-only.
@@ -33,7 +33,7 @@
 
 ### PR Checklist (Types & Contracts)
 - No diagnostic fields in domain type
-- No invariant fallbacks: search `rg -n "\|\|\s*''|\|\|\s*'unknown'" src`.
+- No invariant fallbacks: search `rg -n "\|\|\s*''|\|\|\s*\"\"|\?\?\s*['\"]|String\(.*\|\||String\(.*\?\?" src`.
 - Required arrays (no `?: string[]`) for capability lists; empty arrays used when none.
 - Tool payloads/results are discriminated unions; validators align with types.
 - Public route DTOs exclude secret fields (settings/accounts). Review `routes/settings.ts` and similar.
