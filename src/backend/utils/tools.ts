@@ -34,3 +34,19 @@ export function filterToolDescriptorsByRole(role: ConversationRole): ToolDescrip
 export function buildToolSpecsByFlags(role: ConversationRole): any[] {
   return filterToolDescriptorsByRole(role).map(toOpenAiToolSpec);
 }
+
+/**
+ * Select descriptors visible for a role, then apply an optional allowlist for optional tools.
+ * - Always includes mandatory tools after role gating
+ * - Includes optional tools only when present in enabled names
+ */
+export function selectToolDescriptors(
+  role: ConversationRole,
+  enabledNames?: ReadonlyArray<string> | Set<string>
+): ToolDescriptor[] {
+  const roleGated = filterToolDescriptorsByRole(role);
+  const enabledSet: Set<string> | null = enabledNames
+    ? (enabledNames instanceof Set ? enabledNames : new Set(enabledNames))
+    : null;
+  return roleGated.filter((d) => d.flags.mandatory || (!!enabledSet && enabledSet.has(d.name)));
+}

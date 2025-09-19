@@ -1,7 +1,7 @@
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfigPublic } from '../../shared/types';
 import { runAgentConversation, ensureAgentThread } from './orchestration-agent';
 // Tool descriptors are filtered via filterToolDescriptorsByRole
-import { filterToolDescriptorsByRole } from '../utils/tools';
+import { selectToolDescriptors } from '../utils/tools';
 import { createToolHandler } from '../toolCalls';
 import { requireReq, requireRepos } from '../utils/repo-access';
 import logger from './logger';
@@ -105,9 +105,12 @@ export class ConversationOrchestrator {
         throw new Error(`API config not found for thread apiConfigId=${context.thread.apiConfigId}`);
       }
       let engineTimeoutId: any;
-      // Equal tool exposure for director and agent, except spawning further agents (director-only)
+      // Role gate first, then apply per-entity optional allowlist
       const role = context.thread.kind === 'director' ? 'director' : 'agent';
-      const gatedToolDescriptors = filterToolDescriptorsByRole(role);
+      const directorEnabled = context.director?.enabledToolCalls || [];
+      const gatedToolDescriptors = role === 'director'
+        ? selectToolDescriptors('director', directorEnabled)
+        : selectToolDescriptors('agent');
 
       const apiConfigPublic: ApiConfigPublic = { id: apiCfg.id, name: apiCfg.name, model: apiCfg.model, ...(typeof apiCfg.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiCfg.maxCompletionTokens } : {}) };
       const engineInput = {
@@ -226,7 +229,10 @@ export class ConversationOrchestrator {
     }
 
     // Equal tool exposure for agent, except spawning further agents (disabled)
-    const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
+    // Load agent allowlist and apply role + allowlist gating
+    const agents = await userReq.repos.getAgents(userReq.reqLike);
+    const agent = agents.find((a: any) => a.id === thread.agentId);
+    const gatedToolDescriptors = selectToolDescriptors('agent', agent?.enabledToolCalls || []);
 
     const userContent = extractLastUserContent(thread.messages as any);
 
@@ -581,7 +587,9 @@ export class ConversationOrchestrator {
       }
 
       // Equal tool exposure for agent, except spawning further agents (disabled)
-      const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
+      const agents = await userReq.repos.getAgents(userReq.reqLike);
+      const srcAgent = agents.find((a: any) => a.id === agentThread.agentId);
+      const gatedToolDescriptors = selectToolDescriptors('agent', srcAgent?.enabledToolCalls || []);
 
       const agentResult = await runAgentConversation(
         agentThread,

@@ -3,7 +3,7 @@
 import { ToolCallResult, MemoryEntry, MemoryScope, WorkspaceItem, ApiConfigPublic, ConversationThread } from '../shared/types';
 import { validateAgainstSchema, validateWorkspaceProvenance } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
-import { filterToolDescriptorsByRole } from './utils/tools';
+import { filterToolDescriptorsByRole, selectToolDescriptors } from './utils/tools';
 import { TOOL_EXEC_TIMEOUT_MS } from './config';
 import logger from './services/logger';
 import { WorkspaceService } from './services/workspace-service';
@@ -39,10 +39,25 @@ export function createToolHandler(repos: RepoBundle) {
         // ---- Meta tools ----
         // consolidated 'list_agents' implementation lives below
         case 'list_tools': {
-          // No director/agent discrimination except director-only tools from registry
+          // Prefer explicit entity id to infer allowlist; otherwise role-only with mandatory tools
           const roleRaw = typeof params?.role === 'string' ? params.role.toLowerCase() : '';
           const role = roleRaw === 'director' ? 'director' as const : 'agent' as const;
-          const visible = filterToolDescriptorsByRole(role).map(d => ({ name: d.name, description: d.description }));
+          const directorId = typeof params?.directorId === 'string' ? params.directorId : '';
+          const agentId = typeof params?.agentId === 'string' ? params.agentId : '';
+          let descs;
+          if (directorId) {
+            const directors = await repos.directors.getAll();
+            const dir = (directors as any[]).find(d => d.id === directorId);
+            descs = selectToolDescriptors('director', dir?.enabledToolCalls || []);
+          } else if (agentId) {
+            const agents = await repos.agents.getAll();
+            const ag = (agents as any[]).find(a => a.id === agentId);
+            descs = selectToolDescriptors('agent', ag?.enabledToolCalls || []);
+          } else {
+            // No entity context: expose only mandatory after role gating
+            descs = selectToolDescriptors(role);
+          }
+          const visible = descs.map(d => ({ name: d.name, description: d.description }));
           return { kind: name, success: true, result: visible };
         }
         case 'describe_tool': {
