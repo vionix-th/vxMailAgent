@@ -24,26 +24,7 @@ Perform a strict, producer‑first backend code audit. Do not implement changes;
 - Production Stability: Single canonical implementation per feature; remove deprecated/duplicate code.
 - SOLID: SRP (one reason to change per module/service), OCP (extend via registries/config, avoid engine edits), LSP (preserve required fields/behaviors in implementations), ISP (narrow interfaces; avoid “god” services), DIP (depend on abstractions; inject repos/providers; avoid direct FS/network in domain logic).
 
-## Procedure
-1) Map SOTs: For each route/feature, name the SOT and check consumers for compensation/synthesis.
-2) Scan invariants: Required fields present; no placeholders/coercion (empty strings, fabricated timestamps); dates parseable.
-3) Parsing safety: Guard all `JSON.parse`; never fabricate absent fields; propagate structured errors.
-4) Tools exposure: Mandatory tools exposed by default; optional via explicit allowlists; stubs fail with `not_implemented`.
-5) External calls: Explicit timeouts for providers/tools; errors surfaced; no silent retries.
-6) Security: No secret logging; validate required env/OAuth at startup and fail fast.
-7) Dead/legacy code: Locate unused types/modules/routes, deprecated flags, duplicate implementations.
-8) Unification: Identify overlapping code paths that can be consolidated without adding layers.
-
-## Evidence‑Driven Sweep (suggested quick searches)
-- Placeholders/defaults on invariants: `rg -n "\|\|\s*''|\|\|\s*'unknown'" src`
-- Unsafe parse: `rg -n "JSON\.parse\(" src`
-- Optional IDs / required arrays: `rg -n "\bid\??:\s*string|\?:\s*\w+\[]" src/shared src/backend`
-- Deprecated/legacy: `rg -n "TODO|FIXME|@deprecated|legacy|XXX" src`
-- Tool gating drift: `rg -n "enabledToolCalls|TOOL_REGISTRY|TOOL_DESCRIPTORS" src`
-- Append semantics: `rg -n "append\(|setAll\(|getAll\(" src/backend`
-
 ## Report Format (output only)
-- Executive Summary: 5–8 bullets with the most impactful issues and estimated risk.
 - Findings (grouped): Architecture/Design, Business Logic, Best Practices & SOLID, Deprecated/Unused, Consolidation.
   - For each finding:
     - Title: concise issue name + severity (Critical/High/Medium/Low).
@@ -59,4 +40,3 @@ Perform a strict, producer‑first backend code audit. Do not implement changes;
 ## Interaction
 - Ask only blocking questions if essential to proceed.
 - Do not output diffs or run changes; generate the report only.
-
