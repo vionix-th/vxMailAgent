@@ -42,8 +42,8 @@ export async function handleGoogleLoginCallback(params: { code: string; state: s
   const cfg = getGoogleLoginOAuthConfigOrPrimary();
   const tokenSet = await client.callback(cfg.redirectUri, { code, state }, { code_verifier: stored.code_verifier, state, nonce: stored.nonce });
   const info: any = await client.userinfo(tokenSet);
-  const subOrId: string = (info?.sub ?? info?.id ?? '') as string;
-  const email: string = (info?.email ?? '') as string;
+  const subOrId = (info?.sub ?? info?.id) as string | undefined;
+  const email = info?.email as string | undefined;
   if (!subOrId || !email) throw new ValidationError('OIDC profile missing id or email');
   const uid = `google:${subOrId}`;
   const nowIso = new Date().toISOString();
@@ -109,7 +109,7 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
   }
 
   const info: any = await client.userinfo(tokenSet);
-  const email: string = (info?.email ?? '') as string;
+  const email = info?.email as string | undefined;
   if (!email) throw new ValidationError('Google profile missing email address');
   
   const account: Account = {
