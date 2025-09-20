@@ -19,6 +19,7 @@ module.exports = [
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
+      invariants: require('./eslint-plugin-invariants'),
     },
     rules: {
       'no-empty': ['error', { allowEmptyCatch: false }],
@@ -65,6 +66,10 @@ module.exports = [
             "Do not update thread['messages|lastActiveAt|endedAt']; use conversation-mutations helpers.",
         },
       ],
+      // Invariant enforcement (type-aware)
+      'invariants/no-defaults-for-required': 'error',
+      'invariants/no-domain-object-literals': ['error', { types: ['EmailEnvelope','ConversationThread','Account','ProviderEvent'] }],
+      'invariants/no-any-into-domain': ['error', { types: ['EmailEnvelope','ConversationThread','Account','ProviderEvent'] }],
     },
   },
   {
