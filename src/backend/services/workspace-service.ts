@@ -134,17 +134,8 @@ export class WorkspaceService {
     await this.setItems(next);
   }
 
-  async updateConversationWorkspaceAssociation(conversationId: string, workspaceId: string): Promise<void> {
-    if (!this.getConversations || !this.setConversations) return; // Optional dependency
-    const conversations = await this.getConversations();
-    const idx = conversations.findIndex(c => c.id === conversationId);
-    if (idx === -1) throw new NotFoundError('Conversation not found');
-    const updated = { ...conversations[idx] } as ConversationThread;
-    (updated as any).workspaceId = workspaceId;
-    const next = conversations.slice();
-    next[idx] = updated;
-    await this.setConversations(next);
-  }
+  // Note: Association is derivable by WorkspaceItem.provenance.conversationId.
+  // No thread mutation is needed (or allowed) to add ad‑hoc fields.
 
   /**
    * Purge all workspace items for the current user. Returns the number of deleted items.

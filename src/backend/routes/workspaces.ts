@@ -64,14 +64,6 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
     const isHardDelete = String(req.query.hard).toLowerCase() === 'true';
     const service = createWorkspaceService(req as ReqLike, deps);
 
-    // Ensure the parent conversation has a workspace association equal to the workspace id
-    try {
-      await service.updateConversationWorkspaceAssociation(id, id);
-    } catch (e: any) {
-      // Non-fatal: association is best-effort — emit WARN with context
-      logger.warn('workspace association update failed (delete path)', { workspaceId: id, itemId, error: e?.message || String(e) });
-    }
-
     if (isHardDelete) {
       await service.hardDeleteItem(itemId);
       logger.info('DELETE /api/workspaces/:id/items/:itemId removed', { itemId, hard: true });
