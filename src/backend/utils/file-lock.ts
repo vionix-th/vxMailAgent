@@ -30,6 +30,7 @@ export class FileLock {
       timestamp: startTime,
       file: this.filePath
     };
+    logger.debug('Lock acquire requested', { filePath: this.filePath, lockPath: this.lockPath });
 
     while (Date.now() - startTime < this.timeoutMs) {
       try {
@@ -41,6 +42,7 @@ export class FileLock {
         );
         
         this.acquired = true;
+        logger.debug('Lock acquired', { lockPath: this.lockPath, pid: process.pid });
         
         // Set cleanup timeout as safety net
         this.lockTimeout = setTimeout(() => {
@@ -57,6 +59,7 @@ export class FileLock {
         await this.cleanupStaleLock();
         
         // Wait before retry
+        logger.debug('Lock busy, retrying', { lockPath: this.lockPath, retryInMs: this.retryIntervalMs });
         await new Promise(resolve => setTimeout(resolve, this.retryIntervalMs));
       }
     }
@@ -72,6 +75,7 @@ export class FileLock {
     
     try {
       await fs.promises.unlink(this.lockPath);
+      logger.debug('Lock released', { lockPath: this.lockPath });
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
         logger.warn('Lock release failed', { lockPath: this.lockPath, error: error.message });

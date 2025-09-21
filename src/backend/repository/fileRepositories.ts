@@ -72,13 +72,16 @@ async function readNdjson(containerPath: string, ndjsonPath: string): Promise<an
   const key = getKeyBuf();
   const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
   const out: any[] = [];
+  let skipped = 0;
   for (const ln of lines) {
     try {
       const obj = JSON.parse(ln);
       if (obj && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, '_enc')) {
         if (!key) {
           if (isProd) throw new RepositoryError('Encrypted journal entry encountered without valid key');
-          // dev fallback: skip unreadable encrypted entries
+          // dev fallback: skip unreadable encrypted entries; emit verbose diagnostics
+          skipped++;
+          logger.debug('NDJSON entry skipped (no key; dev mode)', { file: ndjsonPath });
           continue;
         }
         out.push(decryptPayloadToObject(String(obj._enc ?? ''), key));
@@ -88,6 +91,13 @@ async function readNdjson(containerPath: string, ndjsonPath: string): Promise<an
     } catch {
       // tolerate json parse errors on individual lines
     }
+  }
+  // One-time summary WARN per call when skipping encrypted lines in development.
+  if (!isProd && skipped > 0) {
+    logger.warn('NDJSON contained encrypted entries but no key was configured; skipped entries in development', {
+      file: ndjsonPath,
+      skipped
+    });
   }
   return out;
 }
