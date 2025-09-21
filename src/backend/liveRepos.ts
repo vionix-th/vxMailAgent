@@ -1,7 +1,6 @@
 import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent } from '../shared/types';
 import { requireReq, requireUserRepo, repoGetAll, repoSetAll, requireRepos, ReqLike } from './utils/repo-access';
 import { RepoBundle } from './repository/registry';
-import type { ConversationThread } from '../shared/types';
 
 export interface LiveRepos {
   getPrompts(req?: ReqLike): Promise<Prompt[]>;

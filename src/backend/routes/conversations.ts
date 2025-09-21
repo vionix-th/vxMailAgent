@@ -138,7 +138,7 @@ export default function registerConversationsRoutes(
       const contentMaybe = (typeof lastAssistant?.content === 'string') ? lastAssistant.content : undefined;
       const toolCallsMaybe = Array.isArray((lastAssistant as any)?.tool_calls) ? (lastAssistant as any).tool_calls : undefined;
       result = {
-        assistantMessage: lastAssistant || null,
+        assistantMessage: lastAssistant ? lastAssistant : null,
         ...(typeof contentMaybe !== 'undefined' ? { content: contentMaybe } : {}),
         ...(typeof toolCallsMaybe !== 'undefined' ? { toolCalls: toolCallsMaybe } : {}),
       };

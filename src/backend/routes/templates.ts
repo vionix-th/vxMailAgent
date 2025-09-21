@@ -3,7 +3,8 @@ import { requireUserContext } from '../middleware/user-context';
 import logger from '../services/logger';
 import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
 import type { TemplateItem } from '../../shared/types';
-import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
+import { errorHandler, ValidationError } from '../services/error-handler';
+import { updateTemplatePartial } from '../services/templates';
 
  
 
@@ -84,14 +85,16 @@ export default function registerTemplatesRoutes(app: express.Express) {
     res.json({ success: true });
   }));
 
-  // Update
+  // Update (partial)
   app.put('/api/prompt-templates/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const current = await loadTemplates(req as ReqLike);
-    const idx = current.findIndex(t => t.id === id);
-    if (idx === -1) throw new NotFoundError('Not found');
-    current[idx] = req.body;
-    await saveTemplates(req as ReqLike, current);
+    const patch = req.body as Partial<TemplateItem>;
+    // Only allow name, description, messages
+    const allowed: Partial<TemplateItem> = {};
+    if (typeof patch.name === 'string') (allowed as any).name = patch.name;
+    if (typeof patch.description === 'string' || patch.description === undefined) (allowed as any).description = patch.description as any;
+    if (Array.isArray(patch.messages)) (allowed as any).messages = patch.messages as any;
+    await updateTemplatePartial(req as ReqLike, id, allowed as any);
     res.json({ success: true });
   }));
 
@@ -107,5 +110,3 @@ export default function registerTemplatesRoutes(app: express.Express) {
     res.json({ success: true });
   }));
 }
-
-

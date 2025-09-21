@@ -4,6 +4,7 @@ import { getGoogleLoginOAuthConfigOrPrimary, getGoogleOAuthConfig, JWT_EXPIRES_I
 import { upsertUser } from '../../services/users';
 import { upsertAccount } from '../../services/accounts';
 import type { User, Account } from '../../../shared/types';
+import { createAccount } from '../../../shared/constructors';
 import { signJwt } from '../../utils/jwt';
 import type { ReqLike } from '../../interfaces';
 import { AuthenticationError, ValidationError } from '../../services/error-handler';
@@ -44,14 +45,16 @@ export async function handleGoogleLoginCallback(params: { code: string; state: s
   const info: any = await client.userinfo(tokenSet);
   const subOrId = (info?.sub ?? info?.id) as string | undefined;
   const email = info?.email as string | undefined;
+  const name = typeof info?.name === 'string' && info.name ? info.name : (typeof info?.given_name === 'string' && info.given_name ? info.given_name : undefined);
+  const picture = typeof info?.picture === 'string' && info.picture ? info.picture : undefined;
   if (!subOrId || !email) throw new ValidationError('OIDC profile missing id or email');
   const uid = `google:${subOrId}`;
   const nowIso = new Date().toISOString();
   const user: User = {
     id: uid,
     email,
-    name: info?.name || info?.given_name || undefined,
-    picture: info?.picture || undefined,
+    name,
+    picture,
     createdAt: nowIso,
     lastLoginAt: nowIso,
   } as User;
@@ -111,8 +114,11 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
   const info: any = await client.userinfo(tokenSet);
   const email = info?.email as string | undefined;
   if (!email) throw new ValidationError('Google profile missing email address');
-  
-  const account: Account = {
+  const expiresIn = tokenSet.expires_in as number | undefined;
+  if (typeof expiresIn !== 'number' || !Number.isFinite(expiresIn) || expiresIn <= 0) {
+    throw new ValidationError('Google response missing expires_in');
+  }
+  const account: Account = createAccount({
     id: email,
     provider: 'gmail',
     email,
@@ -120,9 +126,9 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
     tokens: {
       accessToken,
       refreshToken,
-      expiry: new Date(Date.now() + ((tokenSet.expires_in as number || 3600) * 1000)).toISOString(),
+      expiry: new Date(Date.now() + expiresIn * 1000).toISOString(),
     },
-  } as Account;
+  });
   
   logger.info('About to upsert Google account', { email, hasAccessToken: !!tokenSet.access_token, hasRefreshToken: !!tokenSet.refresh_token });
   await upsertAccount(req, account);

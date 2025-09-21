@@ -13,9 +13,10 @@ export function appendMessageToThread(
 ): ConversationThread[] {
   const idx = conversations.findIndex((c) => c.id === threadId);
   if (idx === -1) return conversations;
+  const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
   const updated: ConversationThread = {
     ...conversations[idx],
-    lastActiveAt: nowIso ?? new Date().toISOString(),
+    lastActiveAt: now,
     messages: [...conversations[idx].messages, message],
   } as ConversationThread;
   return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
@@ -29,9 +30,10 @@ export function appendMessagesToThread(
 ): ConversationThread[] {
   const idx = conversations.findIndex((c) => c.id === threadId);
   if (idx === -1) return conversations;
+  const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
   const updated: ConversationThread = {
     ...conversations[idx],
-    lastActiveAt: nowIso ?? new Date().toISOString(),
+    lastActiveAt: now,
     messages: [...conversations[idx].messages, ...messages],
   } as ConversationThread;
   return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
@@ -45,7 +47,7 @@ export function finalizeThreadStatus(
 ): ConversationThread[] {
   const idx = conversations.findIndex((c) => c.id === threadId);
   if (idx === -1) return conversations;
-  const now = nowIso ?? new Date().toISOString();
+  const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
   const updated: ConversationThread = {
     ...conversations[idx],
     status,

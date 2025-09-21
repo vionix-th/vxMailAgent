@@ -1,5 +1,6 @@
 import { graphRequest } from '../../utils/graph';
 import type { Account, EmailEnvelope } from '../../../shared/types';
+import { createEmailEnvelope } from '../../../shared/constructors';
 import type { IMailProvider, FetchOptions } from './base';
 import { getOutlookOAuthConfig } from '../../config';
 import { ensureValidOutlookAccessToken } from '../../oauth/outlook';
@@ -33,39 +34,63 @@ export const outlookProvider: IMailProvider = {
         `/v1.0/me/messages/${encodeURIComponent(m.id)}?$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,bodyPreview,body`,
         account.tokens.accessToken
       );
-      const subject: string = String(full.subject ?? '');
-      const fromAddr = full?.from?.emailAddress || {};
-      const fromName = String(fromAddr.name ?? '').trim();
-      const fromEmail = String(fromAddr.address ?? '').trim();
-      const from: string = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
-      const date: string = String(full.receivedDateTime ?? '');
-      const snippet: string = String(full.bodyPreview ?? '');
-      const contentType: string = String(full?.body?.contentType ?? '').toLowerCase();
-      const content: string = String(full?.body?.content ?? '');
-      const to: string = Array.isArray(full?.toRecipients)
-        ? full.toRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : (r?.emailAddress?.address ?? ''))).filter(Boolean).join(', ')
-        : '';
-      const cc: string = Array.isArray(full?.ccRecipients)
-        ? full.ccRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : (r?.emailAddress?.address ?? ''))).filter(Boolean).join(', ')
-        : '';
-      const bcc: string = Array.isArray(full?.bccRecipients)
-        ? full.bccRecipients.map((r: any) => (r?.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : (r?.emailAddress?.address ?? ''))).filter(Boolean).join(', ')
-        : '';
+      const subject = typeof full?.subject === 'string' ? full.subject : undefined;
+      const fromAddr = (full?.from?.emailAddress ?? {}) as any;
+      const fromName = typeof fromAddr.name === 'string' ? fromAddr.name.trim() : undefined;
+      const fromEmail = typeof fromAddr.address === 'string' ? fromAddr.address.trim() : undefined;
+      const from = fromEmail ? (fromName ? `${fromName} <${fromEmail}>` : fromEmail) : undefined;
+      const date = typeof full?.receivedDateTime === 'string' ? full.receivedDateTime : undefined;
+      const snippet = typeof full?.bodyPreview === 'string' ? full.bodyPreview : undefined;
+      const contentType = typeof full?.body?.contentType === 'string' ? full.body.contentType.toLowerCase() : undefined;
+      const content = typeof full?.body?.content === 'string' ? full.body.content : undefined;
+      const to = Array.isArray(full?.toRecipients)
+        ? full.toRecipients
+            .map((r: any) => {
+              const nm = typeof r?.emailAddress?.name === 'string' ? r.emailAddress.name.trim() : undefined;
+              const addr = typeof r?.emailAddress?.address === 'string' ? r.emailAddress.address.trim() : undefined;
+              return addr ? (nm ? `${nm} <${addr}>` : addr) : undefined;
+            })
+            .filter(Boolean)
+            .join(', ') || undefined
+        : undefined;
+      const cc = Array.isArray(full?.ccRecipients)
+        ? full.ccRecipients
+            .map((r: any) => {
+              const nm = typeof r?.emailAddress?.name === 'string' ? r.emailAddress.name.trim() : undefined;
+              const addr = typeof r?.emailAddress?.address === 'string' ? r.emailAddress.address.trim() : undefined;
+              return addr ? (nm ? `${nm} <${addr}>` : addr) : undefined;
+            })
+            .filter(Boolean)
+            .join(', ') || undefined
+        : undefined;
+      const bcc = Array.isArray(full?.bccRecipients)
+        ? full.bccRecipients
+            .map((r: any) => {
+              const nm = typeof r?.emailAddress?.name === 'string' ? r.emailAddress.name.trim() : undefined;
+              const addr = typeof r?.emailAddress?.address === 'string' ? r.emailAddress.address.trim() : undefined;
+              return addr ? (nm ? `${nm} <${addr}>` : addr) : undefined;
+            })
+            .filter(Boolean)
+            .join(', ') || undefined
+        : undefined;
 
-      const mid = full.id || m.id;
+      const idCandidate1 = typeof full?.id === 'string' ? full.id : undefined;
+      const idCandidate2 = typeof m?.id === 'string' ? m.id : undefined;
+      const mid = idCandidate1 ?? idCandidate2;
       if (!mid) throw new Error('Outlook message missing id');
-      const env: EmailEnvelope = {
-        id: String(mid),
+
+      const env = createEmailEnvelope({
+        id: mid,
         subject,
         from,
-        ...(to ? { to } : {}),
-        ...(cc ? { cc } : {}),
-        ...(bcc ? { bcc } : {}),
+        to,
+        cc,
+        bcc,
         date,
         snippet,
         ...(contentType === 'html' ? { bodyHtml: content } : { bodyPlain: content }),
         attachments: [],
-      } as EmailEnvelope;
+      });
       envelopes.push(env);
     }
     return envelopes;

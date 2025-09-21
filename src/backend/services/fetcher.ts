@@ -19,10 +19,12 @@ export function initFetcher(
 
   async function logFetch(entry: FetcherLogEntry) {
     try {
-      const withId: FetcherLogEntry = { ...entry, id: entry.id || newId() };
+      if (typeof entry.id !== 'string' || !entry.id) {
+        throw new Error('FetcherLogEntry.id required');
+      }
+      const withId: FetcherLogEntry = entry;
       const current = await repos.getFetcherLog(userReq);
-      const updated = [...current, withId];
-      // Fire-and-forget async write - don't block email processing
+      const updated = [...current, withId];      
       void repos.setFetcherLog(userReq, updated).catch(e => 
         logger.error('Failed to persist fetcherLog entry', { err: e })
       );
@@ -68,7 +70,7 @@ export function initFetcher(
       
       await emailFetcher.fetchEmails(fetchContext);
     } catch (e) {
-      void logFetch({ id: newId(), timestamp: new Date().toISOString(), level: 'error', accountId: 'all', event: 'cycle_error', message: 'Error during fetch cycle', detail: String(e) });
+      await logFetch({ id: newId(), timestamp: new Date().toISOString(), level: 'error', accountId: 'all', event: 'cycle_error', message: 'Error during fetch cycle', detail: String(e) });
     } finally {
       fetcherRunning = false;
     }

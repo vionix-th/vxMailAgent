@@ -1,7 +1,7 @@
 import express from 'express';
 import { MemoryEntry } from '../../shared/types';
-import { newId } from '../utils/id';
 import logger from '../services/logger';
+import { newId } from '../utils/id';
 import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 
@@ -23,13 +23,28 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
 
   // POST /api/memory
   app.post('/api/memory', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const entry = req.body as MemoryEntry;
-    if (!entry || typeof entry.content !== 'string' || !entry.content.trim()) {
+    const body = req.body as Partial<MemoryEntry>;
+    if (!body || typeof body.content !== 'string' || !body.content.trim()) {
       throw new ValidationError('Invalid memory entry');
     }
-    entry.id = entry.id || newId();
-    entry.created = entry.created || new Date().toISOString();
-    entry.updated = new Date().toISOString();
+    const now = new Date().toISOString();
+    if (body.scope !== 'global' && body.scope !== 'shared' && body.scope !== 'local') {
+      throw new ValidationError('scope required (global|shared|local)');
+    }
+    if (typeof body.owner !== 'string' || !body.owner) {
+      throw new ValidationError('owner required');
+    }
+    const entry: MemoryEntry = {
+      id: typeof body.id === 'string' && body.id ? body.id : newId(),
+      scope: body.scope,
+      content: body.content,
+      created: typeof body.created === 'string' && body.created ? body.created : now,
+      updated: now,
+      ...(Array.isArray(body.tags) ? { tags: body.tags } : {}),
+      ...(typeof body.relatedEmailId === 'string' ? { relatedEmailId: body.relatedEmailId } : {}),
+      owner: body.owner,
+      ...(body.metadata ? { metadata: body.metadata } : {}),
+    };
     const ureq = requireReq(req as ReqLike);
     const cur = await repoGetAll<MemoryEntry>(ureq, 'memory');
     const next = [...cur, entry];
@@ -83,5 +98,3 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     res.json({ success: true, deleted: before - after });
   }));
 }
-
-

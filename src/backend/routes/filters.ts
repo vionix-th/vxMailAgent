@@ -28,8 +28,17 @@ export default function registerFiltersRoutes(app: express.Express, repos: LiveR
         } catch (err) {
           throw new Error(`Invalid regex: ${String(err)}`);
         }
+      },
+      mergeUpdate: (current: Filter, patch: Partial<Filter>): Filter => {
+        const next: Filter = {
+          ...current,
+          ...(typeof (patch as any).field === 'string' ? { field: (patch as any).field } : {}),
+          ...(typeof (patch as any).regex === 'string' ? { regex: (patch as any).regex } : {}),
+          ...(typeof (patch as any).directorId === 'string' ? { directorId: (patch as any).directorId } : {}),
+          ...(typeof (patch as any).duplicateAllowed === 'boolean' ? { duplicateAllowed: (patch as any).duplicateAllowed } : {}),
+        } as Filter;
+        return next;
       }
     }
   );
 }
-

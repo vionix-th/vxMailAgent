@@ -50,3 +50,19 @@ function defaultSettings(): Settings {
     sessionTimeoutMinutes: 15,
   } as Settings;
 }
+
+/** Partially update settings with whitelisted fields and type checks. */
+export async function updateSettingsPartial(
+  req: ReqLike,
+  patch: Partial<Settings>
+): Promise<Settings> {
+  const current = await loadSettings(req);
+  const next: Settings = { ...current };
+  if (typeof patch.virtualRoot === 'string') next.virtualRoot = patch.virtualRoot;
+  if (Array.isArray(patch.apiConfigs)) next.apiConfigs = patch.apiConfigs as any;
+  if (patch.signatures && typeof patch.signatures === 'object') next.signatures = patch.signatures as any;
+  if (typeof patch.fetcherAutoStart === 'boolean') next.fetcherAutoStart = patch.fetcherAutoStart;
+  if (typeof patch.sessionTimeoutMinutes === 'number') next.sessionTimeoutMinutes = patch.sessionTimeoutMinutes;
+  await saveSettings(next, req);
+  return next;
+}

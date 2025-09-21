@@ -58,3 +58,25 @@ export async function loadUserTemplates(req?: ReqLike): Promise<TemplateItem[]> 
     throw e;
   }
 }
+
+/** Partially update a template by id; only name, description, messages are mutable. */
+export async function updateTemplatePartial(
+  req: ReqLike,
+  id: string,
+  patch: Partial<Pick<TemplateItem, 'name' | 'description' | 'messages'>>
+): Promise<void> {
+  const ureq = requireReq(req);
+  const all = await repoGetAll<TemplateItem>(ureq, 'templates');
+  const idx = all.findIndex(t => t.id === id);
+  if (idx === -1) throw new Error('Template not found');
+  const cur = all[idx];
+  const next: TemplateItem = {
+    ...cur,
+    ...(typeof patch.name === 'string' ? { name: patch.name } : {}),
+    ...(typeof patch.description === 'string' || patch.description === undefined ? { description: patch.description } : {}),
+    ...(Array.isArray(patch.messages) ? { messages: patch.messages as any } : {}),
+  };
+  all[idx] = next;
+  await repoSetAll<TemplateItem>(ureq, 'templates', all);
+  logger.info('Updated template (partial)', { id });
+}

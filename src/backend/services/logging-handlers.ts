@@ -1,4 +1,5 @@
 import { FetcherLogEntry, OrchestrationEvent, ProviderEvent, OrchestrationOutcome, DirectorContext } from '../../shared/types';
+import { createProviderEvent } from '../../shared/constructors';
 import { ReqLike } from '../interfaces';
 import { repoGetAll, repoSetAll, requireUserRepo } from '../utils/repo-access';
 import type { OrchestrationLogRepository, ProviderEventsRepository } from '../repository/fileRepositories';
@@ -200,14 +201,15 @@ export class ProviderEventLogger {
   constructor(private req?: ReqLike) {}
 
   async logRequest(conversationId: string, payload: any): Promise<void> {
-    await logProviderEvent({
+    const event = createProviderEvent({
       id: newId(),
       conversationId,
       provider: 'openai',
       type: 'request',
       timestamp: new Date().toISOString(),
       payload
-    }, this.req);
+    });
+    await logProviderEvent(event, this.req);
   }
 
   async logResponse(
@@ -216,34 +218,34 @@ export class ProviderEventLogger {
     payload: any, 
     usage?: any
   ): Promise<void> {
-    await logProviderEvent({
+    const event = createProviderEvent({
       id: newId(),
       conversationId,
       provider: 'openai',
       type: 'response',
       timestamp: new Date().toISOString(),
-      ...(typeof latencyMs === 'number' ? { latencyMs } : {}),
-      ...(usage ? {
-        usage: {
-          promptTokens: usage.prompt_tokens,
-          completionTokens: usage.completion_tokens,
-          totalTokens: usage.total_tokens
-        }
-      } : {}),
+      latencyMs,
+      usage: usage ? {
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
+        totalTokens: usage.total_tokens
+      } : undefined,
       payload
-    }, this.req);
+    });
+    await logProviderEvent(event, this.req);
   }
 
   async logError(conversationId: string, error: string, latencyMs?: number): Promise<void> {
-    await logProviderEvent({
+    const event = createProviderEvent({
       id: newId(),
       conversationId,
       provider: 'openai',
       type: 'error',
       timestamp: new Date().toISOString(),
-      ...(typeof latencyMs === 'number' ? { latencyMs } : {}),
+      latencyMs,
       error
-    }, this.req);
+    });
+    await logProviderEvent(event, this.req);
   }
 
   logFetcher(entry: Omit<FetcherLogEntry, 'id'>, req?: ReqLike): void {
@@ -258,8 +260,3 @@ export class ProviderEventLogger {
     }
   }
 }
-
-/**
- * Email processing logging utilities.
- */
-// EmailProcessingLogger removed as unused

@@ -320,13 +320,26 @@ export interface Account {
   };
 }
 
+/** Public serialization shape for Account with redacted secrets. */
+export interface AccountPublic {
+  id: string;
+  provider: AccountProvider;
+  email: string;
+  signature: string;
+  tokens: {
+    accessToken: string; // redacted placeholder
+    refreshToken: string; // redacted placeholder
+    expiry: string;
+  };
+}
+
 /** Application user (authenticated principal). */
 export interface User {
   /** Stable app user id (e.g., `google:{sub}`) */
   id: string;
   email: string;
-  name: string;
-  picture: string;
+  name?: string;
+  picture?: string;
   createdAt: string;
   lastLoginAt: string;
 }

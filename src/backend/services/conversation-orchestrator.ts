@@ -127,7 +127,7 @@ export class ConversationOrchestrator {
       const enginePromise = engineInvoke(engineInput as any);
       const engineTimeoutPromise = new Promise<never>((_, reject) => {
         engineTimeoutId = setTimeout(() => {
-          this.stepLogger.logEngineTimeout(threadId, stepType, CONVERSATION_STEP_TIMEOUT_MS, emailId!, context.thread.directorId);
+          void this.stepLogger.logEngineTimeout(threadId, stepType, CONVERSATION_STEP_TIMEOUT_MS, emailId!, context.thread.directorId);
           reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`));
         }, Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
       });
@@ -399,7 +399,18 @@ export class ConversationOrchestrator {
         content: JSON.stringify({ success: false, error: 'missing_agent_id' })
       };
       await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
-      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_missing_agent_id', context.thread.email.id, context.thread.directorId); } catch {}
+      try {
+        await this.stepLogger.logStepError(
+          context.thread.id,
+          'director_tool',
+          0,
+          'workspace_add_item_missing_agent_id',
+          context.thread.email.id,
+          context.thread.directorId
+        );
+      } catch (e) {
+        logger.debug('stepLogger.logStepError failed (missing_agent_id)', { err: String(e) });
+      }
       return true;
     }
 
@@ -412,7 +423,18 @@ export class ConversationOrchestrator {
         content: JSON.stringify({ success: false, error: 'agent_not_found', agent_id: String(agentId) })
       };
       await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
-      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_agent_not_found', context.thread.email.id, context.thread.directorId); } catch {}
+      try {
+        await this.stepLogger.logStepError(
+          context.thread.id,
+          'director_tool',
+          0,
+          'workspace_add_item_agent_not_found',
+          context.thread.email.id,
+          context.thread.directorId
+        );
+      } catch (e) {
+        logger.debug('stepLogger.logStepError failed (agent_not_found)', { err: String(e) });
+      }
       return true;
     }
 
@@ -426,7 +448,18 @@ export class ConversationOrchestrator {
         content: JSON.stringify({ success: false, error: 'director_context_missing' })
       };
       await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
-      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_director_context_missing', context.thread.email.id, context.thread.directorId); } catch {}
+      try {
+        await this.stepLogger.logStepError(
+          context.thread.id,
+          'director_tool',
+          0,
+          'workspace_add_item_director_context_missing',
+          context.thread.email.id,
+          context.thread.directorId
+        );
+      } catch (e) {
+        logger.debug('stepLogger.logStepError failed (director_context_missing)', { err: String(e) });
+      }
       return true;
     }
 
@@ -460,7 +493,18 @@ export class ConversationOrchestrator {
         content: JSON.stringify({ success: false, error: 'ensure_agent_thread_failed', detail: String(e?.message || e) })
       };
       await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
-      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_ensure_agent_failed', context.thread.email.id, context.thread.directorId); } catch {}
+      try {
+        await this.stepLogger.logStepError(
+          context.thread.id,
+          'director_tool',
+          0,
+          'workspace_add_item_ensure_agent_failed',
+          context.thread.email.id,
+          context.thread.directorId
+        );
+      } catch (e) {
+        logger.debug('stepLogger.logStepError failed (ensure_agent_failed)', { err: String(e) });
+      }
       return true;
     }
 
@@ -474,7 +518,18 @@ export class ConversationOrchestrator {
         content: JSON.stringify({ success: false, error: 'workspace_add_failed' })
       };
       await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
-      try { await this.stepLogger.logStepError(context.thread.id, 'director_tool', 0, 'workspace_add_item_failed', context.thread.email.id, context.thread.directorId); } catch {}
+      try {
+        await this.stepLogger.logStepError(
+          context.thread.id,
+          'director_tool',
+          0,
+          'workspace_add_item_failed',
+          context.thread.email.id,
+          context.thread.directorId
+        );
+      } catch (e) {
+        logger.debug('stepLogger.logStepError failed (workspace_add_failed)', { err: String(e) });
+      }
       return true;
     }
 
@@ -605,16 +660,16 @@ export class ConversationOrchestrator {
           try {
             const t = (ev as any).type;
             if (t === 'request') {
-              this.providerLogger.logRequest(agentThread.id, (ev as any).payload);
+              await this.providerLogger.logRequest(agentThread.id, (ev as any).payload);
             } else if (t === 'response') {
-              this.providerLogger.logResponse(
+              await this.providerLogger.logResponse(
                 agentThread.id,
                 (ev as any).latencyMs,
                 (ev as any).payload,
                 (ev as any).usage
               );
             } else if (t === 'error') {
-              this.providerLogger.logError(
+              await this.providerLogger.logError(
                 agentThread.id,
                 String((ev as any).error),
                 (ev as any).latencyMs
@@ -679,7 +734,7 @@ export class ConversationOrchestrator {
       clearTimeout(activeStep.timeoutId);
       this.activeSteps.delete(threadId);
       
-      this.stepLogger.logStepCancelled(threadId, Date.now() - activeStep.startTime, activeStep.emailId, activeStep.directorId);
+      void this.stepLogger.logStepCancelled(threadId, Date.now() - activeStep.startTime, activeStep.emailId, activeStep.directorId);
       
       return true;
     }
@@ -701,7 +756,7 @@ export class ConversationOrchestrator {
     const count = this.activeSteps.size;
     for (const [threadId, step] of this.activeSteps.entries()) {
       clearTimeout(step.timeoutId);
-      this.stepLogger.logStepCancelledShutdown(threadId, Date.now() - step.startTime, step.emailId, step.directorId);
+      void this.stepLogger.logStepCancelledShutdown(threadId, Date.now() - step.startTime, step.emailId, step.directorId);
     }
     this.activeSteps.clear();
     return count;

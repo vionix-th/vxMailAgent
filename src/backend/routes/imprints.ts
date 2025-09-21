@@ -13,7 +13,13 @@ export default function registerImprintsRoutes(app: express.Express, repos: Live
     {
       itemName: 'Imprint',
       idField: 'id'
+    },
+    {
+      mergeUpdate: (current: any, patch: any) => ({
+        ...current,
+        ...(typeof patch.name === 'string' ? { name: patch.name } : {}),
+        ...(typeof patch.content === 'string' ? { content: patch.content } : {}),
+      })
     }
   );
 }
-

@@ -2,7 +2,9 @@ import { LiveRepos } from '../liveRepos';
 import { UserRequest } from '../middleware/user-context';
 import { beginSpan, endSpan, beginTrace, endTrace } from './logging';
 import { EmailProcessor, EmailProcessingContext } from './email-processor';
+import { ValidationError } from './error-handler';
 import { EmailEnvelope } from '../../shared/types';
+import { createEmailEnvelope, mergeEmailEnvelope } from '../../shared/constructors';
 import { AccountManager } from './account-manager';
 import { getMailProvider } from '../providers/mail';
 import { PROVIDER_REQUEST_TIMEOUT_MS } from '../config';
@@ -41,6 +43,7 @@ export class EmailFetcher {
     const runId = newId();
 
     this.logFetch({
+      id: newId(),
       timestamp: fetchStart,
       level: 'info',
       provider: 'system',
@@ -65,6 +68,7 @@ export class EmailFetcher {
     }
 
     this.logFetch({
+      id: newId(),
       timestamp: new Date().toISOString(),
       level: 'info',
       provider: 'system',
@@ -136,6 +140,7 @@ export class EmailFetcher {
     } catch (error: any) {
       endTrace(accountTraceId, 'error', error.message, userReq);
       this.logFetch({
+        id: newId(),
         timestamp: new Date().toISOString(),
         level: 'error',
         provider: account.provider,
@@ -159,13 +164,14 @@ export class EmailFetcher {
         byId.set(env.id, env);
         added++;
       } else {
-        // Prefer newest fields (simple replace)
-        byId.set(env.id, { ...prev, ...env });
+        const merged = mergeEmailEnvelope(prev, env);
+        byId.set(env.id, merged);
         updated++;
       }
     }
     await this.repos.setEmails(userReq, Array.from(byId.values()));
     this.logFetch({
+      id: newId(),
       timestamp: new Date().toISOString(),
       level: 'info',
       provider: 'system',
@@ -188,6 +194,7 @@ export class EmailFetcher {
     const provider = getMailProvider(account.provider);
     if (!provider) {
       this.logFetch({
+        id: newId(),
         timestamp: new Date().toISOString(),
         level: 'error',
         provider: account.provider,
@@ -215,64 +222,48 @@ export class EmailFetcher {
 
       endSpan(traceId, sList, { status: 'ok', response: { count: providerEnvelopes.length } }, userReq);
 
-      // Validate required fields: subject, from, to, date (no synthesis/coercion).
+      // Re-validate using domain constructor to enforce invariants without object literals.
       const valid: EmailEnvelope[] = [];
-      let dropped = 0;
-      for (const raw of providerEnvelopes as EmailEnvelope[]) {
-        const env: EmailEnvelope = {
-          id: String((raw as any).id),
-          subject: typeof raw.subject === 'string' ? raw.subject.trim() : '',
-          from: typeof raw.from === 'string' ? raw.from.trim() : '',
-          to: typeof (raw as any).to === 'string' ? (raw as any).to.trim() : '',
-          ...(raw.cc ? { cc: String(raw.cc).trim() } : {}),
-          ...(raw.bcc ? { bcc: String(raw.bcc).trim() } : {}),
-          date: typeof raw.date === 'string' ? raw.date.trim() : '',
-          ...(raw.snippet ? { snippet: String(raw.snippet) } : {}),
-          ...(raw.bodyPlain ? { bodyPlain: raw.bodyPlain } : {}),
-          ...(raw.bodyHtml ? { bodyHtml: raw.bodyHtml } : {}),
-          ...(Array.isArray(raw.attachments) ? { attachments: raw.attachments } : {}),
-        };
-
-        const missing: string[] = [];
-        if (!env.subject) missing.push('subject');
-        if (!env.from) missing.push('from');
-        if (!env.to) missing.push('to');
-        if (!env.date) missing.push('date');
-
-        // Validate date is parseable
-        let invalidDate = false;
-        if (env.date) {
-          const t = Date.parse(env.date);
-          invalidDate = Number.isNaN(t);
-        }
-
-        if (missing.length > 0 || invalidDate) {
-          dropped++;
+      for (const raw of providerEnvelopes as any[]) {
+        try {
+          const env = createEmailEnvelope({
+            id: (raw as any)?.id,
+            subject: (raw as any)?.subject,
+            from: (raw as any)?.from,
+            to: (raw as any)?.to,
+            cc: (raw as any)?.cc,
+            bcc: (raw as any)?.bcc,
+            date: (raw as any)?.date,
+            snippet: (raw as any)?.snippet,
+            bodyPlain: (raw as any)?.bodyPlain,
+            bodyHtml: (raw as any)?.bodyHtml,
+            attachments: (raw as any)?.attachments,
+          });
+          valid.push(env);
+        } catch (e: any) {
           this.logFetch({
+            id: newId(),
             timestamp: new Date().toISOString(),
-            level: 'warn',
+            level: 'error',
             provider: account.provider,
             accountId: account.id,
-            emailId: env.id,
-            event: 'invalid_envelope_dropped',
-            message: 'Envelope failed invariants and was dropped',
-            detail: { missing, invalidDate, sample: { subject: env.subject, from: env.from, to: env.to, date: env.date } },
+            emailId: typeof (raw as any)?.id === 'string' ? (raw as any).id : undefined,
+            event: 'invalid_envelope_error',
+            message: 'Envelope failed invariants',
+            detail: { error: e?.message }
           });
-          continue;
+          throw new ValidationError(`Provider returned invalid email envelope: ${e?.message || 'unknown error'}`, 'PROVIDER_INVALID_ENVELOPE', 502);
         }
-
-        valid.push(env);
       }
 
       this.logFetch({
         timestamp: new Date().toISOString(),
-        level: dropped > 0 ? 'warn' : 'info',
+        level: 'info',
         provider: account.provider,
         accountId: account.id,
         event: 'messages_listed',
         message: 'Listed unread messages (post-validation)',
         count: valid.length,
-        detail: dropped > 0 ? { dropped } : undefined,
       });
 
       return valid;
@@ -281,6 +272,7 @@ export class EmailFetcher {
       endSpan(traceId, sList, { status: 'error', error: error.message }, userReq);
       
       this.logFetch({
+        id: newId(),
         timestamp: new Date().toISOString(),
         level: 'error',
         provider: account.provider,

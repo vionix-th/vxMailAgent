@@ -26,8 +26,8 @@ export function resolveDataDir(): string {
     try {
       if (fs.existsSync(p) && fs.statSync(p).isDirectory()) return p;
     } catch (e) {
-      // Intentionally ignore file system probe errors; continue probing candidates
-      void e;
+      // Probe errors are non-fatal; log at debug and continue.
+      console.debug('resolveDataDir probe failed for candidate', p, String(e));
     }
   }
   // Fallback to the ts-node default
@@ -207,4 +207,3 @@ export function userPaths(uid: string): UserPaths {
 // System-level JSON files (non user-isolated)
 // Only the global "users" registry is allowed as application-wide data
 export const USER_ACCOUNTS_FILE = dataPath('users.json');
-

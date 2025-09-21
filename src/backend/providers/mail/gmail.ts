@@ -3,6 +3,7 @@ import type { IMailProvider, FetchOptions } from './base';
 import { getGoogleOAuthConfig } from '../../config';
 import { ensureValidGoogleAccessToken } from '../../oauth/google';
 import { google } from 'googleapis';
+import { createEmailEnvelope } from '../../../shared/constructors';
 
 export const gmailProvider: IMailProvider = {
   id: 'gmail',
@@ -33,31 +34,33 @@ export const gmailProvider: IMailProvider = {
     for (const msg of items) {
       const msgRes = await gmail.users.messages.get({ userId: 'me', id: String(msg.id) });
       const headers = msgRes.data?.payload?.headers ?? [];
-      const getHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? '';
-      const subject: string = getHeader('Subject');
-      const from: string = getHeader('From');
-      const to: string = getHeader('To');
-      const cc: string = getHeader('Cc');
-      const bcc: string = getHeader('Bcc');
-      const date: string = getHeader('Date');
-      const snippet: string = msgRes.data?.snippet ?? '';
+      const getHeader = (name: string): string | undefined => {
+        const v = headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value;
+        return typeof v === 'string' ? v : undefined;
+      };
+      const subject = getHeader('Subject');
+      const from = getHeader('From');
+      const to = getHeader('To');
+      const cc = getHeader('Cc');
+      const bcc = getHeader('Bcc');
+      const date = getHeader('Date');
+      const snippet = typeof msgRes.data?.snippet === 'string' ? msgRes.data.snippet : undefined;
       const bodies = extractGmailBodies(msgRes.data?.payload);
-      const mid = msg.id || msgRes.data?.id;
+      const mid = (typeof msg.id === 'string' && msg.id) ? msg.id : (typeof msgRes.data?.id === 'string' ? msgRes.data.id : undefined);
       if (!mid) throw new Error('Gmail message missing id');
-      // Do not invent placeholders; return raw header values.
-      // Envelope validation and dropping of invalid items happens in the fetcher.
-      envelopes.push({
-        id: String(mid),
-        subject: subject,
-        from: from,
-        to: to,
-        ...(cc ? { cc } : {}),
-        ...(bcc ? { bcc } : {}),
-        date: date,
-        snippet: snippet,
+      const env = createEmailEnvelope({
+        id: mid,
+        subject,
+        from,
+        to,
+        cc,
+        bcc,
+        date,
+        snippet,
         ...bodies,
         attachments: [],
       });
+      envelopes.push(env);
     }
     return envelopes;
   },

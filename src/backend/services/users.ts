@@ -21,7 +21,7 @@ export async function upsertUser(next: User): Promise<User> {
   const idx = all.findIndex(u => u.id === next.id);
   if (idx >= 0) {
     const cur = all[idx];
-    all[idx] = { ...next, createdAt: cur.createdAt || next.createdAt };
+    all[idx] = { ...next, createdAt: (typeof cur.createdAt === 'string' && cur.createdAt) ? cur.createdAt : next.createdAt };
   } else {
     all.push(next);
   }

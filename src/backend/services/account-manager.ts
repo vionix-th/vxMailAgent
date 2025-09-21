@@ -3,6 +3,7 @@ import { UserRequest } from '../middleware/user-context';
 import { beginSpan, endSpan } from './logging';
 import { getMailProvider } from '../providers/mail';
 import logger from './logger';
+import { newId } from '../utils/id';
 
 export interface AccountContext {
   account: any;
@@ -70,6 +71,7 @@ export class AccountManager {
         await this.persistTokenUpdate(account, refreshResult, userReq);
         
         this.logFetch({
+          id: newId(),
           timestamp: new Date().toISOString(),
           level: 'info',
           provider: account.provider,
@@ -96,6 +98,7 @@ export class AccountManager {
       }, userReq);
 
       this.logFetch({
+        id: newId(),
         timestamp: new Date().toISOString(),
         level: 'error',
         provider: account.provider,

@@ -17,6 +17,8 @@ export interface CrudCallbacks<T> {
   afterValidate?: (item: T, isUpdate?: boolean) => T;
   /** Transform list before sending response */
   transformList?: (items: T[]) => T[];
+  /** Optional merge strategy for updates: merge patch into current to form a full item */
+  mergeUpdate?: (current: T, patch: Partial<T>) => T;
   /** Custom route handlers (return true to skip default handler) */
   customRoutes?: (app: express.Express, basePath: string, repoFns: CrudRepoFunctions<T>) => boolean;
 }
@@ -48,6 +50,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
     validate,
     afterValidate,
     transformList,
+    mergeUpdate,
     customRoutes
   } = callbacks;
 
@@ -111,35 +114,39 @@ export function createCrudRoutes<T extends Record<string, any>>(
       throw new NotFoundError(`${itemName} not found`);
     }
 
-    let item: T = req.body;
-
+    // Build patch and optionally merge into current for validation
+    let patch: Partial<T> = req.body as Partial<T>;
     if (beforeValidate) {
-      item = beforeValidate(item, true);
+      patch = beforeValidate(patch as T, true) as Partial<T>;
     }
 
-    // Ensure path ID matches or sets body ID before validation
-    const bodyId = item[idField];
-    if (bodyId == null) {
-      (item as any)[idField] = id;
-    } else if (bodyId !== id) {
+    // Ensure ID is consistent if provided in body
+    const bodyId = (patch as any)[idField];
+    if (bodyId != null && bodyId !== id) {
       logger.warn(`PUT ${basePath}/:id id mismatch`, { idParam: id, bodyId });
       throw new ValidationError(`${itemName} ID mismatch`);
     }
 
+    let candidate: T = mergeUpdate ? mergeUpdate(current[idx], patch) : (patch as T);
+
+    if ((candidate as any)[idField] == null) {
+      (candidate as any)[idField] = id;
+    }
+
     if (validate) {
-      await validate(item, true);
+      await validate(candidate, true);
     }
 
     if (afterValidate) {
-      item = afterValidate(item, true);
+      candidate = afterValidate(candidate, true);
     }
 
     const next = current.slice();
-    next[idx] = item;
+    next[idx] = candidate;
     await repoFns.setAll(req as ReqLike, next);
 
     logger.info(`PUT ${basePath}/:id updated`, { id });
-    res.json(item);
+    res.json(candidate);
   }));
 
   // DELETE /api/{resource}/:id

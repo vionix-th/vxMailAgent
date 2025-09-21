@@ -91,6 +91,7 @@ export class EmailProcessor {
       result.success = false;
       result.error = error.message;
       this.logFetch({
+        id: newId(),
         timestamp: new Date().toISOString(),
         level: 'error',
         provider: account.provider,
@@ -120,17 +121,17 @@ export class EmailProcessor {
       request: { filtersCount: filters.length }
     }, userReq);
 
-    const ctx = {
+    const ctx: any = {
       from: envelope.from,
-      to: envelope.to ?? undefined,
-      cc: envelope.cc ?? undefined,
-      bcc: envelope.bcc ?? undefined,
       subject: envelope.subject,
-      bodyPlain: envelope.bodyPlain ?? undefined,
-      bodyHtml: envelope.bodyHtml ?? undefined,
-      snippet: envelope.snippet ?? undefined,
-      date: envelope.date ?? undefined,
     };
+    if (typeof envelope.to === 'string') ctx.to = envelope.to;
+    if (typeof envelope.cc === 'string') ctx.cc = envelope.cc;
+    if (typeof envelope.bcc === 'string') ctx.bcc = envelope.bcc;
+    if (typeof envelope.bodyPlain === 'string') ctx.bodyPlain = envelope.bodyPlain;
+    if (typeof envelope.bodyHtml === 'string') ctx.bodyHtml = envelope.bodyHtml;
+    if (typeof envelope.snippet === 'string') ctx.snippet = envelope.snippet;
+    if (typeof envelope.date === 'string') ctx.date = envelope.date;
     const filterEvaluations = evaluateFilters(filters, ctx as any);
 
     endSpan(traceId, sFilters, {
@@ -240,7 +241,7 @@ snippet: ${envelope.snippet}`;
       agentId: null,
       email: envelope,
       promptId: directorPrompt.id,
-      apiConfigId: context.apiConfigs.find(a => a.id === director.apiConfigId)?.id ?? director.apiConfigId,
+      apiConfigId: director.apiConfigId,
       startedAt: nowIso,
       status: 'ongoing',
       endedAt: null,
@@ -273,6 +274,7 @@ snippet: ${envelope.snippet}`;
 
   private logDirectorConfigError(directorId: string, account: any, error: string): void {
     this.logFetch({
+      id: newId(),
       timestamp: new Date().toISOString(),
       level: 'error',
       provider: account.provider,
@@ -285,6 +287,7 @@ snippet: ${envelope.snippet}`;
 
   private logDirectorThreadCreated(directorId: string, threadId: string, account: any): void {
     this.logFetch({
+      id: newId(),
       timestamp: new Date().toISOString(),
       level: 'info',
       provider: account.provider,
@@ -318,6 +321,7 @@ snippet: ${envelope.snippet}`;
         }, orchestratorUserReq, 6);
       } catch (error: any) {
         this.logFetch({
+          id: newId(),
           timestamp: new Date().toISOString(),
           level: 'error',
           provider: context.account.provider,

@@ -3,12 +3,13 @@ import logger from '../services/logger';
 import { requireReq, requireUid } from '../utils/repo-access';
 import { CORS_ORIGIN } from '../config';
 import type { ReqLike } from '../interfaces';
-import type { Account } from '../../shared/types';
+import type { Account, AccountPublic } from '../../shared/types';
+import { createAccount } from '../../shared/constructors';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 import {
   listAccounts,
   upsertAccount,
-  updateAccount as svcUpdateAccount,
+  updateAccountPartial as svcUpdateAccountPartial,
   deleteAccount as svcDeleteAccount,
   refreshAccount,
   gmailTest,
@@ -19,14 +20,17 @@ import {
   handleGoogleAccountCallback,
 } from '../auth/oidc/flows';
 
- // Redact sensitive token values before sending to clients.
- function sanitizeAccountForClient(a: Account): Account {
+ // Redact sensitive token values before sending to clients (DTO)
+ function toAccountPublic(a: Account): AccountPublic {
    return {
-     ...a,
+     id: a.id,
+     provider: a.provider,
+     email: a.email,
+     signature: a.signature,
      tokens: {
-       accessToken: a.tokens?.accessToken ? 'REDACTED' : '',
-       refreshToken: a.tokens?.refreshToken ? 'REDACTED' : '',
-      expiry: a.tokens?.expiry ?? '',
+       accessToken: a.tokens.accessToken ? 'REDACTED' : '',
+       refreshToken: a.tokens.refreshToken ? 'REDACTED' : '',
+       expiry: a.tokens.expiry,
      },
    };
  }
@@ -71,7 +75,7 @@ export default function registerAccountsRoutes(app: express.Express) {
     const ureq = requireReq(req as ReqLike);
     const accounts = await listAccounts(ureq);
     logger.info('Loaded accounts', { count: accounts.length, uid: requireUid(ureq) });
-    const sanitized = accounts.map(sanitizeAccountForClient);
+    const sanitized: AccountPublic[] = accounts.map(toAccountPublic);
     res.json(sanitized);
   }));
 
@@ -83,7 +87,7 @@ export default function registerAccountsRoutes(app: express.Express) {
   }));
 
   app.post('/api/accounts', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const newAccount: Account = req.body;
+    const newAccount: Account = createAccount(req.body);
     const ureq = requireReq(req as ReqLike);
     await upsertAccount(ureq, newAccount);
     const source = `user ${requireUid(ureq)}`;
@@ -101,11 +105,8 @@ export default function registerAccountsRoutes(app: express.Express) {
         throw new NotFoundError('Account not found');
       }
       const body = (req.body || {}) as Partial<Account>;
-      const next: Account = {
-        ...existing,
-        signature: typeof body.signature === 'string' ? body.signature : existing.signature,
-      } as Account;
-      await svcUpdateAccount(req as ReqLike, id, next);
+      const patch = { signature: typeof body.signature === 'string' ? body.signature : undefined };
+      await svcUpdateAccountPartial(req as ReqLike, id, patch);
     } catch (e: any) {
       if (String(e?.message ?? '').toLowerCase().includes('not found')) {
         throw new NotFoundError('Account not found');

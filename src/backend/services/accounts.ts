@@ -44,6 +44,29 @@ export async function updateAccount(req: ReqLike, id: string, next: Account): Pr
   logger.info('Updated account', { id });
 }
 
+/**
+ * Partial update for Account allowing safe fields only (no token/id/provider changes).
+ * Currently supports updating `signature`.
+ */
+export async function updateAccountPartial(
+  req: ReqLike,
+  id: string,
+  patch: { signature?: string }
+): Promise<void> {
+  const accounts = await listAccounts(req);
+  const idx = accounts.findIndex(a => a.id === id);
+  if (idx === -1) throw new Error('Account not found');
+
+  const current = accounts[idx];
+  if (typeof patch.signature === 'string') {
+    current.signature = patch.signature;
+  }
+  const next = current;
+  accounts[idx] = next;
+  await persistAccounts(req, accounts);
+  logger.info('Updated account (partial)', { id, fields: Object.keys(patch).filter(k => (patch as any)[k] !== undefined) });
+}
+
 export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeStatus?: boolean; revokeError?: string }> {
   const accounts = await listAccounts(req);
   const idx = accounts.findIndex(a => a.id === id);

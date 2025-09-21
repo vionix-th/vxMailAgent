@@ -1,5 +1,6 @@
 import type { Account, EmailEnvelope } from '../../../shared/types';
 import type { IMailProvider, FetchOptions } from './base';
+import { createEmailEnvelope } from '../../../shared/constructors';
 
 export function createMockMailProvider(id: Account['provider']): IMailProvider {
   return {
@@ -18,7 +19,7 @@ export function createMockMailProvider(id: Account['provider']): IMailProvider {
       void account;
       const now = new Date().toISOString();
       const max = (opts?.max && opts.max > 0 ? opts.max : 1);
-      const env: EmailEnvelope = {
+      const build = (): EmailEnvelope => createEmailEnvelope({
         id: `mock-email-${Date.now()}`,
         subject: 'E2E TEST: mock provider subject',
         from: 'sender@example.com',
@@ -30,9 +31,8 @@ export function createMockMailProvider(id: Account['provider']): IMailProvider {
         bodyPlain: 'Hello from mock provider.',
         bodyHtml: '<p>Hello from mock provider.</p>',
         attachments: [],
-      } as any;
-      return Array.from({ length: max }).map(() => ({ ...env, id: `mock-email-${Date.now()}` }));
+      });
+      return Array.from({ length: max }).map(() => build());
     },
   };
 }
-
