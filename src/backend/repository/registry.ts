@@ -67,7 +67,7 @@ export class RepoBundleRegistry {
     // Create new bundle
     const paths = userPaths(uid);
 
-    // Initialize missing per-user JSON files with empty arrays to avoid runtime errors
+    // Initialize missing per-user JSON files. For Settings/Templates, persist real defaults to avoid consumer synthesis.
     const filesToInit: string[] = [
       paths.accounts,
       paths.settings,
@@ -86,13 +86,84 @@ export class RepoBundleRegistry {
       paths.logs.providerEvents,
       paths.logs.traces,
     ];
+
+    // Helper: safe read JSON (returns undefined on error)
+    const readArray = async (file: string): Promise<any[] | undefined> => {
+      try {
+        if (!fs.existsSync(file)) return undefined;
+        const data = await persistence.loadAndDecrypt(file, paths.root);
+        return Array.isArray(data) ? data : [];
+      } catch {
+        return undefined;
+      }
+    };
+
+    // Minimal defaults (authoritative producer side)
+    const defaultSettings = () => ({
+      virtualRoot: '',
+      apiConfigs: [],
+      signatures: {},
+      fetcherAutoStart: true,
+      sessionTimeoutMinutes: 15,
+    });
+    const defaultTemplates = (): TemplateItem[] => ([
+      {
+        id: 'prompt_optimizer',
+        name: 'Prompt Optimizer (System)',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a prompt optimization assistant for an email-oriented AI orchestration system.\n' +
+              '- Strictly maintain role separation between director and agent prompts.\n' +
+              '- Only include actor-actionable guidance: instructions the target actor can perform through its interfaces and responsibilities.\n' +
+              '- Use only capabilities that are relevant and accessible to the actor. Derive these from the Affordances section when provided. Do not invent capabilities that are not listed.\n' +
+              '- Infrastructure/meta directives are permitted only if they are explicitly actor-accessible and required for the task; otherwise omit them.\n' +
+              '- Produce structured prompts using compact, human-readable sections with Markdown-style headings (no code fences).\n' +
+              '  Sections to use when applicable: \n' +
+              '  ## Intent\n' +
+              '  ## Affordances (only capabilities from provided Affordances; no invented ones)\n' +
+              '  ## IO (inputs/outputs in actor-actionable terms; no UI/frontend/transport details)\n' +
+              '  ## Guidelines (concise directives the actor can execute)\n' +
+              '  ## Examples (few-shot: realistic <input>/<output> pairs)\n' +
+              '  Do NOT include markdown code fences. Keep it concise and readable.\n' +
+              '- Prefer structured prompts and few-shot examples; avoid invented tools, APIs, or infrastructure.\n' +
+              '- Keep prompts lean: avoid boilerplate disclaimers and non-essential notes.\n' +
+              '- Output only JSON of the shape { "messages": [{ "role": "system|user|assistant", "content": "..." }], "notes": "..." }. No extra prose.'
+          }
+        ]
+      }
+    ]);
+
     for (const f of filesToInit) {
       try {
         if (!fs.existsSync(f)) {
-          await persistence.encryptAndPersist([], f, paths.root);
+          // Initialize with real defaults where applicable
+          if (f === paths.settings) {
+            await persistence.encryptAndPersist([defaultSettings()], f, paths.root);
+          } else if (f === paths.templates) {
+            await persistence.encryptAndPersist(defaultTemplates(), f, paths.root);
+          } else {
+            await persistence.encryptAndPersist([], f, paths.root);
+          }
+          continue;
+        }
+        // Upgrade path: if settings/templates exist but are empty arrays, persist defaults
+        if (f === paths.settings) {
+          const arr = await readArray(f);
+          if (!arr || arr.length === 0) {
+            await persistence.encryptAndPersist([defaultSettings()], f, paths.root);
+          }
+        } else if (f === paths.templates) {
+          const arr = await readArray(f);
+          if (!arr || arr.length === 0) {
+            await persistence.encryptAndPersist(defaultTemplates(), f, paths.root);
+          } else if (!arr.some((t: any) => t && t.id === 'prompt_optimizer')) {
+            await persistence.encryptAndPersist([...(defaultTemplates()), ...arr], f, paths.root);
+          }
         }
       } catch (e) {
-        logger.warn('[REGISTRY] Failed to pre-create user file', { file: f, error: e });
+        logger.warn('[REGISTRY] Failed to pre-create/upgrade user file', { file: f, error: e });
       }
     }
     
