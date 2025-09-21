@@ -21,7 +21,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     const director = (await deps.getDirectors(req as ReqLike)).find((d: any) => d.id === id);
     if (!director) throw new NotFoundError('Director not found');
     const settings = await loadSettings(requireReq(req as ReqLike));
-    const apiConfig = settings.apiConfigs.find((c: any) => c.id === director.apiConfigId);
+    const apiConfig = settings.apiConfigs.find((c: any) => c.id === director.apiConfigId) as any;
     if (!apiConfig) throw new NotFoundError('API config not found for director');
     if (!director.promptId) throw new ValidationError('Director has no assigned prompt');
     const prompt = (await deps.getPrompts(req as ReqLike)).find(p => p.id === director.promptId);
@@ -36,7 +36,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     const agent = (await deps.getAgents(req as ReqLike)).find((a: any) => a.id === id);
     if (!agent) throw new NotFoundError('Agent not found');
     const settings = await loadSettings(requireReq(req as ReqLike));
-    const apiConfig = settings.apiConfigs.find((c: any) => c.id === agent.apiConfigId);
+    const apiConfig = settings.apiConfigs.find((c: any) => c.id === agent.apiConfigId) as any;
     if (!apiConfig) throw new NotFoundError('API config not found for agent');
     if (!agent.promptId) throw new ValidationError('Agent has no assigned prompt');
     const prompt = (await deps.getPrompts(req as ReqLike)).find(p => p.id === agent.promptId);
@@ -49,7 +49,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
   app.get('/api/test/apiconfig/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const settings = await loadSettings(requireReq(req as ReqLike));
-    const apiConfig = settings.apiConfigs.find((c: any) => c.id === id);
+    const apiConfig = settings.apiConfigs.find((c: any) => c.id === id) as any;
     if (!apiConfig) throw new NotFoundError('API config not found');
     const result = await testOpenAIConfig(apiConfig.apiKey, apiConfig.model, (apiConfig as any)?.maxCompletionTokens);
     res.json(result);
@@ -66,7 +66,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     if (!apiConfigId) throw new ValidationError('apiConfigId is required');
     if (!Array.isArray(messages) || messages.length === 0) throw new ValidationError('messages array is required');
     const settings = await loadSettings(requireReq(req as ReqLike));
-    const apiConfig = settings.apiConfigs.find((c: any) => c.id === apiConfigId);
+    const apiConfig = settings.apiConfigs.find((c: any) => c.id === apiConfigId) as any;
     if (!apiConfig) throw new NotFoundError('API config not found');
     const toolsParts: any[] = [];
     if (includeCoreTools) toolsParts.push(...buildCoreToolSpecs(includeCoreTools));

@@ -1,4 +1,5 @@
-import { OrchestrationEvent, ProviderEvent, Trace, Span } from '../../shared/types';
+import { OrchestrationEvent, ProviderEvent, Trace, Span, OrchestrationOutcome, DirectorContext, FetcherLogEntry } from '../../shared/types';
+import { createProviderEvent } from '../../shared/constructors';
 import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS, TRACE_VERBOSE } from '../config';
 import { newId } from '../utils/id';
 import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
@@ -32,6 +33,17 @@ export function logOrch(e: OrchestrationEvent, req?: ReqLike): void {
 export function logProviderEvent(e: ProviderEvent, req?: ReqLike): void {
   const repo = getProviderRepo(req);
   void repo.append(e);
+}
+
+// Async variants for awaited semantics (canonical write path)
+export async function logOrchAsync(e: OrchestrationEvent, req?: ReqLike): Promise<void> {
+  const repo = getOrchRepo(req);
+  await repo.append(e);
+}
+
+export async function logProviderEventAsync(e: ProviderEvent, req?: ReqLike): Promise<void> {
+  const repo = getProviderRepo(req);
+  await repo.append(e);
 }
 
 /** Retrieve all orchestration events. */
@@ -174,4 +186,196 @@ export function annotateSpan(traceId: string, spanId: string, annotations: Recor
 export function getTraces(req?: ReqLike): Trace[] | Promise<Trace[]> {
   const repo = getTracesRepo(req);
   return repo ? repo.getAll() : [];
+}
+
+// ---------- Wrapper classes (folded here for a single logging entry point) ----------
+
+/**
+ * Conversation step logging utilities with awaited persistence.
+ */
+export class ConversationStepLogger {
+  constructor(private req: ReqLike | undefined, private runId: string, private accountId: string) {}
+
+  private async log(entry: OrchestrationEvent): Promise<void> {
+    await logOrchAsync(entry, this.req);
+  }
+
+  async logStepStart(threadId: string, stepType: string, emailId: string, directorId: string): Promise<void> {
+    const context: DirectorContext = {
+      runId: this.runId,
+      emailId,
+      accountId: this.accountId,
+      directorId,
+      conversationId: threadId,
+    };
+    const outcome: OrchestrationOutcome = {
+      success: true,
+      metrics: { threadId, stepType, type: 'conversation_step_start' },
+    };
+    await this.log({ id: newId(), timestamp: new Date().toISOString(), phase: 'director', context, outcome });
+  }
+
+  async logStepComplete(
+    threadId: string,
+    stepType: string,
+    durationMs: number,
+    shouldContinue: boolean,
+    toolCallCount: number,
+    emailId: string,
+    directorId: string
+  ): Promise<void> {
+    const context: DirectorContext = {
+      runId: this.runId,
+      emailId,
+      accountId: this.accountId,
+      directorId,
+      conversationId: threadId,
+    };
+    const outcome: OrchestrationOutcome = {
+      success: true,
+      metrics: { threadId, stepType, durationMs, shouldContinue, toolCallCount, type: 'conversation_step_complete' },
+    };
+    await this.log({ id: newId(), timestamp: new Date().toISOString(), phase: 'director', context, outcome });
+  }
+
+  async logStepError(threadId: string, stepType: string, durationMs: number, error: string, emailId: string, directorId: string): Promise<void> {
+    const isTimeout = error.includes('conversation_step_timeout');
+    const context: DirectorContext = {
+      runId: this.runId,
+      emailId,
+      accountId: this.accountId,
+      directorId,
+      conversationId: threadId,
+    };
+    const outcome: OrchestrationOutcome = {
+      success: false,
+      error: { message: error, isTimeout },
+      metrics: { threadId, stepType, durationMs, error, isTimeout, type: 'conversation_step_error' },
+    };
+    await this.log({ id: newId(), timestamp: new Date().toISOString(), phase: 'director', context, outcome });
+  }
+
+  async logEngineStart(threadId: string, stepType: string, messageCount: number, emailId: string, directorId: string): Promise<void> {
+    const context: DirectorContext = {
+      runId: this.runId,
+      emailId,
+      accountId: this.accountId,
+      directorId,
+      conversationId: threadId,
+    };
+    const outcome: OrchestrationOutcome = {
+      success: true,
+      metrics: { threadId, stepType, messageCount, type: 'conversation_engine_start' },
+    };
+    await this.log({ id: newId(), timestamp: new Date().toISOString(), phase: 'director', context, outcome });
+  }
+
+  async logEngineTimeout(threadId: string, stepType: string, timeoutMs: number, emailId: string, directorId: string): Promise<void> {
+    const context: DirectorContext = {
+      runId: this.runId,
+      emailId,
+      accountId: this.accountId,
+      directorId,
+      conversationId: threadId,
+    };
+    const outcome: OrchestrationOutcome = {
+      success: false,
+      error: { message: 'Engine timeout', timeoutMs },
+      metrics: { threadId, stepType, timeoutMs, type: 'conversation_engine_timeout_triggered' },
+    };
+    await this.log({ id: newId(), timestamp: new Date().toISOString(), phase: 'director', context, outcome });
+  }
+
+  async logStepCancelled(threadId: string, durationMs: number, emailId: string, directorId: string): Promise<void> {
+    const context: DirectorContext = {
+      runId: this.runId,
+      emailId,
+      accountId: this.accountId,
+      directorId,
+      conversationId: threadId,
+    };
+    const outcome: OrchestrationOutcome = {
+      success: false,
+      error: { message: 'Step cancelled' },
+      metrics: { threadId, durationMs, type: 'conversation_step_cancelled' },
+    };
+    await this.log({ id: newId(), timestamp: new Date().toISOString(), phase: 'director', context, outcome });
+  }
+
+  async logStepCancelledShutdown(threadId: string, durationMs: number, emailId: string, directorId: string): Promise<void> {
+    const context: DirectorContext = {
+      runId: this.runId,
+      emailId,
+      accountId: this.accountId,
+      directorId,
+      conversationId: threadId,
+    };
+    const outcome: OrchestrationOutcome = {
+      success: false,
+      error: { message: 'Step cancelled during shutdown' },
+      metrics: { threadId, durationMs, type: 'conversation_step_cancelled_shutdown' },
+    };
+    await this.log({ id: newId(), timestamp: new Date().toISOString(), phase: 'director', context, outcome });
+  }
+}
+
+/**
+ * Provider event logging utilities with awaited persistence.
+ */
+export class ProviderEventLogger {
+  constructor(private req?: ReqLike) {}
+
+  async logRequest(conversationId: string, payload: any): Promise<void> {
+    const event = createProviderEvent({
+      id: newId(),
+      conversationId,
+      provider: 'openai',
+      type: 'request',
+      timestamp: new Date().toISOString(),
+      payload
+    });
+    await logProviderEventAsync(event, this.req);
+  }
+
+  async logResponse(conversationId: string, latencyMs: number, payload: any, usage?: any): Promise<void> {
+    const event = createProviderEvent({
+      id: newId(),
+      conversationId,
+      provider: 'openai',
+      type: 'response',
+      timestamp: new Date().toISOString(),
+      latencyMs,
+      usage: usage ? {
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
+        totalTokens: usage.total_tokens
+      } : undefined,
+      payload
+    });
+    await logProviderEventAsync(event, this.req);
+  }
+
+  async logError(conversationId: string, error: string, latencyMs?: number): Promise<void> {
+    const event = createProviderEvent({
+      id: newId(),
+      conversationId,
+      provider: 'openai',
+      type: 'error',
+      timestamp: new Date().toISOString(),
+      latencyMs,
+      error
+    });
+    await logProviderEventAsync(event, this.req);
+  }
+
+  logFetcher(entry: Omit<FetcherLogEntry, 'id'>, req?: ReqLike): void {
+    const fullEntry: FetcherLogEntry = { ...entry, id: newId() } as FetcherLogEntry;
+    if (req) {
+      void requireUserRepo(req as ReqLike, 'fetcherLog').getAll().then((logs: any[]) => {
+        return requireUserRepo(req as ReqLike, 'fetcherLog').setAll([...(Array.isArray(logs) ? logs : []), fullEntry]);
+      }).catch(() => {
+        // Swallow to avoid throwing from background log; caller can log via logger if needed.
+      });
+    }
+  }
 }

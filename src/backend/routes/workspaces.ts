@@ -60,7 +60,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
   }));
 
   app.delete('/api/workspaces/:id/items/:itemId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const { id, itemId } = req.params as { id: string; itemId: string };
+    const { itemId } = req.params as { id: string; itemId: string };
     const isHardDelete = String(req.query.hard).toLowerCase() === 'true';
     const service = createWorkspaceService(req as ReqLike, deps);
 

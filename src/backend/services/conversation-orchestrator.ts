@@ -6,7 +6,7 @@ import { createToolHandler } from '../toolCalls';
 import { requireReq, requireRepos } from '../utils/repo-access';
 import logger from './logger';
 import { CONVERSATION_STEP_TIMEOUT_MS } from '../config';
-import { ConversationStepLogger, ProviderEventLogger } from './logging-handlers';
+import { ConversationStepLogger, ProviderEventLogger } from './logging';
 import type { ReqLike } from '../interfaces';
 import type { LiveRepos } from '../liveRepos';
 import type { UserRequest as MiddlewareUserRequest } from '../middleware/user-context';

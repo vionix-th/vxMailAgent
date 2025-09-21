@@ -1,6 +1,6 @@
 import { TemplateItem } from '../../shared/types';
 import logger from './logger';
-import { requireReq, repoGetAll, ReqLike } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
 
 export const DEFAULT_OPTIMIZER: TemplateItem = {
   id: 'prompt_optimizer',

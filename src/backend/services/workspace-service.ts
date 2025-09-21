@@ -18,14 +18,11 @@ export interface WorkspaceServiceDeps {
 export class WorkspaceService {
   private readonly getItems: GetItemsFn;
   private readonly setItems: SetItemsFn;
-  private readonly getConversations?: GetConversationsFn;
-  private readonly setConversations?: SetConversationsFn;
 
   constructor(deps: WorkspaceServiceDeps) {
     this.getItems = deps.getItems;
     this.setItems = deps.setItems;
-    if (typeof deps.getConversations !== 'undefined') this.getConversations = deps.getConversations;
-    if (typeof deps.setConversations !== 'undefined') this.setConversations = deps.setConversations;
+    // Conversation association is derivable; optional deps intentionally unused.
   }
 
   async listItems(includeDeleted: boolean = false): Promise<WorkspaceItem[]> {
