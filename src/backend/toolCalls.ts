@@ -98,7 +98,12 @@ export function createToolHandler(repos: RepoBundle) {
           if (!agentObj) return { kind: name, success: false, result: null, error: 'Agent not found' };
           const prompts = await repos.prompts.getAll();
           const settingsArr = await repos.settings.getAll();
-          const apiConfigs = Array.isArray(settingsArr) && settingsArr[0]?.apiConfigs ? settingsArr[0].apiConfigs : [];
+          const apiConfigs = (Array.isArray(settingsArr) && settingsArr.length > 0 && Array.isArray((settingsArr[0] as any)?.apiConfigs))
+            ? (settingsArr[0] as any).apiConfigs
+            : null;
+          if (!apiConfigs) {
+            return { kind: name, success: false, result: null, error: 'settings_not_initialized' };
+          }
           const nowIso = new Date().toISOString();
           let ensured: any;
           try {

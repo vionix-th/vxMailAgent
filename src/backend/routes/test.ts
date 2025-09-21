@@ -3,8 +3,9 @@ import { Prompt } from '../../shared/types';
 import { testOpenAI, testOpenAIConfig } from '../openaiTest';
 import { buildOptionalToolSpecs, buildCoreToolSpecs } from '../utils/tools';
 import { requireUserContext } from '../middleware/user-context';
-import { requireReq, repoGetAll, ReqLike } from '../utils/repo-access';
+import { requireReq, ReqLike } from '../utils/repo-access';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
+import { loadSettings } from '../services/settings';
 
 export interface TestRoutesDeps {
   getPrompts: (req?: ReqLike) => Promise<Prompt[]>;
@@ -19,9 +20,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     const id = req.params.id;
     const director = (await deps.getDirectors(req as ReqLike)).find((d: any) => d.id === id);
     if (!director) throw new NotFoundError('Director not found');
-    const all = await repoGetAll<any>(requireReq(req as ReqLike), 'settings');
-    const settings = Array.isArray(all) && (all as any)[0] ? (all as any)[0] : undefined;
-    if (!settings || !Array.isArray((settings as any).apiConfigs)) throw new ValidationError('API settings invalid or missing');
+    const settings = await loadSettings(requireReq(req as ReqLike));
     const apiConfig = settings.apiConfigs.find((c: any) => c.id === director.apiConfigId);
     if (!apiConfig) throw new NotFoundError('API config not found for director');
     if (!director.promptId) throw new ValidationError('Director has no assigned prompt');
@@ -36,9 +35,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     const id = req.params.id;
     const agent = (await deps.getAgents(req as ReqLike)).find((a: any) => a.id === id);
     if (!agent) throw new NotFoundError('Agent not found');
-    const all = await repoGetAll<any>(requireReq(req as ReqLike), 'settings');
-    const settings = Array.isArray(all) && (all as any)[0] ? (all as any)[0] : undefined;
-    if (!settings || !Array.isArray((settings as any).apiConfigs)) throw new ValidationError('API settings invalid or missing');
+    const settings = await loadSettings(requireReq(req as ReqLike));
     const apiConfig = settings.apiConfigs.find((c: any) => c.id === agent.apiConfigId);
     if (!apiConfig) throw new NotFoundError('API config not found for agent');
     if (!agent.promptId) throw new ValidationError('Agent has no assigned prompt');
@@ -51,9 +48,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
   // /api/test/apiconfig/:id
   app.get('/api/test/apiconfig/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const all = await repoGetAll<any>(requireReq(req as ReqLike), 'settings');
-    const settings = Array.isArray(all) && (all as any)[0] ? (all as any)[0] : undefined;
-    if (!settings || !Array.isArray((settings as any).apiConfigs)) throw new ValidationError('API settings invalid or missing');
+    const settings = await loadSettings(requireReq(req as ReqLike));
     const apiConfig = settings.apiConfigs.find((c: any) => c.id === id);
     if (!apiConfig) throw new NotFoundError('API config not found');
     const result = await testOpenAIConfig(apiConfig.apiKey, apiConfig.model, (apiConfig as any)?.maxCompletionTokens);
@@ -70,9 +65,7 @@ export default function registerTestRoutes(app: express.Express, deps: TestRoute
     const toolChoice = req.body?.toolChoice as ('auto'|'none'|{ name: string }|undefined);
     if (!apiConfigId) throw new ValidationError('apiConfigId is required');
     if (!Array.isArray(messages) || messages.length === 0) throw new ValidationError('messages array is required');
-    const all = await repoGetAll<any>(requireReq(req as ReqLike), 'settings');
-    const settings = Array.isArray(all) && (all as any)[0] ? (all as any)[0] : undefined;
-    if (!settings || !Array.isArray((settings as any).apiConfigs)) throw new ValidationError('API settings invalid or missing');
+    const settings = await loadSettings(requireReq(req as ReqLike));
     const apiConfig = settings.apiConfigs.find((c: any) => c.id === apiConfigId);
     if (!apiConfig) throw new NotFoundError('API config not found');
     const toolsParts: any[] = [];

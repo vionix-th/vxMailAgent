@@ -1,6 +1,7 @@
 import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent } from '../shared/types';
 import { requireReq, requireUserRepo, repoGetAll, repoSetAll, requireRepos, ReqLike } from './utils/repo-access';
 import { RepoBundle } from './repository/registry';
+import { loadSettings } from './services/settings';
 
 export interface LiveRepos {
   getPrompts(req?: ReqLike): Promise<Prompt[]>;
@@ -109,10 +110,8 @@ export function createLiveRepos(): LiveRepos {
     },
     getSettings: async (req?: ReqLike) => {
       const r = requireReq(req);
-      const arr = await repoGetAll<any>(r, 'settings');
-      const s = (Array.isArray(arr) ? arr : [])[0] || {};
-      const apiConfigs = Array.isArray(s.apiConfigs) ? s.apiConfigs : [];
-      return { ...s, apiConfigs };
+      // Delegate to service to avoid consumer-side synthesis
+      return await loadSettings(r);
     },
     getProviderRepo: (req?: ReqLike) => requireUserRepo(requireReq(req), 'providerEvents'),
     getTracesRepo: (req?: ReqLike) => requireUserRepo(requireReq(req), 'traces'),

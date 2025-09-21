@@ -1,6 +1,6 @@
 import { TemplateItem } from '../../shared/types';
 import logger from './logger';
-import { requireReq, requireUid, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
+import { requireReq, repoGetAll, ReqLike } from '../utils/repo-access';
 
 export const DEFAULT_OPTIMIZER: TemplateItem = {
   id: 'prompt_optimizer',
@@ -32,26 +32,10 @@ export const DEFAULT_OPTIMIZER: TemplateItem = {
 export async function loadUserTemplates(req?: ReqLike): Promise<TemplateItem[]> {
   try {
     const ureq = requireReq(req);
-    let arr = await repoGetAll<TemplateItem>(ureq, 'templates');
-    if (!Array.isArray(arr)) arr = [];
-    // Seed optimizer if missing/empty
-    if (arr.length === 0) {
-      const seeded = [DEFAULT_OPTIMIZER];
-      await repoSetAll<TemplateItem>(ureq, 'templates', seeded);
-      logger.info('Seeded templates with optimizer', { uid: requireUid(ureq) });
-      return seeded;
-    }
-    if (!arr.some(t => t.id === 'prompt_optimizer')) {
-      const next = [DEFAULT_OPTIMIZER, ...arr];
-      await repoSetAll<TemplateItem>(ureq, 'templates', next);
-      return next;
-    }
-    // Ensure canonical optimizer content
-    const next = arr.map(t => t.id === 'prompt_optimizer' ? { ...t, name: DEFAULT_OPTIMIZER.name, messages: DEFAULT_OPTIMIZER.messages } : t);
-    if (JSON.stringify(next) !== JSON.stringify(arr)) {
-      await repoSetAll<TemplateItem>(ureq, 'templates', next);
-    }
-    return next as TemplateItem[];
+    const arr = await repoGetAll<TemplateItem>(ureq, 'templates');
+    // Producer initializes/ensures optimizer; do not seed here.
+    if (!Array.isArray(arr)) return [];
+    return arr as TemplateItem[];
   } catch (e) {
     // Strict escalation: propagate repository errors; do not seed on error
     logger.error('loadUserTemplates failed (escalating)', { err: e });

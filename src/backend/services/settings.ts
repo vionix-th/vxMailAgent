@@ -1,4 +1,5 @@
 import logger from './logger';
+import { RepositoryError } from './error-handler';
 import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
 
 import type { ApiConfigPublic } from '../../shared/types';
@@ -17,13 +18,23 @@ export interface Settings {
 export async function loadSettings(req?: ReqLike): Promise<Settings> {
   const ureq = requireReq(req);
   const all = await repoGetAll<Settings>(ureq, 'settings');
-  // Only default when absent; do not mask corruption/errors (repoGetAll would have thrown)
-  const settings = (Array.isArray(all) && all[0]) ? all[0] : defaultSettings();
-  // Normalize defaults
-  if (!Array.isArray(settings.apiConfigs)) settings.apiConfigs = [] as ApiConfigPublic[];
-  if (!settings.signatures || typeof settings.signatures !== 'object') settings.signatures = {};
-  if (typeof settings.fetcherAutoStart !== 'boolean') settings.fetcherAutoStart = true;
-  if (typeof settings.sessionTimeoutMinutes !== 'number') settings.sessionTimeoutMinutes = 15;
+  if (!Array.isArray(all) || all.length === 0) {
+    throw new RepositoryError('Settings not initialized');
+  }
+  const settings = all[0];
+  // Validate required shape — fail closed instead of synthesizing
+  if (!settings || typeof settings !== 'object') {
+    throw new RepositoryError('Invalid settings payload');
+  }
+  if (!Array.isArray(settings.apiConfigs)) {
+    throw new RepositoryError('Invalid settings: apiConfigs');
+  }
+  if (typeof settings.fetcherAutoStart !== 'boolean') {
+    throw new RepositoryError('Invalid settings: fetcherAutoStart');
+  }
+  if (typeof settings.sessionTimeoutMinutes !== 'number') {
+    throw new RepositoryError('Invalid settings: sessionTimeoutMinutes');
+  }
   logger.debug('Loaded settings', { uid: requireUid(ureq) });
   return settings;
 }
@@ -38,17 +49,6 @@ export async function saveSettings(settings: Settings, req: ReqLike): Promise<vo
     logger.error('Failed to save settings', { err: e });
     throw e;
   }
-}
-
-/** Default settings when none exist on disk. */
-function defaultSettings(): Settings {
-  return {
-    virtualRoot: '',
-    apiConfigs: [] as ApiConfigPublic[],
-    signatures: {},
-    fetcherAutoStart: true,
-    sessionTimeoutMinutes: 15,
-  } as Settings;
 }
 
 /** Partially update settings with whitelisted fields and type checks. */

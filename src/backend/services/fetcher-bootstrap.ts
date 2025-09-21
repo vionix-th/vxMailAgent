@@ -19,8 +19,12 @@ export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise
       try {
         const bundle = await repoBundleRegistry.getBundle(uid);
         const settingsArr = await bundle.settings.getAll();
-        const settings = settingsArr[0] || {};
-        if (!settings.fetcherAutoStart) return;
+        if (!Array.isArray(settingsArr) || settingsArr.length === 0) {
+          logger.warn('Boot: settings not initialized for user; skipping autostart', { uid });
+          return;
+        }
+        const settings = settingsArr[0] as any;
+        if (settings.fetcherAutoStart !== true) return;
 
         try {
           await fetcherManager.startForUid(uid);
