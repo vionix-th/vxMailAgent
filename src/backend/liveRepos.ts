@@ -60,16 +60,7 @@ export function createLiveRepos(): LiveRepos {
       const bundle = requireRepos(r);
       const repo = bundle.conversations as unknown as { mutate?: (fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]) => Promise<ConversationThread[]> };
       if (!repo || typeof repo.mutate !== 'function') {
-        // Fallback (non-atomic): preserve prior behavior if mutate is unavailable
-        const list = await repoGetAll<ConversationThread>(r, 'conversations');
-        const idx = list.findIndex((c) => c.id === threadId);
-        if (idx === -1) return null;
-        const now = new Date().toISOString();
-        const updated: ConversationThread = { ...list[idx], lastActiveAt: now, messages: [...list[idx].messages, ...(messages || [])] } as ConversationThread;
-        const next = list.slice();
-        next[idx] = updated;
-        await repoSetAll<ConversationThread>(r, 'conversations', next);
-        return updated;
+        throw new Error('Conversations repository must support atomic mutate');
       }
       const next = await repo.mutate((cur) => {
         const idx = cur.findIndex((c) => c.id === threadId);
@@ -87,15 +78,7 @@ export function createLiveRepos(): LiveRepos {
       const bundle = requireRepos(r);
       const repo = bundle.conversations as unknown as { mutate?: (fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]) => Promise<ConversationThread[]> };
       if (!repo || typeof repo.mutate !== 'function') {
-        const list = await repoGetAll<ConversationThread>(r, 'conversations');
-        const idx = list.findIndex((c) => c.id === threadId);
-        if (idx === -1) return null;
-        const now = new Date().toISOString();
-        const updated: ConversationThread = { ...list[idx], status, endedAt: now, lastActiveAt: now } as ConversationThread;
-        const next = list.slice();
-        next[idx] = updated;
-        await repoSetAll<ConversationThread>(r, 'conversations', next);
-        return updated;
+        throw new Error('Conversations repository must support atomic mutate');
       }
       const next = await repo.mutate((cur) => {
         const idx = cur.findIndex((c) => c.id === threadId);
