@@ -81,8 +81,13 @@ export default function registerConversationsRoutes(
       (c) => c.kind === 'director' && c.directorId === directorId && (c.email as any)?.id === emailId
     );
     if (!threads.length) throw new NotFoundError('Conversation not found');
-    // Pick the last matching thread in canonical insertion order
-    const thread = threads[threads.length - 1];
+    // Pick the most recent by lastActiveAt (fallback to startedAt)
+    const thread = threads.reduce((best, cur) => {
+      const bestTs = Date.parse((best as any)?.lastActiveAt || (best as any)?.startedAt || '');
+      const curTs = Date.parse((cur as any)?.lastActiveAt || (cur as any)?.startedAt || '');
+      if (!isNaN(curTs) && (isNaN(bestTs) || curTs > bestTs)) return cur;
+      return best;
+    }, threads[0]);
     return res.json(thread);
   }));
 
