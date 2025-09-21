@@ -17,7 +17,6 @@ import registerFetcherRoutes from './fetcher';
 // Legacy diagnostics routes removed (forward-only)
 import registerCleanupRoutes from './cleanup';
 import { createEmailRoutes } from './emails';
-import { createConversationsEnhancedRoutes } from './conversations-enhanced';
 import { FetcherManager } from '../services/fetcher-manager';
 import { LiveRepos } from '../liveRepos';
 import { isProd, ENABLE_TEST_ROUTES } from '../config';
@@ -62,5 +61,4 @@ export default function registerRoutes(
   
   // Enhanced diagnostics routes
   app.use('/api/emails', createEmailRoutes(repos));
-  app.use('/api/conversations', createConversationsEnhancedRoutes(repos));
 }

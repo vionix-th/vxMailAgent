@@ -1,6 +1,6 @@
 import express from 'express';
 import { PromptMessage } from '../../shared/types';
-import { requireReq } from '../utils/repo-access';
+import { requireReq, repoGetAll } from '../utils/repo-access';
 import type { ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
@@ -61,6 +61,68 @@ export default function registerConversationsRoutes(
     const list = await repos.getConversations(req as any as ReqLike);
     const paged = list.slice(offset, offset + limit);
     return res.json({ total: list.length, items: paged });
+  }));
+
+  // ENHANCED: GET /api/conversations/:id/details — conversation + related context
+  app.get('/api/conversations/:id/details', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const conversationId = req.params.id;
+    const conversation = await repos.getConversationById(req as any, conversationId);
+    if (!conversation) {
+      throw new NotFoundError(`Conversation ${conversationId} not found`);
+    }
+    const [orchestrationEvents, providerEvents, allWorkspaceItems] = await Promise.all([
+      repos.getOrchestrationLog(req as any).then((events: any[]) => events.filter((e: any) => e.context.conversationId === conversationId)),
+      repos.getProviderEvents(req as any).then((events: any[]) => events.filter((e: any) => e.conversationId === conversationId)),
+      repoGetAll<any>(requireReq(req as any as ReqLike), 'workspaceItems')
+    ]);
+    const workspaceItems = (allWorkspaceItems || []).filter((w: any) => w?.provenance?.conversationId === conversationId);
+    const metrics = {
+      totalTokens: providerEvents.reduce((sum: number, e: any) => sum + (e.usage?.totalTokens || 0), 0),
+      promptTokens: providerEvents.reduce((sum: number, e: any) => sum + (e.usage?.promptTokens || 0), 0),
+      completionTokens: providerEvents.reduce((sum: number, e: any) => sum + (e.usage?.completionTokens || 0), 0),
+      totalLatencyMs: providerEvents.reduce((sum: number, e: any) => sum + (e.latencyMs || 0), 0),
+      requestCount: providerEvents.filter((e: any) => e.type === 'request').length,
+      errorCount: orchestrationEvents.filter((e: any) => !e.outcome.success).length,
+      toolCallCount: conversation.messages.reduce((sum: number, msg: any) => sum + (msg.tool_calls?.length || 0), 0),
+    };
+    const details = { ...conversation, providerEvents, orchestrationEvents, workspaceItems, metrics };
+    res.json(details);
+  }));
+
+  // ENHANCED: GET /api/conversations/:id/provider-events — provider events for a conversation
+  app.get('/api/conversations/:id/provider-events', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const conversationId = req.params.id;
+    const providerEvents = await repos.getProviderEvents(req as any);
+    const conversationEvents = providerEvents.filter((e: any) => e.conversationId === conversationId);
+    res.json(conversationEvents);
+  }));
+
+  // ENHANCED: GET /api/conversations/threads/:id/full — thread with tool-call traces and provider events
+  app.get('/api/conversations/threads/:id/full', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const threadId = req.params.id;
+    const conversation = await repos.getConversationById(req as any, threadId);
+    if (!conversation) {
+      throw new NotFoundError(`Thread ${threadId} not found`);
+    }
+    const providerEvents = await repos.getProviderEvents(req as any);
+    const threadProviderEvents = providerEvents.filter((e: any) => e.conversationId === threadId);
+    const toolCalls: Array<{ id: string; name: string; arguments: string; result?: any; error?: string; timestamp?: string; durationMs?: number }> = [];
+    conversation.messages.forEach((msg: any) => {
+      if (msg.tool_calls) {
+        msg.tool_calls.forEach((tc: any) => {
+          const resultMsg = conversation.messages.find((m: any) => m.role === 'tool' && m.tool_call_id === tc.id);
+          let parsed: any | undefined = undefined;
+          let parseError: string | undefined = undefined;
+          if (resultMsg && typeof resultMsg.content === 'string' && resultMsg.content.trim()) {
+            try { parsed = JSON.parse(resultMsg.content); } catch { parseError = 'invalid_tool_result_json'; }
+          }
+          const timestamp = (typeof msg?.context?.variables?.timestamp === 'string') ? msg.context.variables.timestamp : undefined;
+          toolCalls.push({ id: tc.id, name: tc.function.name, arguments: tc.function.arguments, ...(parsed !== undefined ? { result: parsed } : {}), ...(parseError ? { error: parseError } : {}), ...(timestamp ? { timestamp } : {}) });
+        });
+      }
+    });
+    const threadWithContext = { ...conversation, fullMessages: conversation.messages, toolCalls, providerEvents: threadProviderEvents };
+    res.json(threadWithContext);
   }));
 
   // GET single conversation by id
