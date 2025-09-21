@@ -1,6 +1,7 @@
 /* ESLint v9 Flat Config for backend */
 const tsParser = require('@typescript-eslint/parser');
 const tsPlugin = require('@typescript-eslint/eslint-plugin');
+const eslintComments = require('eslint-plugin-eslint-comments');
 
 module.exports = [
   {
@@ -20,6 +21,7 @@ module.exports = [
     plugins: {
       '@typescript-eslint': tsPlugin,
       invariants: require('./eslint-plugin-invariants'),
+      'eslint-comments': eslintComments,
     },
     rules: {
       'no-empty': ['error', { allowEmptyCatch: false }],
@@ -70,12 +72,35 @@ module.exports = [
       'invariants/no-defaults-for-required': 'error',
       'invariants/no-domain-object-literals': ['error', { types: ['EmailEnvelope','ConversationThread','Account','ProviderEvent'] }],
       'invariants/no-any-into-domain': ['error', { types: ['EmailEnvelope','ConversationThread','Account','ProviderEvent'] }],
+      // Require descriptions on disables to keep exceptions intentional
+      'eslint-comments/require-description': 'error',
+      'eslint-comments/no-unused-disable': 'error',
+      'eslint-comments/no-unlimited-disable': 'error',
+      // Disallow muted catch blocks like `catch (e) { void e; }` — catches must handle or log
+      'no-restricted-syntax': [
+        'error',
+        {
+          // Specifically disallow muted catch blocks like `catch(e){ void e; }`
+          selector: 'CatchClause > BlockStatement:has(UnaryExpression[operator="void"][argument.type="Identifier"])',
+          message: 'Muted catch detected. Always handle or log caught errors.'
+        },
+      ],
     },
   },
   {
     files: ['services/conversation-mutations.ts'],
     rules: {
       'no-restricted-syntax': 'off',
+    },
+  },
+  // In non-producer layers (routes, tests), surface domain-literal issues as warnings
+  {
+    files: ['routes/**/*.ts','tests/**/*.ts','tests/**/*.cjs'],
+    plugins: {
+      invariants: require('./eslint-plugin-invariants'),
+    },
+    rules: {
+      'invariants/no-domain-object-literals': 'warn',
     },
   },
 ];
