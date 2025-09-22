@@ -1,4 +1,4 @@
-import type { ConversationThread, PromptMessage } from '../../../../shared/types';
+import type { AgentThread, ConversationThread, DirectorThread, PromptMessage } from '../../../../shared/types';
 import type { StorageHandle } from '../types';
 import { SqliteRepository, stringify } from './base';
 
@@ -122,23 +122,30 @@ export class ConversationsRepository extends SqliteRepository {
         throw new Error(`messages missing for thread ${thread.id}`);
       }
       const endedAt = assertThreadEndedAt(thread);
-      const directorId = ensureString(thread.directorId, 'directorId', `thread ${thread.id}`);
-
+      let directorId: string;
       let parentId: string | null = null;
       let agentId: string | null = null;
+
       if (thread.kind === 'director') {
-        if (thread.parentId !== null) {
-          throw new Error(`parentId must be null for director thread ${thread.id}`);
+        const directorThread: DirectorThread = thread;
+        if (directorThread.parentId !== null) {
+          throw new Error(`parentId must be null for director thread ${directorThread.id}`);
         }
-        if (thread.agentId !== null) {
-          throw new Error(`agentId must be null for director thread ${thread.id}`);
+        if (directorThread.agentId !== null) {
+          throw new Error(`agentId must be null for director thread ${directorThread.id}`);
         }
+        directorId = ensureString(directorThread.directorId, 'directorId', `thread ${directorThread.id}`);
       } else if (thread.kind === 'agent') {
-        parentId = ensureString(thread.parentId, 'parentId', `thread ${thread.id}`);
-        agentId = ensureString(thread.agentId, 'agentId', `thread ${thread.id}`);
+        const agentThread: AgentThread = thread;
+        parentId = ensureString(agentThread.parentId, 'parentId', `thread ${agentThread.id}`);
+        agentId = ensureString(agentThread.agentId, 'agentId', `thread ${agentThread.id}`);
+        directorId = ensureString(agentThread.directorId, 'directorId', `thread ${agentThread.id}`);
       } else {
-        throw new Error(`Unknown conversation kind: ${thread.kind}`);
+        const unexpected: never = thread;
+        throw new Error(`Unknown conversation kind: ${(unexpected as { kind: unknown }).kind}`);
       }
+
+      const emailId = typeof thread.email?.id === 'string' && thread.email.id.length > 0 ? thread.email.id : null;
 
       insertThread.run({
         id: thread.id,
@@ -147,7 +154,7 @@ export class ConversationsRepository extends SqliteRepository {
         director_id: directorId,
         agent_id: agentId,
         account_id: thread.accountId,
-        email_id: thread.email?.id ?? null,
+        email_id: emailId,
         email_json: stringify(thread.email),
         prompt_id: thread.promptId,
         api_config_id: thread.apiConfigId,

@@ -1,4 +1,4 @@
-import type { FetcherLogEntry } from '../../../../shared/types';
+import type { AccountProvider, FetcherLogEntry } from '../../../../shared/types';
 import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE } from '../../../config';
 import type { StorageHandle } from '../types';
 import { SqliteRepository, stringify } from './base';
@@ -8,6 +8,14 @@ function ensureLogString(value: unknown, field: string, id: string): string {
     throw new Error(`fetcher log ${id}: ${field} missing`);
   }
   return value;
+}
+
+function ensureAccountProvider(value: unknown, id: string): AccountProvider {
+  const provider = ensureLogString(value, 'provider', id);
+  if (provider === 'gmail' || provider === 'outlook') {
+    return provider;
+  }
+  throw new Error(`fetcher log ${id}: provider invalid`);
 }
 
 function pruneFetcherLogs(db: any) {
@@ -45,7 +53,7 @@ export class FetcherLogRepository extends SqliteRepository {
         if (!row.account_id) {
           throw new Error(`fetcher log missing account_id (id=${row.id})`);
         }
-        const provider = ensureLogString(row.provider, 'provider', row.id);
+        const provider = ensureAccountProvider(row.provider, row.id);
         const emailId = ensureLogString(row.email_id, 'email_id', row.id);
         return {
           id: row.id,
@@ -69,7 +77,7 @@ export class FetcherLogRepository extends SqliteRepository {
         'INSERT INTO fetcher_logs (id, timestamp, level, provider, account_id, event, email_id, count, detail_json) VALUES (@id, @timestamp, @level, @provider, @account_id, @event, @email_id, @count, @detail_json)'
       );
       for (const entry of entries) {
-        const provider = ensureLogString(entry.provider, 'provider', entry.id);
+        const provider = ensureAccountProvider(entry.provider, entry.id);
         const emailId = ensureLogString(entry.emailId, 'emailId', entry.id);
         insert.run({
           id: entry.id,
@@ -90,7 +98,7 @@ export class FetcherLogRepository extends SqliteRepository {
 
   async append(entry: FetcherLogEntry): Promise<void> {
     await this.transaction((db) => {
-      const provider = ensureLogString(entry.provider, 'provider', entry.id);
+      const provider = ensureAccountProvider(entry.provider, entry.id);
       const emailId = ensureLogString(entry.emailId, 'emailId', entry.id);
       db.prepare(
         'INSERT INTO fetcher_logs (id, timestamp, level, provider, account_id, event, email_id, count, detail_json) VALUES (@id, @timestamp, @level, @provider, @account_id, @event, @email_id, @count, @detail_json)'

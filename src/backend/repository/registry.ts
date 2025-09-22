@@ -183,25 +183,17 @@ export class RepoBundleRegistry {
   }
 
   private async applyDefaults(bundle: RepoBundle): Promise<void> {
-    try {
-      const settings = await bundle.settings.getAll();
-      if (!settings.length) {
-        await bundle.settings.setAll([defaultSettings()]);
-      }
-    } catch (error) {
-      logger.warn('[REGISTRY] Failed to ensure default settings', { uid: bundle.uid, error });
+    const settings = await bundle.settings.getAll();
+    if (!settings.length) {
+      await bundle.settings.setAll([defaultSettings()]);
     }
 
-    try {
-      const templates = await bundle.templates.getAll();
-      const defaultTpl = defaultTemplates();
-      if (!templates.length) {
-        await bundle.templates.setAll(defaultTpl);
-      } else if (!templates.some((t) => t.id === 'prompt_optimizer')) {
-        await bundle.templates.setAll([...defaultTpl, ...templates]);
-      }
-    } catch (error) {
-      logger.warn('[REGISTRY] Failed to ensure default templates', { uid: bundle.uid, error });
+    const templates = await bundle.templates.getAll();
+    const defaultTpl = defaultTemplates();
+    if (!templates.length) {
+      await bundle.templates.setAll(defaultTpl);
+    } else if (!templates.some((t) => t.id === 'prompt_optimizer')) {
+      await bundle.templates.setAll([...defaultTpl, ...templates]);
     }
   }
 
