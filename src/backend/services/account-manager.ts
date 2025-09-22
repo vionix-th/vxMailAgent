@@ -1,13 +1,13 @@
 import { LiveRepos } from '../liveRepos';
-import { UserRequest } from '../middleware/user-context';
 import { beginSpan, endSpan } from './logging';
 import { getMailProvider } from '../providers/mail';
 import logger from './logger';
 import { newId } from '../utils/id';
+import type { ReqLike } from '../interfaces';
 
 export interface AccountContext {
   account: any;
-  userReq: UserRequest;
+  userReq: ReqLike;
   traceId: string;
 }
 
@@ -122,7 +122,7 @@ export class AccountManager {
   private async persistTokenUpdate(
     account: any,
     refreshResult: any,
-    userReq: UserRequest
+    userReq: ReqLike
   ): Promise<void> {
     const accounts = await this.repos.getAccounts(userReq);
     const accountIndex = accounts.findIndex((a: any) => a.id === account.id);

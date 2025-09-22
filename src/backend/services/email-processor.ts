@@ -1,6 +1,5 @@
 import { ConversationThread, Agent, Director, Filter, Prompt, EmailEnvelope } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
-import { UserRequest } from '../middleware/user-context';
 import { evaluateFilters, selectDirectorTriggers } from './orchestration-director';
 import { ConversationOrchestrator, createUserRequest } from './conversation-orchestrator';
 import type { ReqLike } from '../interfaces';
@@ -41,7 +40,7 @@ export class EmailProcessor {
    */
   async processEmail(
     context: EmailProcessingContext,
-    userReq: UserRequest
+    userReq: ReqLike
   ): Promise<ProcessingResult> {
     const { envelope, account, traceId, filters, directors } = context;
     const result: ProcessingResult = {
@@ -111,7 +110,7 @@ export class EmailProcessor {
     envelope: EmailEnvelope,
     filters: Filter[],
     traceId: string,
-    userReq: UserRequest
+    userReq: ReqLike
   ): Promise<any[]> {
     const sFilters = beginSpan(traceId, {
       type: 'filters_eval',
@@ -148,7 +147,7 @@ export class EmailProcessor {
   private async selectTriggeredDirectors(
     filterEvaluations: any[],
     traceId: string,
-    userReq: UserRequest
+    userReq: ReqLike
   ): Promise<string[]> {
     const sSelect = beginSpan(traceId, {
       type: 'director_select',
@@ -174,7 +173,7 @@ export class EmailProcessor {
     envelope: EmailEnvelope,
     context: EmailProcessingContext,
     traceId: string,
-    userReq: UserRequest
+    userReq: ReqLike
   ): Promise<string | null> {
     // Validate director configuration
     const validation = this.validateDirectorConfig(director, context);
@@ -256,7 +255,7 @@ snippet: ${envelope.snippet}`;
   private async persistDirectorThread(
     thread: ConversationThread,
     traceId: string,
-    userReq: UserRequest
+    userReq: ReqLike
   ): Promise<ConversationThread> {
     const persistedThread = await this.repos.appendConversation(userReq, thread);
 
@@ -303,10 +302,10 @@ snippet: ${envelope.snippet}`;
     thread: ConversationThread,
     director: Director,
     context: EmailProcessingContext,
-    userReq: UserRequest
+    userReq: ReqLike
   ): void {
     const orchestratorUserReq = createUserRequest(userReq, this.repos);
-    const orchestrator = new ConversationOrchestrator(userReq as unknown as ReqLike, context.runId, context.account.id);
+    const orchestrator = new ConversationOrchestrator(userReq, context.runId, context.account.id);
     
     // Start orchestration asynchronously - don't block email processing
     setImmediate(async () => {

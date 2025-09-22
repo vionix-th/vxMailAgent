@@ -1,6 +1,7 @@
 import { LiveRepos } from '../liveRepos';
 import { EmailFetcher, FetchContext } from './email-fetcher';
 import type { ReqLike } from '../interfaces';
+import { requireReq } from '../utils/repo-access';
 import { FetcherLogEntry } from '../../shared/types';
 import { newId } from '../utils/id';
 import logger from './logger';
@@ -10,6 +11,14 @@ export function initFetcher(
   repos: LiveRepos,
   userReq: ReqLike
 ) {
+  const { userContext } = requireReq(userReq);
+  const fetcherReq: ReqLike = {
+    userContext: {
+      uid: userContext.uid,
+      repos: userContext.repos,
+    },
+  };
+
   let fetcherActive = false;
   let fetcherInterval: NodeJS.Timeout | null = null;
   let fetcherLastRun: string | null = null;
@@ -23,9 +32,9 @@ export function initFetcher(
         throw new Error('FetcherLogEntry.id required');
       }
       const withId: FetcherLogEntry = entry;
-      const current = await repos.getFetcherLog(userReq);
-      const updated = [...current, withId];      
-      void repos.setFetcherLog(userReq, updated).catch(e => 
+      const current = await repos.getFetcherLog(fetcherReq);
+      const updated = [...current, withId];
+      void repos.setFetcherLog(fetcherReq, updated).catch(e =>
         logger.error('Failed to persist fetcherLog entry', { err: e })
       );
     } catch (e) {
@@ -48,11 +57,11 @@ export function initFetcher(
     fetcherNextRun = null;
     
     try {
-      const settings = await repos.getSettings(userReq);
-      const filters = await repos.getFilters(userReq);
-      const directors = await repos.getDirectors(userReq);
-      const agents = await repos.getAgents(userReq);
-      const accounts = await repos.getAccounts(userReq);
+      const settings = await repos.getSettings(fetcherReq);
+      const filters = await repos.getFilters(fetcherReq);
+      const directors = await repos.getDirectors(fetcherReq);
+      const agents = await repos.getAgents(fetcherReq);
+      const accounts = await repos.getAccounts(fetcherReq);
       
       // Update account status for all accounts
       for (const account of accounts) {
@@ -60,7 +69,7 @@ export function initFetcher(
       }
       
       const fetchContext: FetchContext = {
-        userReq: userReq as any,
+        userReq: fetcherReq,
         settings,
         filters,
         directors,
@@ -93,11 +102,11 @@ export function initFetcher(
   }
 
   async function getFetcherLog(): Promise<FetcherLogEntry[]> {
-    return repos.getFetcherLog(userReq);
+    return repos.getFetcherLog(fetcherReq);
   }
 
   async function setFetcherLog(next: FetcherLogEntry[]): Promise<void> {
-    return repos.setFetcherLog(userReq, next);
+    return repos.setFetcherLog(fetcherReq, next);
   }
 
   function getStatus() {

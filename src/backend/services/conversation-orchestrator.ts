@@ -9,7 +9,6 @@ import { CONVERSATION_STEP_TIMEOUT_MS } from '../config';
 import { ConversationStepLogger, ProviderEventLogger } from './logging';
 import type { ReqLike } from '../interfaces';
 import type { LiveRepos } from '../liveRepos';
-import type { UserRequest as MiddlewareUserRequest } from '../middleware/user-context';
 import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import { repoAppendMessage, repoAppendMessages, repoFinalizeThreadStatus, repoGetThreadById } from './conversation-mutations';
@@ -32,11 +31,19 @@ export interface UserRequest {
   traceId?: string;
 }
 
-export function createUserRequest(middlewareReq: MiddlewareUserRequest, repos: LiveRepos): UserRequest {
+export function createUserRequest(middlewareReq: ReqLike, repos: LiveRepos): UserRequest {
+  const { userContext } = requireReq(middlewareReq);
+  const traceHeader = (middlewareReq as any)?.headers?.['x-trace-id'];
+  const traceId = typeof traceHeader === 'string' ? traceHeader : undefined;
   return {
     repos,
-    reqLike: middlewareReq as ReqLike,
-    traceId: middlewareReq.headers?.['x-trace-id'] as string
+    reqLike: {
+      userContext: {
+        uid: userContext.uid,
+        repos: userContext.repos,
+      },
+    },
+    traceId,
   };
 }
 
