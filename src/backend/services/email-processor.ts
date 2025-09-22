@@ -185,15 +185,15 @@ export class EmailProcessor {
 
     // Create and persist thread
     const thread = this.buildDirectorThread(director, envelope, context);
-    await this.persistDirectorThread(thread, traceId, userReq);
-    
+    const persistedThread = await this.persistDirectorThread(thread, traceId, userReq);
+
     // Log successful creation
-    this.logDirectorThreadCreated(director.id, thread.id, context.account);
+    this.logDirectorThreadCreated(director.id, persistedThread.id, context.account);
 
     // Start orchestration asynchronously
-    this.startDirectorOrchestration(thread, director, context, userReq);
+    this.startDirectorOrchestration(persistedThread, director, context, userReq);
 
-    return thread.id;
+    return persistedThread.id;
   }
 
   private validateDirectorConfig(director: Director, context: EmailProcessingContext): { isValid: boolean; error?: string } {
@@ -257,19 +257,19 @@ snippet: ${envelope.snippet}`;
     thread: ConversationThread,
     traceId: string,
     userReq: UserRequest
-  ): Promise<void> {
-    const conversations = await this.repos.getConversations(userReq);
-    const updatedConversations = [...conversations, thread];
-    await this.repos.setConversations(userReq, updatedConversations);
+  ): Promise<ConversationThread> {
+    const persistedThread = await this.repos.appendConversation(userReq, thread);
 
     const sConvCreate = beginSpan(traceId, {
       type: 'conversation_update',
       name: 'create_director_thread',
-      emailId: thread.email.id,
-      directorId: thread.directorId
+      emailId: persistedThread.email.id,
+      directorId: persistedThread.directorId
     }, userReq);
 
     endSpan(traceId, sConvCreate, { status: 'ok' }, userReq);
+
+    return persistedThread;
   }
 
   private logDirectorConfigError(directorId: string, account: any, error: string): void {

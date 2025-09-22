@@ -17,6 +17,7 @@ export interface LiveRepos {
   getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]>;
   getConversations(req?: ReqLike): Promise<ConversationThread[]>;
   setConversations(req: ReqLike, next: ConversationThread[]): Promise<void>;
+  appendConversation(req: ReqLike, thread: ConversationThread): Promise<ConversationThread>;
   /** Append one or more messages to a thread atomically. */
   appendMessagesToConversation(req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null>;
   /** Finalize a thread's status atomically. */
@@ -40,6 +41,20 @@ export function createLiveRepos(): LiveRepos {
     return Array.isArray(arr) ? arr : [];
   };
   const set = <T>(name: keyof RepoBundle) => (req: ReqLike, next: T[]) => repoSetAll<T>(requireReq(req), name, next);
+  type ConversationRepoWithMutate = {
+    mutate: (
+      fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]
+    ) => Promise<ConversationThread[]>;
+  };
+  const requireConversationRepo = (req: ReqLike): ConversationRepoWithMutate => {
+    const r = requireReq(req);
+    const bundle = requireRepos(r);
+    const repo = bundle.conversations as unknown as ConversationRepoWithMutate | undefined;
+    if (!repo || typeof repo.mutate !== 'function') {
+      throw new Error('Conversations repository must support atomic mutate');
+    }
+    return repo;
+  };
 
   return {
     getPrompts: get<Prompt>('prompts'),
@@ -55,13 +70,23 @@ export function createLiveRepos(): LiveRepos {
     getOrchestrationLog: get<OrchestrationEvent>('orchestrationLog'),
     getConversations: get<ConversationThread>('conversations'),
     setConversations: set<ConversationThread>('conversations'),
-    appendMessagesToConversation: async (req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null> => {
-      const r = requireReq(req);
-      const bundle = requireRepos(r);
-      const repo = bundle.conversations as unknown as { mutate?: (fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]) => Promise<ConversationThread[]> };
-      if (!repo || typeof repo.mutate !== 'function') {
-        throw new Error('Conversations repository must support atomic mutate');
+    appendConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
+      const repo = requireConversationRepo(req);
+      const next = await repo.mutate((cur) => {
+        const snapshot = Array.isArray(cur) ? cur : [];
+        if (snapshot.some((c) => c.id === thread.id)) {
+          throw new Error(`Conversation thread already exists: ${thread.id}`);
+        }
+        return [...snapshot, thread];
+      });
+      const appended = next.find((c) => c.id === thread.id);
+      if (!appended) {
+        throw new Error(`Failed to append conversation thread: ${thread.id}`);
       }
+      return appended;
+    },
+    appendMessagesToConversation: async (req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null> => {
+      const repo = requireConversationRepo(req);
       const next = await repo.mutate((cur) => {
         const idx = cur.findIndex((c) => c.id === threadId);
         if (idx === -1) return cur;
@@ -74,12 +99,7 @@ export function createLiveRepos(): LiveRepos {
       return next.find((c) => c.id === threadId) || null;
     },
     finalizeThreadStatusAtomic: async (req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null> => {
-      const r = requireReq(req);
-      const bundle = requireRepos(r);
-      const repo = bundle.conversations as unknown as { mutate?: (fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]) => Promise<ConversationThread[]> };
-      if (!repo || typeof repo.mutate !== 'function') {
-        throw new Error('Conversations repository must support atomic mutate');
-      }
+      const repo = requireConversationRepo(req);
       const next = await repo.mutate((cur) => {
         const idx = cur.findIndex((c) => c.id === threadId);
         if (idx === -1) return cur;
