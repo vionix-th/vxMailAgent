@@ -11,6 +11,7 @@ import { Repository } from './repository/core';
 import { newId } from './utils/id';
 import type { RepoBundle } from './repository/registry';
 import { ensureAgentThread, runAgentConversation } from './services/orchestration-agent';
+import { ValidationError } from './services/error-handler';
 
 export function createToolHandler(repos: RepoBundle) {
   async function handleToolByName(name: string, params: any): Promise<ToolCallResult> {
@@ -353,11 +354,23 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
       if (provErrors.length) {
         return { kind: 'workspace', success: false, result: { ok: false, errors: provErrors, received: sanitize(payload) }, error: 'Invalid workspace add payload' };
       }
+      const mimeType = typeof payload.mimeType === 'string' ? payload.mimeType : undefined;
+      if (!mimeType) {
+        throw new ValidationError('workspace_add_item: mimeType is required');
+      }
+      const encoding = typeof payload.encoding === 'string' ? payload.encoding : undefined;
+      if (!encoding) {
+        throw new ValidationError('workspace_add_item: encoding is required');
+      }
+      const data = typeof payload.data === 'string' ? payload.data : undefined;
+      if (typeof data === 'undefined') {
+        throw new ValidationError('workspace_add_item: data is required');
+      }
       const input = {
         content: {
-          mimeType: typeof payload.mimeType === 'string' ? payload.mimeType : 'text/plain',
-          encoding: typeof payload.encoding === 'string' ? payload.encoding : 'utf8',
-          data: typeof payload.data === 'string' ? payload.data : ''
+          mimeType,
+          encoding,
+          data
         },
         metadata: {
           ...(typeof payload.label === 'string' ? { label: payload.label } : {}),

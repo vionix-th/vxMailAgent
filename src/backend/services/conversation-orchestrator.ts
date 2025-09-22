@@ -14,6 +14,7 @@ import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import { repoAppendMessage, repoAppendMessages, repoFinalizeThreadStatus, repoGetThreadById } from './conversation-mutations';
 import { extractLastUserContent } from '../utils/message-transformers';
+import { ValidationError } from './error-handler';
 
 export interface ConversationContext {
   thread: ConversationThread;
@@ -509,7 +510,34 @@ export class ConversationOrchestrator {
     }
 
     // Persist workspace item via helper (validates schema and writes to repo)
-    const addedItem = await this.createWorkspaceItem(context, args, agentId, agentThread.id, userReq, { id: toolCall.id, name: toolCall.name });
+    let addedItem: WorkspaceItem | null;
+    try {
+      addedItem = await this.createWorkspaceItem(context, args, agentId, agentThread.id, userReq, { id: toolCall.id, name: toolCall.name });
+    } catch (error: any) {
+      if (error instanceof ValidationError) {
+        const toolErrorMsg = {
+          role: 'tool',
+          name: toolCall.name,
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({ success: false, error: 'invalid_workspace_payload', detail: error.message })
+        };
+        await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg as any]);
+        try {
+          await this.stepLogger.logStepError(
+            context.thread.id,
+            'director_tool',
+            0,
+            'workspace_add_item_invalid_payload',
+            context.thread.email.id,
+            context.thread.directorId
+          );
+        } catch (e) {
+          logger.debug('stepLogger.logStepError failed (workspace_add_item_invalid_payload)', { err: String(e) });
+        }
+        return true;
+      }
+      throw error;
+    }
     if (!addedItem) {
       const toolErrorMsg = {
         role: 'tool',
@@ -599,12 +627,25 @@ export class ConversationOrchestrator {
     toolCall?: { id: string; name: string }
   ): Promise<WorkspaceItem | null> {
     const handleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)) as any);
+    const mimeType = typeof args.mimeType === 'string' ? args.mimeType : undefined;
+    if (!mimeType) {
+      throw new ValidationError('workspace_add_item: mimeType is required');
+    }
+    const encoding = typeof args.encoding === 'string' ? args.encoding : undefined;
+    if (!encoding) {
+      throw new ValidationError('workspace_add_item: encoding is required');
+    }
+    const data = typeof args.data === 'string' ? args.data : undefined;
+    if (typeof data === 'undefined') {
+      throw new ValidationError('workspace_add_item: data is required');
+    }
+
     const payload: any = {
       label: typeof args.label === 'string' ? args.label : (typeof args.title === 'string' ? args.title : 'Untitled'),
       description: typeof args.description === 'string' ? args.description : undefined,
-      mimeType: typeof args.mimeType === 'string' ? args.mimeType : (typeof args.content === 'string' && !args.mimeType ? 'text/plain' : args.mimeType),
-      encoding: typeof args.encoding === 'string' ? args.encoding : 'utf8',
-      data: typeof args.data === 'string' ? args.data : (typeof args.content === 'string' ? args.content : undefined),
+      mimeType,
+      encoding,
+      data,
       // Do not coerce non-array tags; pass through for schema validation to reject
       ...(typeof args.tags !== 'undefined' ? { tags: Array.isArray(args.tags) ? args.tags : (args as any).tags } : {}),
       provenance: {

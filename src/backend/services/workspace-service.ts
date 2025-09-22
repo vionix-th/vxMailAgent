@@ -1,4 +1,4 @@
-import { WorkspaceItem, ConversationThread } from '../../shared/types';
+import { WorkspaceItem, ConversationThread, WorkspaceContent } from '../../shared/types';
 import { ValidationError, NotFoundError } from './error-handler';
 import { newId } from '../utils/id';
 import { WorkspaceItemInput } from '../../shared/types';
@@ -36,7 +36,7 @@ export class WorkspaceService {
   }
 
   async addItem(input: WorkspaceItemInput): Promise<WorkspaceItem> {
-    this.validateEncoding(input.content.encoding);
+    this.validateContent(input.content);
     // Enforce array semantics for tags when provided
     const tagsAny = (input as any)?.metadata?.tags;
     if (typeof tagsAny !== 'undefined' && !Array.isArray(tagsAny)) {
@@ -67,9 +67,6 @@ export class WorkspaceService {
   }
 
   async updateItem(id: string, patch: Partial<WorkspaceItem>, expectedRevision?: number): Promise<WorkspaceItem> {
-    if (patch.content && typeof patch.content.encoding !== 'undefined') {
-      this.validateEncoding(patch.content.encoding);
-    }
     // Enforce array semantics if tags provided in patch
     const pTags = (patch as any)?.metadata?.tags;
     if (typeof pTags !== 'undefined' && !Array.isArray(pTags)) {
@@ -81,6 +78,11 @@ export class WorkspaceService {
     if (idx === -1) throw new NotFoundError('Item not found');
 
     const current = items[idx];
+    if (patch.content) {
+      const nextContent: WorkspaceContent = { ...current.content, ...patch.content };
+      this.validateContent(nextContent);
+      patch = { ...patch, content: nextContent };
+    }
     const currentRevision = current.lifecycle.revision ?? 0;
     if (typeof expectedRevision === 'number' && currentRevision !== expectedRevision) {
       throw new ValidationError(`Revision mismatch: expected ${expectedRevision}, got ${currentRevision}`);
@@ -145,10 +147,25 @@ export class WorkspaceService {
   }
 
   private validateEncoding(enc: any): void {
-    if (typeof enc === 'undefined') return;
     const allowed = ['utf8', 'base64', 'binary'];
     if (!allowed.includes(enc)) {
       throw new ValidationError(`Invalid encoding: ${enc}`);
+    }
+  }
+
+  private validateContent(content: WorkspaceContent): void {
+    if (!content || typeof content !== 'object') {
+      throw new ValidationError('content is required');
+    }
+    if (typeof content.mimeType !== 'string' || !content.mimeType) {
+      throw new ValidationError('content.mimeType is required');
+    }
+    if (typeof content.encoding !== 'string' || !content.encoding) {
+      throw new ValidationError('content.encoding is required');
+    }
+    this.validateEncoding(content.encoding);
+    if (typeof content.data !== 'string') {
+      throw new ValidationError('content.data must be a string');
     }
   }
 }
