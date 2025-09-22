@@ -2,7 +2,7 @@ import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
 import logger from '../services/logger';
 import { requireReq, getWorkspaceItemsRepo, ReqLike } from '../utils/repo-access';
-import { errorHandler, NotFoundError } from '../services/error-handler';
+import { errorHandler, NotFoundError, ValidationError } from '../services/error-handler';
 import { WorkspaceService } from '../services/workspace-service';
 
 export interface WorkspacesRoutesDeps {
@@ -10,12 +10,17 @@ export interface WorkspacesRoutesDeps {
   setConversations: (req: ReqLike, next: ConversationThread[]) => Promise<void>;
 }
 
-function createWorkspaceService(req: ReqLike, deps?: WorkspacesRoutesDeps): WorkspaceService {
-  const ureq = requireReq(req);
+function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDeps): WorkspaceService {
+  const ureq = requireReq(req as ReqLike);
   const repo = getWorkspaceItemsRepo(ureq);
+  const conversationId = typeof req.params?.id === 'string' ? req.params.id.trim() : '';
+  if (!conversationId) {
+    throw new ValidationError('workspace id (conversation scope) is required');
+  }
   const base = {
-    getItems: async () => await repo.getAll(),
-    setItems: async (next: WorkspaceItem[]) => await repo.setAll(next),
+    conversationId,
+    getItems: async () => await repo.getByConversation(conversationId),
+    setItems: async (next: WorkspaceItem[]) => await repo.replaceForConversation(conversationId, next),
   } as const;
 
   if (!deps) {
@@ -34,14 +39,14 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
   // List all workspace items
   app.get('/api/workspaces/:id/items', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const includeDeleted = String(req.query.includeDeleted ?? 'false').toLowerCase() === 'true';
-    const service = createWorkspaceService(req as ReqLike, deps);
+    const service = createWorkspaceService(req, deps);
     const items = await service.listItems(includeDeleted);
     res.json(items);
   }));
 
   app.get('/api/workspaces/:id/items/:itemId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { itemId } = req.params as { id: string; itemId: string };
-    const service = createWorkspaceService(req as ReqLike, deps);
+    const service = createWorkspaceService(req, deps);
     const item = await service.getItem(itemId);
     if (!item) throw new NotFoundError('Item not found');
     res.json(item);
@@ -50,7 +55,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
   app.put('/api/workspaces/:id/items/:itemId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { itemId } = req.params as { id: string; itemId: string };
     const expectedRevision = typeof req.body?.expectedRevision === 'number' ? (req.body.expectedRevision as number) : undefined;
-    const service = createWorkspaceService(req as ReqLike, deps);
+    const service = createWorkspaceService(req, deps);
     const patch: Partial<WorkspaceItem> = {};
     if (req.body.content) patch.content = req.body.content;
     if (req.body.metadata) patch.metadata = req.body.metadata;
@@ -63,7 +68,7 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
   app.delete('/api/workspaces/:id/items/:itemId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { itemId } = req.params as { id: string; itemId: string };
     const isHardDelete = String(req.query.hard).toLowerCase() === 'true';
-    const service = createWorkspaceService(req as ReqLike, deps);
+    const service = createWorkspaceService(req, deps);
 
     if (isHardDelete) {
       await service.hardDeleteItem(itemId);

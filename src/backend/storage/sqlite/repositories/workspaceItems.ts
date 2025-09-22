@@ -86,4 +86,42 @@ export class WorkspaceItemsRepository extends SqliteRepository {
       return undefined;
     });
   }
+
+  async replaceForConversation(conversationId: string, items: WorkspaceItem[]): Promise<void> {
+    if (typeof conversationId !== 'string' || !conversationId) {
+      throw new Error('conversationId is required');
+    }
+
+    await this.transaction((db) => {
+      db.prepare('DELETE FROM workspace_item_tags WHERE item_id IN (SELECT id FROM workspace_items WHERE conversation_id = ?)').run(conversationId);
+      db.prepare('DELETE FROM workspace_items WHERE conversation_id = ?').run(conversationId);
+
+      const insertItem = db.prepare(
+        'INSERT INTO workspace_items (id, content_json, metadata_json, provenance_json, lifecycle_json, conversation_id) VALUES (@id, @content_json, @metadata_json, @provenance_json, @lifecycle_json, @conversation_id)'
+      );
+      const insertTag = db.prepare('INSERT INTO workspace_item_tags (item_id, tag) VALUES (@item_id, @tag)');
+
+      for (const item of items) {
+        if (item.provenance?.conversationId && item.provenance.conversationId !== conversationId) {
+          throw new Error(`Workspace item ${item.id} conversation mismatch`);
+        }
+
+        insertItem.run({
+          id: item.id,
+          content_json: stringify(item.content),
+          metadata_json: stringify({ ...(item.metadata ?? {}), tags: undefined }),
+          provenance_json: stringify({ ...item.provenance, conversationId }),
+          lifecycle_json: stringify(item.lifecycle),
+          conversation_id: conversationId,
+        });
+
+        const tags = Array.isArray(item.metadata?.tags) ? item.metadata.tags : [];
+        for (const tag of tags) {
+          insertTag.run({ item_id: item.id, tag });
+        }
+      }
+
+      return undefined;
+    });
+  }
 }

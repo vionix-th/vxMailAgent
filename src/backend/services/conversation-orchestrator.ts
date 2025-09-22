@@ -244,6 +244,10 @@ export class ConversationOrchestrator {
 
     const userContent = extractLastUserContent(thread.messages as any);
 
+    const rawHandleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)));
+    const scopedHandleTool = (name: string, params: any) =>
+      rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: thread.id } } : undefined);
+
     const agentResult = await runAgentConversation(
       thread,
       userContent,
@@ -251,7 +255,7 @@ export class ConversationOrchestrator {
       { id: apiConfig.id, name: apiConfig.name, model: apiConfig.model, ...(typeof apiConfig.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiConfig.maxCompletionTokens } : {}) } as ApiConfigPublic,
       gatedToolDescriptors,
       async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
-      createToolHandler(requireRepos(requireReq(userReq.reqLike))),
+      scopedHandleTool,
       userReq.traceId,
       { apiKey: apiConfig.apiKey },
       async (ev: ProviderEvent) => {
@@ -362,7 +366,11 @@ export class ConversationOrchestrator {
             conversationId: context.thread.id,
             directorId: context.thread.directorId,
           };
-          const exec = await handleTool(toolCall.name, enriched);
+          const exec = await handleTool(
+            toolCall.name,
+            enriched,
+            toolCall.name.startsWith('workspace_') ? { workspace: { conversationId: context.thread.id } } : undefined
+          );
           const toolMsg = {
             role: 'tool',
             name: toolCall.name,
@@ -589,7 +597,7 @@ export class ConversationOrchestrator {
     args: any
   ): Promise<void> {
     const handleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)) as any);
-    const listResult = await handleTool('workspace_list_items', {});
+    const listResult = await handleTool('workspace_list_items', {}, { workspace: { conversationId: context.thread.id } });
     if (!listResult.success) {
       await this.injectAgentErrorMessage(context.thread, toolCall.id, listResult.error || 'Failed to list workspace items', userReq);
       return;
@@ -664,7 +672,7 @@ export class ConversationOrchestrator {
       },
     };
 
-    const addResult = await handleTool('workspace_add_item', payload);
+    const addResult = await handleTool('workspace_add_item', payload, { workspace: { conversationId } });
     if (!addResult.success) {
       logger.warn('Workspace add failed', { error: addResult.error });
       return null;
@@ -694,6 +702,10 @@ export class ConversationOrchestrator {
       const srcAgent = agents.find((a: any) => a.id === agentThread.agentId);
       const gatedToolDescriptors = selectToolDescriptors('agent', srcAgent?.enabledToolCalls || []);
 
+      const rawHandleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)));
+      const scopedHandleTool = (name: string, params: any) =>
+        rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined);
+
       const agentResult = await runAgentConversation(
         agentThread,
         args.content || args.title || 'New task assigned',
@@ -701,7 +713,7 @@ export class ConversationOrchestrator {
         { id: apiConfig.id, name: apiConfig.name, model: apiConfig.model, ...(typeof apiConfig.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiConfig.maxCompletionTokens } : {}) } as any,
         gatedToolDescriptors,
         async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
-        createToolHandler(requireRepos(requireReq(userReq.reqLike))),
+        scopedHandleTool,
         userReq.traceId,
         apiConfig.apiKey,
         async (ev: ProviderEvent) => {

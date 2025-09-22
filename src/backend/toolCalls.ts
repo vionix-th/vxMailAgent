@@ -12,9 +12,16 @@ import { newId } from './utils/id';
 import type { RepoBundle } from './repository/registry';
 import { ensureAgentThread, runAgentConversation } from './services/orchestration-agent';
 import { ValidationError } from './services/error-handler';
+import { WorkspaceItemsRepository } from './storage/sqlite/repositories/workspaceItems';
+
+interface ToolCallExecutionContext {
+  workspace?: {
+    conversationId: string;
+  };
+}
 
 export function createToolHandler(repos: RepoBundle) {
-  async function handleToolByName(name: string, params: any): Promise<ToolCallResult> {
+  async function handleToolByName(name: string, params: any, context?: ToolCallExecutionContext): Promise<ToolCallResult> {
     const spec = TOOL_REGISTRY.find(t => t.name === name) || null;
     if (!spec) return { kind: name, success: false, result: null, error: 'Unknown tool name' };
     const errors: string[] = validateAgainstSchema(spec.parameters, params);
@@ -130,7 +137,13 @@ export function createToolHandler(repos: RepoBundle) {
           if (!apiCfg) return { kind: name, success: false, result: null, error: 'API config not found for agent' };
           const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
           const setConversations = async (next: ConversationThread[]) => { await repos.conversations.setAll(next); };
-          const handleTool = createToolHandler(repos);
+          const rawHandleTool = createToolHandler(repos);
+          const handleTool = (toolName: string, toolParams: any) =>
+            rawHandleTool(
+              toolName,
+              toolParams,
+              toolName.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined,
+            );
           const agentResult = await runAgentConversation(
             agentThread,
             input,
@@ -196,23 +209,23 @@ export function createToolHandler(repos: RepoBundle) {
           return { ...r, kind: name };
         }
         case 'workspace_add_item': {
-          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'add' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'add' }, repos.workspaceItems, context?.workspace?.conversationId));
           return { ...r, kind: name };
         }
         case 'workspace_list_items': {
-          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'list' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'list' }, repos.workspaceItems, context?.workspace?.conversationId));
           return { ...r, kind: name };
         }
         case 'workspace_get_item': {
-          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'get' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'get' }, repos.workspaceItems, context?.workspace?.conversationId));
           return { ...r, kind: name };
         }
         case 'workspace_update_item': {
-          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'update' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'update' }, repos.workspaceItems, context?.workspace?.conversationId));
           return { ...r, kind: name };
         }
         case 'workspace_remove_item': {
-          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'remove' }, repos.workspaceItems as unknown as Repository<WorkspaceItem>));
+          const r = await withTimeout(handleWorkspaceToolCall({ ...params, action: 'remove' }, repos.workspaceItems, context?.workspace?.conversationId));
           return { ...r, kind: name };
         }
         default:
@@ -341,16 +354,27 @@ function validScope(s: any): s is MemoryScope {
   return s === 'global' || s === 'shared' || s === 'local';
 }
 
-async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<WorkspaceItem>): Promise<ToolCallResult> {
+async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceItemsRepository, scopedConversationId?: string): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] workspace', { payload });
   try {
+    const conversationId = typeof scopedConversationId === 'string' && scopedConversationId.trim().length > 0
+      ? scopedConversationId.trim()
+      : (typeof payload?.conversationId === 'string' && payload.conversationId.trim().length > 0
+        ? payload.conversationId.trim()
+        : (typeof payload?.provenance?.conversationId === 'string' ? payload.provenance.conversationId.trim() : undefined));
+
+    if (!conversationId) {
+      throw new ValidationError('workspace tools require conversation scope');
+    }
+
     const service = new WorkspaceService({
-      getItems: () => workspaceRepo.getAll(),
-      setItems: (next) => workspaceRepo.setAll(next),
+      conversationId,
+      getItems: () => workspaceRepo.getByConversation(conversationId),
+      setItems: (next) => workspaceRepo.replaceForConversation(conversationId, next),
     });
     if (payload.action === 'add') {
       const prov = payload?.provenance || {};
-      const provErrors = validateWorkspaceProvenance(prov);
+      const provErrors = validateWorkspaceProvenance({ ...prov, conversationId });
       if (provErrors.length) {
         return { kind: 'workspace', success: false, result: { ok: false, errors: provErrors, received: sanitize(payload) }, error: 'Invalid workspace add payload' };
       }
@@ -379,7 +403,7 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<W
         },
         provenance: {
           emailId: prov.emailId,
-          conversationId: prov.conversationId,
+          conversationId,
           createdBy: prov.createdBy,
           creatorId: prov.creatorId,
           ...(typeof prov.toolName === 'string' ? { toolName: prov.toolName } : { toolName: 'workspace_add_item' })
