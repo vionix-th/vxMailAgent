@@ -1,9 +1,10 @@
 import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
+import { requireReq, requireUserRepo, ReqLike } from '../utils/repo-access';
 import { errorHandler, NotFoundError } from '../services/error-handler';
 import { WorkspaceService } from '../services/workspace-service';
+import { Repository } from '../repository/core';
 
 export interface WorkspacesRoutesDeps {
   getConversations: (req?: ReqLike) => Promise<ConversationThread[]>;
@@ -12,9 +13,15 @@ export interface WorkspacesRoutesDeps {
 
 function createWorkspaceService(req: ReqLike, deps?: WorkspacesRoutesDeps): WorkspaceService {
   const ureq = requireReq(req);
+  const workspaceRepo = requireUserRepo(ureq, 'workspaceItems') as unknown as Repository<WorkspaceItem>;
+  if (!workspaceRepo || typeof workspaceRepo.getAll !== 'function' || typeof workspaceRepo.mutate !== 'function') {
+    throw new Error('Workspace repository must support getAll and mutate operations');
+  }
   const base = {
-    getItems: async () => await repoGetAll<WorkspaceItem>(ureq, 'workspaceItems'),
-    setItems: async (next: WorkspaceItem[]) => await repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', next),
+    getItems: async () => await workspaceRepo.getAll(),
+    mutateItems: async (updater: (current: WorkspaceItem[]) => Promise<WorkspaceItem[]> | WorkspaceItem[]) => {
+      return await workspaceRepo.mutate!(updater);
+    },
   } as const;
 
   if (!deps) {

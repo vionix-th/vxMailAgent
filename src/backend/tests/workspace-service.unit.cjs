@@ -7,7 +7,11 @@ test('workspace-service: add, update, soft/hard delete, revision guard', async (
   const items = [];
   const svc = new WorkspaceService({
     getItems: async () => items.slice(),
-    setItems: async (next) => { items.splice(0, items.length, ...next); },
+    mutateItems: async (updater) => {
+      const next = await Promise.resolve(updater(items.slice()));
+      items.splice(0, items.length, ...next);
+      return items.slice();
+    },
   });
   // Add
   const added = await svc.addItem({
@@ -35,7 +39,14 @@ test('workspace-service: add, update, soft/hard delete, revision guard', async (
 test('workspace-service: encoding validation', async () => {
   const { WorkspaceService } = require(path.join(__dirname, '..', 'dist', 'backend', 'services', 'workspace-service.js'));
   const items = [];
-  const svc = new WorkspaceService({ getItems: async () => items.slice(), setItems: async (n) => { items.splice(0, items.length, ...n); } });
+  const svc = new WorkspaceService({
+    getItems: async () => items.slice(),
+    mutateItems: async (updater) => {
+      const next = await Promise.resolve(updater(items.slice()));
+      items.splice(0, items.length, ...next);
+      return items.slice();
+    },
+  });
   await assert.rejects(() => svc.addItem({
     content: { mimeType: 'text/plain', encoding: 'bogus', data: 'x' },
     metadata: { tags: [] },

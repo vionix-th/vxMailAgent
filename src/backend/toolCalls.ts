@@ -343,9 +343,12 @@ function validScope(s: any): s is MemoryScope {
 async function handleWorkspaceToolCall(payload: any, workspaceRepo: Repository<WorkspaceItem>): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] workspace', { payload });
   try {
+    if (typeof workspaceRepo.mutate !== 'function') {
+      throw new Error('Workspace repository must support mutate operations');
+    }
     const service = new WorkspaceService({
       getItems: () => workspaceRepo.getAll(),
-      setItems: (next) => workspaceRepo.setAll(next),
+      mutateItems: (updater) => workspaceRepo.mutate!(updater),
     });
     if (payload.action === 'add') {
       const prov = payload?.provenance || {};

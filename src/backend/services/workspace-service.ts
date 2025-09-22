@@ -4,31 +4,36 @@ import { newId } from '../utils/id';
 import { WorkspaceItemInput } from '../../shared/types';
 
 export type GetItemsFn = () => Promise<WorkspaceItem[]>;
-export type SetItemsFn = (next: WorkspaceItem[]) => Promise<void>;
+export type MutateItemsFn = (
+  updater: (current: WorkspaceItem[]) => Promise<WorkspaceItem[]> | WorkspaceItem[]
+) => Promise<WorkspaceItem[]>;
 export type GetConversationsFn = () => Promise<ConversationThread[]>;
 export type SetConversationsFn = (next: ConversationThread[]) => Promise<void>;
 
 export interface WorkspaceServiceDeps {
   getItems: GetItemsFn;
-  setItems: SetItemsFn;
+  mutateItems: MutateItemsFn;
   getConversations?: GetConversationsFn;
   setConversations?: SetConversationsFn;
 }
 
 export class WorkspaceService {
   private readonly getItems: GetItemsFn;
-  private readonly setItems: SetItemsFn;
+  private readonly mutateItems: MutateItemsFn;
 
   constructor(deps: WorkspaceServiceDeps) {
     this.getItems = deps.getItems;
-    this.setItems = deps.setItems;
+    if (typeof deps.mutateItems !== 'function') {
+      throw new Error('WorkspaceService requires mutateItems dependency');
+    }
+    this.mutateItems = deps.mutateItems;
     // Conversation association is derivable; optional deps intentionally unused.
   }
 
   async listItems(includeDeleted: boolean = false): Promise<WorkspaceItem[]> {
     const items = await this.getItems();
     return includeDeleted ? items : items.filter(i => !i.lifecycle.deleted);
-    }
+  }
 
   async getItem(id: string): Promise<WorkspaceItem | null> {
     const items = await this.getItems();
@@ -61,8 +66,7 @@ export class WorkspaceService {
       },
     };
 
-    const items = await this.getItems();
-    await this.setItems([...items, item]);
+    await this.mutateItems((current) => [...current, item]);
     return item;
   }
 
@@ -76,59 +80,69 @@ export class WorkspaceService {
       throw new ValidationError('metadata.tags must be an array of strings');
     }
 
-    const items = await this.getItems();
-    const idx = items.findIndex(i => i.id === id);
-    if (idx === -1) throw new NotFoundError('Item not found');
+    let updated: WorkspaceItem | null = null;
+    await this.mutateItems((current) => {
+      const idx = current.findIndex(i => i.id === id);
+      if (idx === -1) {
+        throw new NotFoundError('Item not found');
+      }
+      const target = current[idx];
+      const currentRevision = target.lifecycle.revision ?? 0;
+      if (typeof expectedRevision === 'number' && currentRevision !== expectedRevision) {
+        throw new ValidationError(`Revision mismatch: expected ${expectedRevision}, got ${currentRevision}`);
+      }
 
-    const current = items[idx];
-    const currentRevision = current.lifecycle.revision ?? 0;
-    if (typeof expectedRevision === 'number' && currentRevision !== expectedRevision) {
-      throw new ValidationError(`Revision mismatch: expected ${expectedRevision}, got ${currentRevision}`);
+      const nextItem: WorkspaceItem = {
+        ...target,
+        ...patch,
+        lifecycle: {
+          ...target.lifecycle,
+          ...patch.lifecycle,
+          updated: new Date().toISOString(),
+          revision: currentRevision + 1,
+        },
+      };
+      updated = nextItem;
+      const next = current.slice();
+      next[idx] = nextItem;
+      return next;
+    });
+    if (!updated) {
+      throw new NotFoundError('Item not found');
     }
-
-    const updated: WorkspaceItem = {
-      ...current,
-      ...patch,
-      lifecycle: {
-        ...current.lifecycle,
-        ...patch.lifecycle,
-        updated: new Date().toISOString(),
-        revision: currentRevision + 1,
-      },
-    };
-
-    const next = items.slice();
-    next[idx] = updated;
-    await this.setItems(next);
     return updated;
   }
 
   async softDeleteItem(id: string): Promise<WorkspaceItem> {
-    const items = await this.getItems();
-    const idx = items.findIndex(i => i.id === id);
-    if (idx === -1) throw new NotFoundError('Item not found');
-
-    const current = items[idx];
-    const updated: WorkspaceItem = {
-      ...current,
-      lifecycle: {
-        ...current.lifecycle,
-        deleted: true,
-        updated: new Date().toISOString(),
-        revision: (current.lifecycle.revision ?? 0) + 1,
-      },
-    };
-
-    const next = items.slice();
-    next[idx] = updated;
-    await this.setItems(next);
-    return updated;
+    let deleted: WorkspaceItem | null = null;
+    await this.mutateItems((current) => {
+      const idx = current.findIndex(i => i.id === id);
+      if (idx === -1) {
+        throw new NotFoundError('Item not found');
+      }
+      const existing = current[idx];
+      const nextItem: WorkspaceItem = {
+        ...existing,
+        lifecycle: {
+          ...existing.lifecycle,
+          deleted: true,
+          updated: new Date().toISOString(),
+          revision: (existing.lifecycle.revision ?? 0) + 1,
+        },
+      };
+      deleted = nextItem;
+      const next = current.slice();
+      next[idx] = nextItem;
+      return next;
+    });
+    if (!deleted) {
+      throw new NotFoundError('Item not found');
+    }
+    return deleted;
   }
 
   async hardDeleteItem(id: string): Promise<void> {
-    const items = await this.getItems();
-    const next = items.filter(i => i.id !== id);
-    await this.setItems(next);
+    await this.mutateItems((current) => current.filter(i => i.id !== id));
   }
 
   // Note: Association is derivable by WorkspaceItem.provenance.conversationId.
@@ -138,9 +152,11 @@ export class WorkspaceService {
    * Purge all workspace items for the current user. Returns the number of deleted items.
    */
   async purgeAll(): Promise<number> {
-    const items = await this.getItems();
-    const count = Array.isArray(items) ? items.length : 0;
-    await this.setItems([]);
+    let count = 0;
+    await this.mutateItems((current) => {
+      count = Array.isArray(current) ? current.length : 0;
+      return [];
+    });
     return count;
   }
 

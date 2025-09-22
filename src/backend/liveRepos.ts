@@ -1,4 +1,4 @@
-import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent } from '../shared/types';
+import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent, WorkspaceItem } from '../shared/types';
 import { requireReq, requireUserRepo, repoGetAll, repoSetAll, requireRepos, ReqLike } from './utils/repo-access';
 import { RepoBundle } from './repository/registry';
 import { loadSettings } from './services/settings';
@@ -32,6 +32,11 @@ export interface LiveRepos {
   setAccounts(req: ReqLike, next: any[]): Promise<void>;
   getFetcherLog(req?: ReqLike): Promise<any[]>;
   setFetcherLog(req: ReqLike, next: any[]): Promise<void>;
+  getWorkspaceItems(req?: ReqLike): Promise<WorkspaceItem[]>;
+  mutateWorkspaceItems(
+    req: ReqLike,
+    updater: (current: WorkspaceItem[]) => Promise<WorkspaceItem[]> | WorkspaceItem[]
+  ): Promise<WorkspaceItem[]>;
 }
 
 export function createLiveRepos(): LiveRepos {
@@ -117,6 +122,28 @@ export function createLiveRepos(): LiveRepos {
     getConversationById: async (req: ReqLike, id: string) => {
       const conversations = await get<ConversationThread>('conversations')(req);
       return conversations.find((c: ConversationThread) => c.id === id) || null;
+    },
+    getWorkspaceItems: get<WorkspaceItem>('workspaceItems'),
+    mutateWorkspaceItems: async (
+      req: ReqLike,
+      updater: (current: WorkspaceItem[]) => Promise<WorkspaceItem[]> | WorkspaceItem[],
+    ): Promise<WorkspaceItem[]> => {
+      const r = requireReq(req);
+      const bundle = requireRepos(r);
+      const repo = bundle.workspaceItems as unknown as {
+        mutate?: (
+          fn: (cur: WorkspaceItem[]) => Promise<WorkspaceItem[]> | WorkspaceItem[]
+        ) => Promise<WorkspaceItem[]>;
+      };
+      if (!repo || typeof repo.mutate !== 'function') {
+        throw new Error('Workspace repository must support atomic mutate');
+      }
+      return await repo.mutate((cur) => {
+        if (!Array.isArray(cur)) {
+          throw new Error('Workspace repository returned non-array state');
+        }
+        return updater(cur);
+      });
     },
   };
 }

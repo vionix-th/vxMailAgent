@@ -1,8 +1,9 @@
 import express from 'express';
-import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
+import { requireReq, repoGetAll, repoSetAll, requireUserRepo, ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler } from '../services/error-handler';
 import { WorkspaceService } from '../services/workspace-service';
+import { Repository } from '../repository/core';
 
 export default function registerCleanupRoutes(
   app: express.Express,
@@ -65,9 +66,13 @@ export default function registerCleanupRoutes(
       repoGetAll<any>(ureq, 'traces'),
       repoGetAll<any>(ureq, 'workspaceItems'),
     ]);
+    const workspaceRepo = requireUserRepo(ureq, 'workspaceItems') as unknown as Repository<any>;
+    if (!workspaceRepo || typeof workspaceRepo.getAll !== 'function' || typeof workspaceRepo.mutate !== 'function') {
+      throw new Error('Workspace repository must support getAll and mutate operations');
+    }
     const wsService = new WorkspaceService({
-      getItems: async () => await repoGetAll<any>(ureq, 'workspaceItems'),
-      setItems: async (next) => await repoSetAll<any>(ureq, 'workspaceItems', next),
+      getItems: async () => await workspaceRepo.getAll(),
+      mutateItems: async (updater) => await workspaceRepo.mutate!(updater),
     });
     
     // Clear fetcher log through manager
@@ -121,9 +126,13 @@ export default function registerCleanupRoutes(
   }));
   app.delete('/api/cleanup/workspace-items', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
+    const workspaceRepo = requireUserRepo(ureq, 'workspaceItems') as unknown as Repository<any>;
+    if (!workspaceRepo || typeof workspaceRepo.getAll !== 'function' || typeof workspaceRepo.mutate !== 'function') {
+      throw new Error('Workspace repository must support getAll and mutate operations');
+    }
     const service = new WorkspaceService({
-      getItems: async () => await repoGetAll<any>(ureq, 'workspaceItems'),
-      setItems: async (next) => await repoSetAll<any>(ureq, 'workspaceItems', next),
+      getItems: async () => await workspaceRepo.getAll(),
+      mutateItems: async (updater) => await workspaceRepo.mutate!(updater),
     });
     const deleted = await service.purgeAll();
     res.json({ success: true, deleted, message: `Deleted ${deleted} workspace items` });
