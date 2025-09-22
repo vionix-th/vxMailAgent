@@ -2,7 +2,7 @@ import { OrchestrationEvent, ProviderEvent, Trace, Span, OrchestrationOutcome, D
 import { createProviderEvent } from '../../shared/constructors';
 import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS, TRACE_VERBOSE } from '../config';
 import { newId } from '../utils/id';
-import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../repository/fileRepositories';
+import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../storage/sqlite/repositories';
 import { requireReq, requireUserRepo } from '../utils/repo-access';
 import type { ReqLike } from '../interfaces';
 // logger import removed; direct repo usage without queue
@@ -158,7 +158,7 @@ export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok'
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   void repo.update(traceId, (t) => {
-    const s = t.spans.find(x => x.id === spanId);
+    const s = t.spans.find((span) => span.id === spanId);
     if (!s) return;
     const end = new Date().toISOString();
     s.end = end;
@@ -176,7 +176,7 @@ export function annotateSpan(traceId: string, spanId: string, annotations: Recor
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   void repo.update(traceId, (t) => {
-    const s = t.spans.find(x => x.id === spanId);
+    const s = t.spans.find((span) => span.id === spanId);
     if (!s) return;
     s.annotations = Object.assign({}, s.annotations || {}, annotations);
   });

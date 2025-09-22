@@ -1,6 +1,6 @@
 import { TemplateItem } from '../../shared/types';
 import logger from './logger';
-import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
+import { requireReq, getTemplatesRepo, ReqLike } from '../utils/repo-access';
 
 export const DEFAULT_OPTIMIZER: TemplateItem = {
   id: 'prompt_optimizer',
@@ -32,7 +32,8 @@ export const DEFAULT_OPTIMIZER: TemplateItem = {
 export async function loadUserTemplates(req?: ReqLike): Promise<TemplateItem[]> {
   try {
     const ureq = requireReq(req);
-    const arr = await repoGetAll<TemplateItem>(ureq, 'templates');
+    const repo = getTemplatesRepo(ureq);
+    const arr = await repo.getAll();
     // Producer initializes/ensures optimizer; do not seed here.
     if (!Array.isArray(arr)) return [];
     return arr as TemplateItem[];
@@ -50,7 +51,8 @@ export async function updateTemplatePartial(
   patch: Partial<Pick<TemplateItem, 'name' | 'description' | 'messages'>>
 ): Promise<void> {
   const ureq = requireReq(req);
-  const all = await repoGetAll<TemplateItem>(ureq, 'templates');
+  const repo = getTemplatesRepo(ureq);
+  const all = await repo.getAll();
   const idx = all.findIndex(t => t.id === id);
   if (idx === -1) throw new Error('Template not found');
   const cur = all[idx];
@@ -61,6 +63,6 @@ export async function updateTemplatePartial(
     ...(Array.isArray(patch.messages) ? { messages: patch.messages as any } : {}),
   };
   all[idx] = next;
-  await repoSetAll<TemplateItem>(ureq, 'templates', all);
+  await repo.setAll(all);
   logger.info('Updated template (partial)', { id });
 }

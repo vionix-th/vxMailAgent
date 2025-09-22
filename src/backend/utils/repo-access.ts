@@ -1,6 +1,24 @@
 import type { UserContext } from '../middleware/user-context';
 import type { ReqLike } from '../interfaces';
 import { RepoBundle } from '../repository/registry';
+import type {
+  AccountsRepository,
+  SettingsRepository,
+  PromptsRepository,
+  AgentsRepository,
+  DirectorsRepository,
+  FiltersRepository,
+  TemplatesRepository,
+  ImprintsRepository,
+  WorkspaceItemsRepository,
+  ConversationsRepository,
+  MemoryRepository,
+  EmailsRepository,
+  FetcherLogRepository,
+  ProviderEventsRepository,
+  TracesRepository,
+  OrchestrationLogRepository,
+} from '../storage/sqlite';
 
 export type { ReqLike } from '../interfaces';
 
@@ -25,16 +43,66 @@ export function requireRepos(req: ReqLike): RepoBundle {
   return requireReq(req).userContext.repos;
 }
 
-/** Get all items from a repository by key. */
-export async function repoGetAll<T = any>(req: ReqLike, key: keyof RepoBundle): Promise<T[]> {
-  const repo = requireUserRepo(req, key) as unknown as { getAll: () => Promise<T[]> };
-  if (!repo || typeof (repo as any).getAll !== 'function') throw new Error('Repository does not support getAll');
-  return (repo as any).getAll();
+export function getAccountsRepo(req: ReqLike): AccountsRepository {
+  return requireUserRepo(req, 'accounts');
 }
 
-/** Replace all items in a repository by key. */
-export async function repoSetAll<T = any>(req: ReqLike, key: keyof RepoBundle, next: T[]): Promise<void> {
-  const repo = requireUserRepo(req, key) as unknown as { setAll?: (n: T[]) => Promise<void> };
-  if (!repo || typeof (repo as any).setAll !== 'function') throw new Error('Repository does not support setAll');
-  await (repo as any).setAll!(next);
+export function getSettingsRepo(req: ReqLike): SettingsRepository {
+  return requireUserRepo(req, 'settings');
+}
+
+export function getPromptsRepo(req: ReqLike): PromptsRepository {
+  return requireUserRepo(req, 'prompts');
+}
+
+export function getAgentsRepo(req: ReqLike): AgentsRepository {
+  return requireUserRepo(req, 'agents');
+}
+
+export function getDirectorsRepo(req: ReqLike): DirectorsRepository {
+  return requireUserRepo(req, 'directors');
+}
+
+export function getFiltersRepo(req: ReqLike): FiltersRepository {
+  return requireUserRepo(req, 'filters');
+}
+
+export function getTemplatesRepo(req: ReqLike): TemplatesRepository {
+  return requireUserRepo(req, 'templates');
+}
+
+export function getImprintsRepo(req: ReqLike): ImprintsRepository {
+  return requireUserRepo(req, 'imprints');
+}
+
+export function getWorkspaceItemsRepo(req: ReqLike): WorkspaceItemsRepository {
+  return requireUserRepo(req, 'workspaceItems');
+}
+
+export function getConversationsRepo(req: ReqLike): ConversationsRepository {
+  return requireUserRepo(req, 'conversations');
+}
+
+export function getMemoryRepo(req: ReqLike): MemoryRepository {
+  return requireUserRepo(req, 'memory');
+}
+
+export function getEmailsRepo(req: ReqLike): EmailsRepository {
+  return requireUserRepo(req, 'emails');
+}
+
+export function getFetcherLogRepo(req: ReqLike): FetcherLogRepository {
+  return requireUserRepo(req, 'fetcherLog');
+}
+
+export function getProviderEventsRepo(req: ReqLike): ProviderEventsRepository {
+  return requireUserRepo(req, 'providerEvents');
+}
+
+export function getTracesRepo(req: ReqLike): TracesRepository {
+  return requireUserRepo(req, 'traces');
+}
+
+export function getOrchestrationLogRepo(req: ReqLike): OrchestrationLogRepository {
+  return requireUserRepo(req, 'orchestrationLog');
 }

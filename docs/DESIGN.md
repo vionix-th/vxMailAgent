@@ -10,7 +10,7 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 - **Frontend**: React + Vite (http://localhost:3000 in development)
 - **Backend**: Node.js + Express (http://localhost:3001 in development)
 - **Authentication**: OAuth 2.0 with JWT sessions
-- **Data Storage**: Encrypted JSON files with strict user isolation
+- **Data Storage**: SQLite (shared + per-user databases) with strict user isolation
 - **AI Integration**: OpenAI API for natural language processing
 
 ### Terminology
@@ -91,9 +91,9 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 ### Data Protection
 
 #### At Rest Encryption
-- **AES-256-GCM** with random IVs when `VX_MAILAGENT_KEY` is a valid 64‑char hex key; plaintext JSON in development when unset/invalid.
-- Secure key management via environment variables; no hardcoded keys.
-- Key rotation: not implemented; rotate by re‑encrypting data offline if required.
+- **SQLite page encryption support**: The runtime is compatible with SQLCipher/SQLite SEE. Provide an encrypted SQLite build and key management to enable transparent page encryption.
+- Legacy JSON encryption (AES-256-GCM controlled by `VX_MAILAGENT_KEY`) is deprecated and retained only for backward compatibility tools.
+- Key rotation: not implemented; rotate by provisioning a new encrypted database and migrating rows offline if required.
 
 #### In-Transit Security
 - Deployment: terminate TLS (TLS 1.2+) at proxy/load balancer
@@ -154,7 +154,7 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Reply Sending**: Not currently exposed via an HTTP endpoint. A stub implementation exists in `src/backend/reply.ts`; future provider-integrated sending will use the signature managed at the account level. There is no global or per-agent/director signature.
 - **Runtime Configuration**: Users add/edit/reorder directors, agents, API settings, filters, signatures, virtual root, memories (searchable table with scope switching).
 - **Real-Life Workflow**: A manager filters client emails (e.g., `client*@domain.com` or “urgent”) to a director, which routes to a psychologist agent (mood analysis, memory update) and response agent (replies, to-do/file access). Reviews results, copies replies, manages memories.
-- **Corporate Compliance**: Localhost, OAuth, encrypted JSON storage.
+- **Corporate Compliance**: Localhost, OAuth, per-user SQLite databases (optionally encrypted via SQLCipher/SEE).
 - **Simplification**: No PDF generation, simple filter UI, single Node.js application, OpenAI-only, no complex client-server protocols (e.g., IPC, WebSocket).
 
 ## 4. API Design
@@ -187,7 +187,7 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Route Helpers (CRUD)**: Shared helper constructs standard list/get/create/update/delete endpoints with optional reorder; used by `agents`, `directors`, `filters`, and `imprints` route modules.
 - **Backend**: Node.js with Express.js for routing, email processing, tool calls, and persistence.
 - **Frontend**: React with HTML/JavaScript/CSS, styled with Tailwind CSS for a professional look, using Material-UI (or similar) for components (modals, tables, buttons) to ensure developer/user-friendliness.
-- **Persistence**: Encrypted JSON files store configurations, filters, signatures, virtual root, and memories.
+- **Persistence**: SQLite (shared + per-user databases). Critical tables mirror the types in `src/shared/types.ts` and remove the need for JSON synthesis.
 - **Email Access**: Gmail API (`googleapis`) and Microsoft Graph API (`msal-node`) for email, calendar, and to-do access.
 - **AI Integration**: OpenAI API (`openai` library) for director-led orchestration and agent tasks, using function-calling (tools, `tool_choice`).
 - **OS Functions**: Node.js `fs` and `path` modules for file system access, restricted to virtual root.
@@ -199,9 +199,9 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Authentication**: JWT-based sessions with Google OAuth2 OIDC for login
 - **User Context**: Middleware attaches `{ uid, repos }` to authenticated requests
 - **Repository Registry**: Per-user repository bundles with TTL-based eviction
-- **Path Safety**: User paths validated under `DATA_DIR/users/{uid}/` with 0700 permissions
+- **Path Safety**: User directories under `DATA_DIR/users/{uid}/` created with `0700` permissions; repository files are SQLite databases.
 - **Zero Global Fallbacks**: All data access requires user context; throws errors if missing
-- **Global Data Restriction**: Only `users.json` permitted as global application data
+- **Global Data Restriction**: Only the shared SQLite database (`data/system.sqlite3`) holds application-wide metadata (user registry).
 
 ### Isolation Enforcement
 
@@ -212,24 +212,17 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Settings Service**: Requires user context for all operations; no global settings access
 - **Logging Service**: All logging functions require user context parameter; no global repositories
 - **Route Dependencies**: All routes pass `LiveRepos` and services directly to route handlers
-- **Path Constants**: Only `USERS_FILE` constant exists; all other global file constants removed
+- **Path Constants**: Helper `userPaths()` + SQLite path factory derive all locations; no hardcoded JSON filenames remain
 - **Repository Implementations**: Repositories operate in per-user mode only; legacy global helpers and mode flags were removed. Max-item caps are enforced per user via `USER_MAX_LOGS_PER_TYPE`.
 - **Fetcher Manager**: Per-user instances accepting `LiveRepos` and service functions directly
 
 Data files are organized as:
 ```
 data/
-├── users.json              # Global user registry (login data only - NOT exposed via UI/API)
+├── system.sqlite3          # Global user registry (login data only - NOT exposed via UI/API)
 └── users/{uid}/            # Per-user isolated data
-    ├── accounts.json
-    ├── settings.json
-    ├── conversations.json
-    ├── workspaceItems.json
-    └── logs/
-        ├── fetcher.json
-        ├── orchestration.json
-        ├── provider-events.json
-        └── traces.json
+    ├── user.sqlite3        # Accounts, prompts, directors, agents, filters, conversations, workspace items, logs, traces, etc.
+    └── logs/               # (Optional) legacy NDJSON logs retained for backward-compatible tooling
 ```
 
 ### 3.2 Components
@@ -397,25 +390,17 @@ data/
   - **Shared Components**: `MessageListEditor` (`src/frontend/src/components/MessageListEditor.tsx`) centralizes CRUD operations for prompt/template message arrays; dialogs such as `PromptEditDialog` and `TemplateEditDialog` consume it with configuration (default role, variable insertion, i18n labels).
 
 #### 3.2.7 Persistence
-- **Storage**: Encrypted JSON file stores:
-  - Accounts (email, provider, signature).
-  - API configs (key, model).
-  - Directors (name, prompt, imprint, API config, accounts, memory access).
-  - Agents (name, prompt, imprint, tools, API config).
-  - Filters (field, regex, director).
-  - Virtual root (path).
-  - Memories (id, content, scope, timestamp, directorId, agentId).
-- **Implementation**: Node.js `crypto` for encryption, runtime updates saved immediately.
-  - **Encryption Key (VX_MAILAGENT_KEY)**:
-    - 64-character hex value enables encryption at rest for all persisted JSON data files (accounts, configs, conversations, logs) and workspace storage (indexes, manifests).
-    - Empty string or a missing/invalid key results in PLAINTEXT mode. The backend still starts and logs a startup warning (see `src/backend/config.ts::warnIfInsecure()`). This matches the dev-first behavior noted in "Current Implementation Snapshot".
-    - State (encrypted vs plaintext) is logged with timestamp; all persistence operations include structured, timestamped logs.
-
+- **Storage**: SQLite.
+  - Shared DB (`data/system.sqlite3`) stores only global application metadata (user registry for login).
+  - Per-user DB (`data/users/<uid>/user.sqlite3`) stores accounts, settings, prompts, directors, agents, filters, conversations, memories, workspace items, logs, provider events, traces, etc. Schemas mirror `src/shared/types.ts` and enforce constraints (NOT NULL, CHECK, foreign keys).
+- **Implementation**: `better-sqlite3` with WAL mode and serialized connection factory.
+  - Per-user repositories expose typed CRUD/mutate operations; transactions are used for atomic mutations.
+  - SQL-based pruning enforces retention TTLs (`*_TTL_DAYS`) and per-user caps (`USER_MAX_LOGS_PER_TYPE`).
+- **Encryption**: Link against SQLCipher/SEE to enable page-level encryption. The historical JSON/AES path (`VX_MAILAGENT_KEY`) is retained solely for compatibility tooling.
 - **Conversations and Provider Events**
-  - Conversations are stored as `ConversationThread` objects containing canonical OpenAI-aligned `messages[]` and lifecycle (`status`, timestamps). They do not embed provider events or workspace items.
-  - Provider requests/responses/errors are persisted as separate append-only `ProviderEvent` entries (e.g., JSONL or an events array per thread). These include timestamps, latency, token usage, and redacted payloads.
-  - Diagnostics APIs read from Provider Events; chat UIs read strictly from `messages[]`.
-  - Large payloads may be truncated with external references (e.g., file manifests) to control storage growth.
+  - `conversation_threads` + `conversation_messages` hold canonical transcripts (OpenAI-aligned `messages[]` plus lifecycle).
+  - Provider requests/responses/errors persist in the `provider_events` table with timestamps, latency, token usage, and redacted payloads.
+  - Workspace items, traces, and orchestration logs live in dedicated tables keyed by conversation/thread IDs.
 
 #### 3.2.8 Director-Driven Orchestration (Model-In-Control)
 - **Overview**: The director’s LLM is authoritative. It initializes the conversation for each routed email and controls the flow via function-calling.
@@ -515,7 +500,8 @@ The following are system defaults and are configurable via environment variables
   - `USER_MAX_LOGS_PER_TYPE`: 10000
 
 - Encryption at rest
-  - `VX_MAILAGENT_KEY` (64-char hex) enables AES-256-GCM. If missing/invalid, plaintext mode is used (logged warning) for development.
+  - SQLCipher/SEE recommended for production. Provide key management out-of-band and configure the SQLite runtime accordingly.
+  - `VX_MAILAGENT_KEY` remains for legacy JSON exports; new deployments should prefer encrypted SQLite instead of relying on this flag.
 
 Notes:
 - All values above are per-user where applicable (logs, conversations). There are no global data caps beyond the user registry.

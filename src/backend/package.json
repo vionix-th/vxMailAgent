@@ -10,6 +10,7 @@
     "start": "node dist/backend/index.js",
     "prebuild": "npm run clean",
     "build": "tsc",
+    "postbuild": "cp -R storage/sqlite/schema dist/backend/storage/sqlite/",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"**/*.ts\"",
     "check": "npm run lint && npm run typecheck && npm run build",
@@ -24,8 +25,10 @@
   },
   "dependencies": {
     "@azure/msal-node": "^3.7.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "better-sqlite3": "^12.2.0",
     "cookie": "^1.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",

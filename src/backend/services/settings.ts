@@ -1,6 +1,6 @@
 import logger from './logger';
 import { RepositoryError } from './error-handler';
-import { requireReq, repoGetAll, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
+import { requireReq, requireUid, ReqLike, getSettingsRepo } from '../utils/repo-access';
 
 import type { ApiConfigPublic } from '../../shared/types';
 
@@ -17,7 +17,8 @@ export interface Settings {
 /** Load settings from the per-user repository (single settings object). */
 export async function loadSettings(req?: ReqLike): Promise<Settings> {
   const ureq = requireReq(req);
-  const all = await repoGetAll<Settings>(ureq, 'settings');
+  const repo = getSettingsRepo(ureq);
+  const all = await repo.getAll();
   if (!Array.isArray(all) || all.length === 0) {
     throw new RepositoryError('Settings not initialized');
   }
@@ -43,7 +44,8 @@ export async function loadSettings(req?: ReqLike): Promise<Settings> {
 export async function saveSettings(settings: Settings, req: ReqLike): Promise<void> {
   const ureq = requireReq(req);
   try {
-    await repoSetAll<Settings>(ureq, 'settings', [settings]);
+    const repo = getSettingsRepo(ureq);
+    await repo.setAll([settings]);
     logger.debug('Saved settings', { uid: requireUid(ureq) });
   } catch (e) {
     logger.error('Failed to save settings', { err: e });

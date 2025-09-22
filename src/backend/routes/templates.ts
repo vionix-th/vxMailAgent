@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireUserContext } from '../middleware/user-context';
 import logger from '../services/logger';
-import { requireReq, repoSetAll, requireUid, ReqLike } from '../utils/repo-access';
+import { requireReq, getTemplatesRepo, requireUid, ReqLike } from '../utils/repo-access';
 import type { TemplateItem } from '../../shared/types';
 import { errorHandler, ValidationError } from '../services/error-handler';
 import { updateTemplatePartial, loadUserTemplates } from '../services/templates';
@@ -12,7 +12,8 @@ import { updateTemplatePartial, loadUserTemplates } from '../services/templates'
 
 async function saveTemplates(req: ReqLike, items: TemplateItem[]) {
   const ureq = requireReq(req);
-  await repoSetAll<TemplateItem>(ureq, 'templates', items);
+  const repo = getTemplatesRepo(ureq);
+  await repo.setAll(items);
 }
 
 export default function registerTemplatesRoutes(app: express.Express) {

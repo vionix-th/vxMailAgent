@@ -1,134 +1,53 @@
-# Backend TODO (from AUDIT) — Dependency‑Ordered
+# SQLite Persistence Refactor
+_Last updated: 2025-09-22_
 
-Author: The Caesar
-Source: docs/AUDIT.md (2025-09-21)
-Scope: Backend only; producer‑first fixes. No shims or consumer workarounds.
+## Status Summary
+- **Current phase**: #4 Repository Adapters (complete)
+- **Next milestone**: #5 Service Layer Integration
 
-Note: Each task lists predecessors so work can proceed safely without breaking invariants.
+## 0. Preconditions — Status: ✅ Completed
+- [x] Audit existing JSON persistence stack (`src/backend/repository/fileRepositories.ts`, `persistence.ts`, `liveRepos.ts`, `user-context.ts`).
+- [x] Confirm environment: Node.js (CommonJS) with TypeScript 5.7, Express, Pino logging, per-user data under `data/users/*`).
+- [x] Accept scope: no legacy JSON migration, no transitional dual-write, encryption deferred.
 
-1) T01 — Producer init for per‑user Settings and Templates (Critical)
-- Summary: Persist defaults at bundle creation; remove need for route/service synthesis.
-- Predecessors: none
-- Files: `src/backend/repository/registry.ts`, `src/backend/services/settings.ts`, `src/backend/routes/templates.ts`
-- Change Gate:
-  - Defect Hypothesis: Missing producer initialization causes consumers to fabricate objects.
-  - SOT: `userPaths(uid).settings`, `userPaths(uid).templates`.
-  - Repair Location: `RepoBundleRegistry.getBundle()` — when creating a new bundle or finding empty files, write a single Settings object and seed Templates (optimizer).
-  - Exit Criteria: Fresh user → `settings.json` and `templates.json` contain persisted records; first GET performs no writes.
+## 1. Storage Contract Foundation — Status: ✅ Completed
+- [x] Create `src/backend/storage/sqlite/paths.ts` to derive per-user/shared database file locations from existing `userPaths` logic without exporting raw file paths to callers.
+- [x] Define `StorageHandle` interface (open/close/transaction helpers) and `SqliteFactory` responsible for serialized connection creation per database file.
+- [x] Enforce initialization sequence: `resolveDataDir` → ensure directories (`0o700`) → open SQLite file with `better-sqlite3` constructor.
+- [x] Apply connection pragmas once per handle: `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON`, `PRAGMA busy_timeout=5000`, `PRAGMA synchronous=NORMAL`.
 
-2) T02 — Remove consumer‑side Settings synthesis (High)
-- Summary: Stop constructing defaults in route/service; rely on persisted record from T01.
-- Predecessors: T01
-- Files: `src/backend/routes/settings.ts`, `src/backend/services/settings.ts`
-- Change Gate:
-  - Defect Hypothesis: Route/service invents primary data.
-  - SOT: `settings.json`.
-  - Repair Location: Replace local `defaultSettings()` usage with `loadSettings()`; make service error if missing (should not occur after T01).
-  - Exit Criteria: No code path fabricates Settings; GET/PUT operate on persisted record only.
+## 2. Schema Specification — Status: ✅ Completed
+- [x] Author shared schema DDL (`src/backend/storage/sqlite/schema/system.sql`) defining the canonical `users` table with primary key + unique email constraint.
+- [x] Author per-user schema DDL (`src/backend/storage/sqlite/schema/per_user.sql`) covering accounts, configuration, conversations (threads + messages with embedded email JSON), logs, traces, memory, workspace, and emails.
+- [x] Add covering indexes for high-frequency lookups (timestamps, conversation/thread ids, scopes, provider filters).
 
-3) T03 — Remove GET‑time seeding in Templates route (High)
-- Summary: Make GET read‑only; do not seed on read.
-- Predecessors: T01
-- Files: `src/backend/routes/templates.ts`
-- Change Gate:
-  - Defect Hypothesis: GET mutates store; masks missing producer init.
-  - SOT: `templates.json`.
-  - Repair Location: Delete seeding branches in loader; delegate to producer init.
-  - Exit Criteria: GET never writes; seeded data exists from T01.
+## 3. Fresh DB Initialization — Status: ✅ Completed
+- [x] Provide schema initializer (`src/backend/storage/sqlite/initializer.ts`) that applies DDL to brand-new databases and stamps `PRAGMA user_version = 1`.
+- [x] Integrate initializer into `SqliteConnectionFactory` so first open of a new file auto-applies the schema.
+- [x] Add CLI helper `scripts/sqlite-init.ts` for pre-creating empty SQLite files (shared or per user) without touching legacy JSON blobs.
 
-4) T04 — Enforce atomic conversation mutations; remove non‑atomic fallback (High)
-- Summary: Require `mutate()` on conversations repo; delete read‑modify‑write fallback.
-- Predecessors: none
-- Files: `src/backend/liveRepos.ts`
-- Change Gate:
-  - Defect Hypothesis: Non‑atomic fallback can lose updates under concurrency.
-  - SOT: `conversations.json` via `FileJsonRepository` (has `mutate`).
-  - Repair Location: In `appendMessagesToConversation()` and `finalizeThreadStatusAtomic()` throw if `mutate` is missing instead of falling back.
-  - Exit Criteria: All updates use a single `mutate()` critical section; no fallback code remains.
+## 4. Repository Adapters — Status: ✅ Completed
+- [x] Implement SQLite-backed repositories for all domain data (`accounts`, `settings`, `prompts`, `agents`, `directors`, `filters`, `templates`, `imprints`, `workspaceItems`, `emails`, `memory`, `conversations` with message storage, `providerEvents`, `fetcherLogs`, `orchestrationLogs`, `traces`).
+- [x] Replace file-based `RepoBundle` assembly with SQLite-backed `RepoBundleRegistry`, injecting a shared `SqliteConnectionFactory` and enforcing default settings/templates via SQL.
+- [x] Provide a system-level users repository (`SystemUsersRepository`) to replace the JSON `users.json` source of truth.
 
-5) T05 — Remove `workspaceId` injection into ConversationThread (Medium)
-- Summary: Stop adding ad‑hoc `workspaceId` to threads; derive association by `conversationId`.
-- Predecessors: none
-- Files: `src/backend/services/workspace-service.ts`, `src/backend/routes/workspaces.ts`
-- Change Gate:
-  - Defect Hypothesis: Domain leakage via undeclared field; violates schema.
-  - SOT: `workspaceItems.json` keyed by `provenance.conversationId`.
-  - Repair Location: Delete or no‑op `updateConversationWorkspaceAssociation`; remove call site in delete path.
-  - Exit Criteria: No serialized thread includes `workspaceId`; behavior unchanged for listing/removal.
+## 5. Service Layer Integration — Status: ⏳ Pending
+- [x] Update `repo-access.ts`, `liveRepos.ts`, and service routes (`accounts`, `settings`, `memory`, `templates`, `workspaces`, `cleanup`, `conversations`) to call SQLite repositories directly without JSON helpers.
+- [x] Drop JSON path scaffolding once no consumer depends on it; ensure user context bootstrapping only requests SQLite handles.
+- [x] Remove file-lock scaffolding; rely on SQLite transactions for per-user concurrency.
+- [x] Validate `LiveRepos` operations (mutate/append flows) against the new repositories via integration test (`src/backend/tests/liveRepos.sqlite.unit.cjs`).
 
-6) T06 — Make `/api/conversations/byDirectorEmail` pick most recent by timestamp (Medium)
-- Summary: Use max by `lastActiveAt` (fallback `startedAt`) instead of array tail.
-- Predecessors: none
-- Files: `src/backend/routes/conversations.ts`
-- Change Gate:
-  - Defect Hypothesis: Insertion order ≠ recency; returns wrong thread.
-  - SOT: `conversations.json` timestamps.
-  - Repair Location: Compute best match with explicit comparator.
-  - Exit Criteria: For multiple matches, endpoint returns the thread with latest `lastActiveAt`.
+## 6. Logging & Tracing Separation — Status: ✅ Completed
+- [x] Keep operational logs in Pino (`logger.ts` unchanged) while persisting provider events, orchestration logs, and traces via SQLite repositories.
+- [x] Implement SQL-based pruning for provider/orchestration/fetcher logs and traces during append operations.
+- [x] Ensure conversation diagnostics query repositories directly for a specific conversation instead of loading entire tables.
 
-7) T07 — Consolidate logging into a single canonical module (Medium)
-- Summary: Unify `services/logging.ts` and `services/logging-handlers.ts` behind one interface; update imports.
-- Predecessors: none
-- Files: `src/backend/services/logging.ts`, `src/backend/services/logging-handlers.ts`, call sites (`server.ts`, orchestrator, routes, fetcher manager)
-- Change Gate:
-  - Defect Hypothesis: Split implementations cause drift (fire‑and‑forget vs awaited).
-  - SOT: per‑user `provider-events.ndjson`, `traces.json` (+ journals).
-  - Repair Location: Choose one (prefer awaited), export both sync/async façades; remove duplicate.
-  - Exit Criteria: Single import path used project‑wide; consistent append semantics.
+## 7. Testing & Verification — Status: ⏳ Pending
+- Add integration tests under `src/backend/tests/sqlite/*.cjs` (reuse Node test runner) covering CRUD + transactional operations for each repository.
+- Provide fixture loader that spins up ephemeral DBs per test (in tmp dir) and tears them down.
+- Validate schema invariants: missing required fields must reject with descriptive errors; wrong enums should throw before SQL execution.
 
-8) T08 — Logging consistency and dev verbosity (Medium)
-- Summary: Establish a single logging policy and consistent debug/trace coverage across modules. In development, increase actionable visibility; in production, preserve current behavior and redaction.
-- Predecessors: T07
-- Files: `src/backend/services/logger.ts`, canonical logging module from T07, `src/backend/repository/fileRepositories.ts`, `src/backend/services/conversation-orchestrator.ts`, `src/backend/services/email-processor.ts`, `src/backend/routes/**`, `src/backend/utils/file-lock.ts`
-- Change Gate:
-  - Defect Hypothesis: Inconsistent logging and sparse trace/debug output hinder developer diagnosis; ad‑hoc warnings are insufficient.
-  - SOT: Provider events/traces journals; app logs via `logger.ts`.
-  - Repair Location:
-    - Define logging contract (levels, fields): always include `traceId|runId|conversationId|directorId|agentId` when available.
-    - Honor `LOG_LEVEL` with defaults: dev=debug, prod=info; keep redaction via existing `TRACE_REDACT_FIELDS`.
-    - When `TRACE_VERBOSE=true`, add redacted request/response payloads (already supported) and ensure consistent usage in engine/orchestrator.
-    - NDJSON dev behavior: keep one‑time WARN summary for skipped encrypted lines and add debug‑level per‑line skip details when `LOG_LEVEL=debug`; production keeps strict throw.
-    - File locks: add debug spans for acquire/release/timeout to aid contention diagnosis.
-  - Exit Criteria: In development with `LOG_LEVEL=debug`, critical flows (fetcher, orchestration steps, tool calls, repo mutations, file locks) emit consistent, correlated debug lines with IDs; production behavior unchanged except for consolidation from T07.
-
-9) T09 — Merge conversations routers into a single module (Medium)
-- Summary: Fold `conversations-enhanced.ts` into `conversations.ts` or compose via a single exported router.
-- Predecessors: T06 (touches conversations code paths)
-- Files: `src/backend/routes/conversations.ts`, `src/backend/routes/conversations-enhanced.ts`, `src/backend/routes/index.ts`
-- Change Gate:
-  - Defect Hypothesis: Split ownership increases drift and discoverability issues.
-  - SOT: Conversations + diagnostics stores.
-  - Repair Location: Co-locate routes; ensure no path regressions.
-  - Exit Criteria: One canonical conversations router mounted once; endpoints unchanged.
-
-10) T10 — Centralize OpenAI tool spec mapping (Low)
-- Summary: Keep a single `toOpenAiToolSpec` helper; use everywhere.
-- Predecessors: none
-- Files: `src/backend/utils/tools.ts`, `src/backend/services/engine.ts`, `src/backend/toolCalls.ts`
-- Change Gate:
-  - Defect Hypothesis: Duplicate registry→OpenAI mapping risks divergence.
-  - SOT: `src/shared/tools.ts` registry.
-  - Repair Location: Export one helper; refactor callers.
-  - Exit Criteria: One source of truth for mapping; identical tool exposure behavior.
-
-11) T11 — Hide/flag Outlook onboarding stub (Low)
-- Summary: Remove or guard placeholder until implemented.
-- Predecessors: none
-- Files: `src/backend/routes/accounts.ts`
-- Change Gate:
-  - Defect Hypothesis: Dead route comments/paths create confusion.
-  - SOT: N/A.
-- Repair Location: Gate via feature flag or remove from surface.
-- Exit Criteria: No dead feature hints visible in routes.
-
-12) T12 — Introduce request schema validation middleware (Follow‑up)
-- Summary: Add global schema validation for POST/PUT; fail closed.
-- Predecessors: none
-- Files: Middleware layer + route modules
-- Change Gate:
-  - Defect Hypothesis: Inconsistent validation across routes.
-  - SOT: Route request bodies.
-  - Repair Location: Add middleware, apply to mutating endpoints; reuse existing minimal validator where feasible.
-  - Exit Criteria: All mutating routes reject invalid bodies with 4xx; no silent coercions.
-
-Implementation guidance: Respect “Root‑Cause‑First; No Backend Defaults for Invariants”. Do not add shims or consumer fallbacks; repair producers and remove palliative code where noted.
+## 8. Operational Notes — Status: ⏳ Pending
+- Document bootstrap steps in `docs/DEVELOPER.md`: dependency (`better-sqlite3`), init command, backup/restore via `VACUUM INTO`.
+- Provide runbook snippet for per-user DB inspection (`sqlite3 data/users/<uid>/user.sqlite3`).
+- Leave encryption hooks (key fetch + `PRAGMA key`) stubbed but disabled until compliance requires activation.

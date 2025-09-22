@@ -1,7 +1,23 @@
-import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent } from '../shared/types';
-import { requireReq, requireUserRepo, repoGetAll, repoSetAll, requireRepos, ReqLike } from './utils/repo-access';
-import { RepoBundle } from './repository/registry';
+import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent, WorkspaceItem } from '../shared/types';
+import {
+  requireReq,
+  requireRepos,
+  getPromptsRepo,
+  getAgentsRepo,
+  getDirectorsRepo,
+  getFiltersRepo,
+  getImprintsRepo,
+  getAccountsRepo,
+  getFetcherLogRepo,
+  getProviderEventsRepo,
+  getTracesRepo as resolveTracesRepo,
+  getOrchestrationLogRepo,
+  getConversationsRepo,
+  getWorkspaceItemsRepo,
+  getEmailsRepo
+} from './utils/repo-access';
 import { loadSettings } from './services/settings';
+import type { ReqLike } from './utils/repo-access';
 
 export interface LiveRepos {
   getPrompts(req?: ReqLike): Promise<Prompt[]>;
@@ -25,7 +41,10 @@ export interface LiveRepos {
   getEmails(req?: ReqLike): Promise<EmailEnvelope[]>;
   setEmails(req: ReqLike, next: EmailEnvelope[]): Promise<void>;
   getProviderEvents(req?: ReqLike): Promise<ProviderEvent[]>;
+  getProviderEventsByConversation(req: ReqLike, conversationId: string): Promise<ProviderEvent[]>;
   getConversationById(req: ReqLike, id: string): Promise<ConversationThread | null>;
+  getOrchestrationLogByConversation(req: ReqLike, conversationId: string): Promise<OrchestrationEvent[]>;
+  getWorkspaceItemsByConversation(req: ReqLike, conversationId: string): Promise<WorkspaceItem[]>;
   getSettings(req?: ReqLike): Promise<any>;
   getProviderRepo(req?: ReqLike): any;
   getTracesRepo(req?: ReqLike): any;
@@ -36,11 +55,17 @@ export interface LiveRepos {
 }
 
 export function createLiveRepos(): LiveRepos {
-  const get = <T>(name: keyof RepoBundle) => async (req?: ReqLike) => {
-    const arr = await repoGetAll<T>(requireReq(req), name);
-    return Array.isArray(arr) ? arr : [];
+  const get = <T>(fn: (req: ReqLike) => { getAll: () => Promise<T[]> }) => async (req?: ReqLike) => {
+    const repo = fn(requireReq(req));
+    return await repo.getAll();
   };
-  const set = <T>(name: keyof RepoBundle) => (req: ReqLike, next: T[]) => repoSetAll<T>(requireReq(req), name, next);
+  const set = <T>(fn: (req: ReqLike) => { setAll: (next: T[]) => Promise<void> }) => async (
+    req: ReqLike,
+    next: T[]
+  ) => {
+    const repo = fn(requireReq(req));
+    await repo.setAll(next);
+  };
   type ConversationRepoWithMutate = {
     mutate: (
       fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]
@@ -57,19 +82,19 @@ export function createLiveRepos(): LiveRepos {
   };
 
   return {
-    getPrompts: get<Prompt>('prompts'),
-    setPrompts: set<Prompt>('prompts'),
-    getAgents: get<Agent>('agents'),
-    setAgents: set<Agent>('agents'),
-    getDirectors: get<Director>('directors'),
-    setDirectors: set<Director>('directors'),
-    getFilters: get<Filter>('filters'),
-    setFilters: set<Filter>('filters'),
-    getImprints: get<Imprint>('imprints'),
-    setImprints: set<Imprint>('imprints'),
-    getOrchestrationLog: get<OrchestrationEvent>('orchestrationLog'),
-    getConversations: get<ConversationThread>('conversations'),
-    setConversations: set<ConversationThread>('conversations'),
+    getPrompts: get<Prompt>((req) => getPromptsRepo(req)),
+    setPrompts: set<Prompt>((req) => getPromptsRepo(req)),
+    getAgents: get<Agent>((req) => getAgentsRepo(req)),
+    setAgents: set<Agent>((req) => getAgentsRepo(req)),
+    getDirectors: get<Director>((req) => getDirectorsRepo(req)),
+    setDirectors: set<Director>((req) => getDirectorsRepo(req)),
+    getFilters: get<Filter>((req) => getFiltersRepo(req)),
+    setFilters: set<Filter>((req) => getFiltersRepo(req)),
+    getImprints: get<Imprint>((req) => getImprintsRepo(req)),
+    setImprints: set<Imprint>((req) => getImprintsRepo(req)),
+    getOrchestrationLog: get<OrchestrationEvent>((req) => getOrchestrationLogRepo(req)),
+    getConversations: get<ConversationThread>((req) => getConversationsRepo(req)),
+    setConversations: set<ConversationThread>((req) => getConversationsRepo(req)),
     appendConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
       const repo = requireConversationRepo(req);
       const next = await repo.mutate((cur) => {
@@ -113,30 +138,48 @@ export function createLiveRepos(): LiveRepos {
     },
     getSettings: async (req?: ReqLike) => {
       const r = requireReq(req);
-      // Delegate to service to avoid consumer-side synthesis
       return await loadSettings(r);
     },
-    getProviderRepo: (req?: ReqLike) => requireUserRepo(requireReq(req), 'providerEvents'),
-    getTracesRepo: (req?: ReqLike) => requireUserRepo(requireReq(req), 'traces'),
+    getProviderRepo: (req?: ReqLike) => getProviderEventsRepo(requireReq(req)),
+    getTracesRepo: (req?: ReqLike) => resolveTracesRepo(requireReq(req)),
     getAccounts: async (req?: ReqLike) => {
-      const arr = await repoGetAll<any>(requireReq(req), 'accounts');
-      return Array.isArray(arr) ? arr : [];
-    },
-    setAccounts: (req: ReqLike, next: any[]) => repoSetAll<any>(requireReq(req), 'accounts', next),
-    getFetcherLog: async (req?: ReqLike) => {
-      const arr = await repoGetAll<any>(requireReq(req), 'fetcherLog');
-      return Array.isArray(arr) ? arr : [];
-    },
-    setFetcherLog: (req: ReqLike, next: any[]) => repoSetAll<any>(requireReq(req), 'fetcherLog', next),
-    getEmails: get<EmailEnvelope>('emails'),
-    setEmails: set<EmailEnvelope>('emails'),
-    getProviderEvents: async (req?: ReqLike) => {
-      const repo = requireUserRepo(requireReq(req), 'providerEvents');
+      const repo = getAccountsRepo(requireReq(req));
       return await repo.getAll();
     },
+    setAccounts: async (req: ReqLike, next: any[]) => {
+      const repo = getAccountsRepo(requireReq(req));
+      await repo.setAll(next);
+    },
+    getFetcherLog: async (req?: ReqLike) => {
+      const repo = getFetcherLogRepo(requireReq(req));
+      return await repo.getAll();
+    },
+    setFetcherLog: async (req: ReqLike, next: any[]) => {
+      const repo = getFetcherLogRepo(requireReq(req));
+      await repo.setAll(next);
+    },
+    getEmails: get<EmailEnvelope>((req) => getEmailsRepo(req)),
+    setEmails: set<EmailEnvelope>((req) => getEmailsRepo(req)),
+    getProviderEvents: async (req?: ReqLike) => {
+      const repo = getProviderEventsRepo(requireReq(req));
+      return await repo.getAll();
+    },
+    getProviderEventsByConversation: async (req: ReqLike, conversationId: string) => {
+      const repo = getProviderEventsRepo(requireReq(req));
+      return await repo.getByConversation(conversationId);
+    },
     getConversationById: async (req: ReqLike, id: string) => {
-      const conversations = await get<ConversationThread>('conversations')(req);
+      const repo = getConversationsRepo(requireReq(req));
+      const conversations = await repo.getAll();
       return conversations.find((c: ConversationThread) => c.id === id) || null;
+    },
+    getOrchestrationLogByConversation: async (req: ReqLike, conversationId: string) => {
+      const repo = getOrchestrationLogRepo(requireReq(req));
+      return await repo.getByConversation(conversationId);
+    },
+    getWorkspaceItemsByConversation: async (req: ReqLike, conversationId: string) => {
+      const repo = getWorkspaceItemsRepo(requireReq(req));
+      return await repo.getByConversation(conversationId);
     },
   };
 }

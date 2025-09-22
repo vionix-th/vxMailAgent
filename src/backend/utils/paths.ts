@@ -129,24 +129,8 @@ export function ensureSecureDir(dirPath: string): void {
  */
 export interface UserPaths {
   root: string;
-  accounts: string;
-  settings: string;
-  prompts: string;
-  agents: string;
-  directors: string;
-  filters: string;
-  templates: string;
-  imprints: string;
-  conversations: string;
-  workspaceItems: string;
-  memory: string;
-  emails: string;
-  logs: {
-    fetcher: string;
-    orchestration: string;
-    providerEvents: string;
-    traces: string;
-  };
+  dbFile: string;
+  logsDir: string;
 }
 
 /**
@@ -158,52 +142,15 @@ export interface UserPaths {
 export function userPaths(uid: string): UserPaths {
   const root = userRoot(uid);
   const logsDir = path.join(root, 'logs');
-  
-  // Ensure directories exist with secure permissions
+
   ensureSecureDir(root);
   ensureSecureDir(logsDir);
-  
-  const paths: UserPaths = {
-    root,
-    accounts: path.join(root, 'accounts.json'),
-    settings: path.join(root, 'settings.json'),
-    prompts: path.join(root, 'prompts.json'),
-    agents: path.join(root, 'agents.json'),
-    directors: path.join(root, 'directors.json'),
-    filters: path.join(root, 'filters.json'),
-    templates: path.join(root, 'templates.json'),
-    imprints: path.join(root, 'imprints.json'),
-    conversations: path.join(root, 'conversations.json'),
-    workspaceItems: path.join(root, 'workspaceItems.json'),
-    memory: path.join(root, 'memory.json'),
-    emails: path.join(root, 'emails.json'),
-    logs: {
-      fetcher: path.join(logsDir, 'fetcher.json'),
-      orchestration: path.join(logsDir, 'orchestration.json'),
-      providerEvents: path.join(logsDir, 'provider-events.json'),
-      traces: path.join(logsDir, 'traces.json'),
-    },
-  };
-  
-  // Validate all paths for safety
-  for (const [key, value] of Object.entries(paths)) {
-    if (key === 'logs') {
-      for (const logPath of Object.values(value as any)) {
-        if (!validatePathSafety(logPath as string, root)) {
-          throw new Error(`Unsafe path detected for ${key}: ${logPath}`);
-        }
-      }
-    } else if (key !== 'root') {
-      if (!validatePathSafety(value as string, root)) {
-        throw new Error(`Unsafe path detected for ${key}: ${value}`);
-      }
-    }
+
+  const dbFile = path.join(root, 'user.sqlite3');
+  const resolvedDb = path.resolve(dbFile);
+  if (!validatePathSafety(resolvedDb, root)) {
+    throw new Error(`Unsafe DB path detected: ${resolvedDb}`);
   }
-  
-  return paths;
+
+  return { root, dbFile: resolvedDb, logsDir };
 }
-
-
-// System-level JSON files (non user-isolated)
-// Only the global "users" registry is allowed as application-wide data
-export const USER_ACCOUNTS_FILE = dataPath('users.json');

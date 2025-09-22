@@ -1,7 +1,7 @@
 import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
 import logger from '../services/logger';
-import { requireReq, repoGetAll, repoSetAll, ReqLike } from '../utils/repo-access';
+import { requireReq, getWorkspaceItemsRepo, ReqLike } from '../utils/repo-access';
 import { errorHandler, NotFoundError } from '../services/error-handler';
 import { WorkspaceService } from '../services/workspace-service';
 
@@ -12,9 +12,10 @@ export interface WorkspacesRoutesDeps {
 
 function createWorkspaceService(req: ReqLike, deps?: WorkspacesRoutesDeps): WorkspaceService {
   const ureq = requireReq(req);
+  const repo = getWorkspaceItemsRepo(ureq);
   const base = {
-    getItems: async () => await repoGetAll<WorkspaceItem>(ureq, 'workspaceItems'),
-    setItems: async (next: WorkspaceItem[]) => await repoSetAll<WorkspaceItem>(ureq, 'workspaceItems', next),
+    getItems: async () => await repo.getAll(),
+    setItems: async (next: WorkspaceItem[]) => await repo.setAll(next),
   } as const;
 
   if (!deps) {

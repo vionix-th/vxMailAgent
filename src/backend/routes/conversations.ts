@@ -1,6 +1,6 @@
 import express from 'express';
 import { PromptMessage } from '../../shared/types';
-import { requireReq, repoGetAll } from '../utils/repo-access';
+import { requireReq } from '../utils/repo-access';
 import type { ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
@@ -66,16 +66,16 @@ export default function registerConversationsRoutes(
   // ENHANCED: GET /api/conversations/:id/details — conversation + related context
   app.get('/api/conversations/:id/details', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const conversationId = req.params.id;
-    const conversation = await repos.getConversationById(req as any, conversationId);
+    const reqLike = req as any as ReqLike;
+    const conversation = await repos.getConversationById(reqLike, conversationId);
     if (!conversation) {
       throw new NotFoundError(`Conversation ${conversationId} not found`);
     }
-    const [orchestrationEvents, providerEvents, allWorkspaceItems] = await Promise.all([
-      repos.getOrchestrationLog(req as any).then((events: any[]) => events.filter((e: any) => e.context.conversationId === conversationId)),
-      repos.getProviderEvents(req as any).then((events: any[]) => events.filter((e: any) => e.conversationId === conversationId)),
-      repoGetAll<any>(requireReq(req as any as ReqLike), 'workspaceItems')
+    const [orchestrationEvents, providerEvents, workspaceItems] = await Promise.all([
+      repos.getOrchestrationLogByConversation(reqLike, conversationId),
+      repos.getProviderEventsByConversation(reqLike, conversationId),
+      repos.getWorkspaceItemsByConversation(reqLike, conversationId),
     ]);
-    const workspaceItems = (allWorkspaceItems || []).filter((w: any) => w?.provenance?.conversationId === conversationId);
     const metrics = {
       totalTokens: providerEvents.reduce((sum: number, e: any) => sum + (e.usage?.totalTokens || 0), 0),
       promptTokens: providerEvents.reduce((sum: number, e: any) => sum + (e.usage?.promptTokens || 0), 0),
@@ -92,9 +92,8 @@ export default function registerConversationsRoutes(
   // ENHANCED: GET /api/conversations/:id/provider-events — provider events for a conversation
   app.get('/api/conversations/:id/provider-events', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const conversationId = req.params.id;
-    const providerEvents = await repos.getProviderEvents(req as any);
-    const conversationEvents = providerEvents.filter((e: any) => e.conversationId === conversationId);
-    res.json(conversationEvents);
+    const events = await repos.getProviderEventsByConversation(req as any as ReqLike, conversationId);
+    res.json(events);
   }));
 
   // ENHANCED: GET /api/conversations/threads/:id/full — thread with tool-call traces and provider events
@@ -104,8 +103,7 @@ export default function registerConversationsRoutes(
     if (!conversation) {
       throw new NotFoundError(`Thread ${threadId} not found`);
     }
-    const providerEvents = await repos.getProviderEvents(req as any);
-    const threadProviderEvents = providerEvents.filter((e: any) => e.conversationId === threadId);
+    const threadProviderEvents = await repos.getProviderEventsByConversation(req as any as ReqLike, threadId);
     const toolCalls: Array<{ id: string; name: string; arguments: string; result?: any; error?: string; timestamp?: string; durationMs?: number }> = [];
     conversation.messages.forEach((msg: any) => {
       if (msg.tool_calls) {

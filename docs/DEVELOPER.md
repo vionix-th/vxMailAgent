@@ -184,7 +184,7 @@ This section is the operational contract the backend must uphold. It is used as 
 
 4) Provider events
 
-- Log request/response/error for both director and agents via `ProviderEventLogger(req)` so that records persist to the per-user `logs/provider-events.json`.
+- Log request/response/error for both director and agents via `ProviderEventLogger(req)` so that records persist to the per-user `provider_events` table.
 
 5) Transcript invariants
 
@@ -249,7 +249,7 @@ Lint command (backend): `npm run lint` from `src/backend/`.
 
 ### Core Principles
 - **Strict User Isolation**: All data access requires user context; no global fallbacks
-- **Minimal Global State**: Only `users.json` (the user accounts registry) and `security-audit.log` (append-only JSONL) are global; all other data is user-scoped
+- **Minimal Global State**: Only the shared SQLite database (`data/system.sqlite3`) and `security-audit.log` (append-only JSONL) are global; all other data is user-scoped
 - **Security First**: All operations validate user context and path safety
 - **Audit Trail**: Comprehensive logging of all operations with user context
 
@@ -261,16 +261,16 @@ Lint command (backend): `npm run lint` from `src/backend/`.
 ## Persistence & Encryption
 
 - Storage lives under `data/` (overridable via `VX_MAILAGENT_DATA_DIR`).
-- AES‑256‑GCM at rest when `VX_MAILAGENT_KEY` is a valid 64‑char hex.
-- If missing/invalid, the backend still starts in PLAINTEXT mode and logs a warning. See `src/backend/config.ts::warnIfInsecure()` and `src/backend/persistence.ts`.
-- Tracing/provider events retention settings are in `src/backend/config.ts` (e.g., `TRACE_TTL_DAYS`, `PROVIDER_TTL_DAYS`).
+- Persistence uses SQLite: `data/system.sqlite3` holds global metadata (user registry); every user gets a dedicated `data/users/<uid>/user.sqlite3` database for accounts, prompts, conversations, logs, traces, etc. When running from the compiled output (`dist/`), execute `node scripts/sqlite-init.ts` once to pre-create the shared database.
+- Page encryption is supported by linking an encrypted SQLite runtime (SQLCipher/SEE) and providing keys at startup. The historic JSON encryption path (`VX_MAILAGENT_KEY`) is retained only for compatibility tooling.
+- Tracing/provider events retention settings are enforced in SQL (`TRACE_TTL_DAYS`, `PROVIDER_TTL_DAYS`, `ORCHESTRATION_TTL_DAYS`, `FETCHER_TTL_DAYS`).
 
 ## Environment Variables (authoritative)
 
 Source of truth: `src/backend/config.ts`, `src/backend/services/logger.ts`, and `src/backend/utils/paths.ts`.
 
 - **Core**
-  - `VX_MAILAGENT_KEY` (default: empty) — 64-char hex. Enables AES-256-GCM at rest. If missing/invalid, backend runs in PLAINTEXT and logs a warning via `warnIfInsecure()`.
+  - `VX_MAILAGENT_KEY` (default: empty) — legacy JSON encryption key. New SQLite storage does not depend on this flag; use SQLCipher/SEE for encrypted deployments.
   - `PORT` (default: 3001) — backend port.
   - `CORS_ORIGIN` (default: `*`) — allowed origin for CORS. **Production must set a concrete origin** (e.g., `https://mail.example.com`). For local dev use `http://localhost:3000` to match Vite; backend warns when relying on the dev default.
   - `VX_MAILAGENT_DATA_DIR` — optional override for `data/` root. If unset, `resolveDataDir()` probes common locations under repo root. See `src/backend/utils/paths.ts`.
@@ -330,8 +330,8 @@ Notes:
 ### Security Model
 - **Zero Trust**: All operations require explicit user context
 - **No Global Fallbacks**: Missing user context throws errors
-- **Path Safety**: All file operations are contained within user directories with strict path validation
-- **Encryption**: Optional AES-256-GCM encryption for data at rest with random IVs
+- **Path Safety**: All storage resides in SQLite files under user directories with strict path validation
+- **Encryption**: Integrate SQLCipher/SEE for database encryption when required (legacy AES-256-GCM JSON flow deprecated)
 - **Audit Logging**: All operations are logged with user context
 - **Rate Limiting**: Not implemented in the backend; recommend gateway or Express middleware if needed
 
@@ -367,15 +367,14 @@ Location: `src/backend/middleware/user-context.ts`
 #### 2. Repository Registry
 Location: `src/backend/repository/registry.ts`
 - **Per-User Isolation**:
-  - Each user gets isolated repository instances
-  - Backed by JSON files under `data/users/{uid}/`
+  - Each user gets isolated repository instances backed by `data/users/{uid}/user.sqlite3`
   - TTL-based eviction for in-memory caches
 
 - **Repository Types**:
   - **Core**: `accounts`, `settings`
   - **Inventory**: `prompts`, `agents`, `directors`, `filters`
   - **Conversations**: `conversations`, `memory`, `workspaceItems`
-  - **Logs**: `logs/fetcher.json`, `logs/orchestration.json`, `logs/provider-events.json`, `logs/traces.json`
+- **Logs**: SQLite tables (`fetcher_logs`, `orchestration_logs`, `provider_events`, `traces`)
 
 - **Path Management**:
   - `userPaths(uid)` in `src/backend/utils/paths.ts`
@@ -463,7 +462,7 @@ Location: `src/backend/routes/helpers.ts`
    ```
    - Validates state and PKCE verifier
    - Exchanges code for tokens
-   - Creates/updates user in `users.json`
+  - Creates/updates user in the shared `system.sqlite3` database
    - Sets `vx.session` cookie
 
 3. **Session Validation**

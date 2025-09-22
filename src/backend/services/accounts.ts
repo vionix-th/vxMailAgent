@@ -4,7 +4,7 @@ import { ValidationError } from './error-handler';
 import { getGoogleOAuthConfig, getOutlookOAuthConfig } from '../config';
 import { ensureValidGoogleAccessToken } from '../oauth/google';
 import { ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outlook';
-import { requireReq, repoGetAll, repoSetAll, requireUid } from '../utils/repo-access';
+import { requireReq, requireUid, getAccountsRepo } from '../utils/repo-access';
 import type { ReqLike } from '../interfaces';
 import type { Account } from '../../shared/types';
 import { revokeGoogleToken } from '../oauth/google';
@@ -12,12 +12,14 @@ import { revokeGoogleToken } from '../oauth/google';
 // Data access helpers
 export async function listAccounts(req: ReqLike): Promise<Account[]> {
   const ureq = requireReq(req);
-  return await repoGetAll<Account>(ureq, 'accounts');
+  const repo = getAccountsRepo(ureq);
+  return await repo.getAll();
 }
 
 async function persistAccounts(req: ReqLike, accounts: Account[]): Promise<void> {
   const ureq = requireReq(req);
-  await repoSetAll<Account>(ureq, 'accounts', accounts);
+  const repo = getAccountsRepo(ureq);
+  await repo.setAll(accounts);
 }
 
 export async function upsertAccount(req: ReqLike, next: Account): Promise<void> {

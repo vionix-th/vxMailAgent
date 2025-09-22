@@ -1,6 +1,6 @@
 # vxMailAgent
 
-Email assistant that fetches Gmail/Outlook mail, routes messages through a director + agents orchestration powered by OpenAI, and presents results in a React UI. Configuration and runtime data are stored under `data/` and can be encrypted at rest.
+Email assistant that fetches Gmail/Outlook mail, routes messages through a director + agents orchestration powered by OpenAI, and presents results in a React UI. Configuration and runtime data are stored in SQLite databases under `data/` (shared + per-user) and can be encrypted at rest via SQLCipher/SEE.
 
 ## Quick Start
 
@@ -14,6 +14,7 @@ Backend (`src/backend`)
 - `npm install`
 - `npm run dev` (listens on `http://localhost:3001` by default)
 - Validate: `GET http://localhost:3001/api/health` returns `{"status":"ok"}`
+- Optional: when running from `dist/`, initialize the shared SQLite database via `node scripts/sqlite-init.ts`. Per-user databases are created automatically on first access.
 
 Frontend (`src/frontend`)
 - `npm install`
@@ -28,7 +29,7 @@ Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.co
 - `src/frontend`: Vite + React UI (Material‑UI + Tailwind)
 - `src/shared`: Cross‑package TypeScript types used by backend and frontend
 - `docs/DEVELOPER.md`: API details and developer notes; `DESIGN.md` for architecture context
-- `data/`: Local runtime store (accounts, prompts, logs, etc.)
+- `data/`: Local runtime store (SQLite databases per user + shared system DB)
 
 ## Architecture Highlights
 
@@ -51,7 +52,7 @@ See `docs/DEVELOPER.md` for usage patterns and options.
 - Agent loop:
   - Run chat. If `tool_calls[]` present, execute and append `tool` messages; continue until assistant content or step limit.
 - Provider events:
-  - Persist request/response/error for both director and agents via req-scoped logger to `logs/provider-events.json`.
+  - Persist request/response/error for both director and agents via the SQLite `provider_events` table.
 - Workspace items:
   - Persist via Workspaces repository (`workspaceItems`) with req context; do not embed items into `ConversationThread`.
 
@@ -64,7 +65,7 @@ See `docs/DEVELOPER.md` for usage patterns and options.
 
 ## Environment Variables (Backend)
 
-- `VX_MAILAGENT_KEY` — required for encryption: 64‑char hex key to encrypt `data/` at rest. If missing/invalid, data is written in plaintext (dev‑only).
+- `VX_MAILAGENT_KEY` — legacy JSON encryption flag. New deployments should favor encrypted SQLite (SQLCipher/SEE) instead.
 - `CORS_ORIGIN` — **required** in production. Set to the exact frontend origin (e.g., `https://mail.example.com`). For local dev use `http://localhost:3000`.
 - Google OAuth2 (Provider accounts: Gmail/Calendar/Tasks)
   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
@@ -121,10 +122,10 @@ Frontend (`src/frontend`)
 
 **CRITICAL**: Strict per-user data isolation enforced throughout the system.
 
-- **Storage**: JSON files under `data/users/{uid}/` (per-user isolation). Examples within a user root: `accounts.json`, `directors.json`, `conversations.json`, `workspaceItems.json`, and `logs/{fetcher,orchestration,provider-events,traces}.json`.
-- **Global Data Restriction**: Only `data/users.json` contains global application data (user registry for login). This file is NOT exposed via UI or APIs.
+- **Storage**: SQLite databases under `data/users/{uid}/user.sqlite3` (per-user isolation). Tables include accounts, prompts, conversations, workspace items, fetcher/orchestration/provider/traces logs, etc.
+- **Global Data Restriction**: Only `data/system.sqlite3` contains global application data (user registry for login). This file is NOT exposed via UI or APIs.
 - **User Context Required**: All data access requires authenticated user context. No global fallbacks exist to prevent data leakage between users.
-- **Encryption**: AES‑256‑GCM with random IV; enabled when `VX_MAILAGENT_KEY` is a valid 64‑char hex. When not set, files are plaintext JSON for development convenience.
+- **Encryption**: Use SQLCipher/SEE for encrypted deployments. `VX_MAILAGENT_KEY` remains for legacy JSON tooling only.
 - **Secrets**: never commit `.env` or tokens. Use the example template and export env vars locally.
 
 ## OAuth Flow (Gmail/Outlook)
@@ -205,7 +206,7 @@ See `docs/DEVELOPER.md` for details.
 
 ## Operational Notes
 
-- **Isolation & encryption**: Strict per‑user data isolation. AES‑256‑GCM at rest when `VX_MAILAGENT_KEY` is a valid 64‑char hex. See `docs/DEVELOPER.md`.
+- **Isolation & encryption**: Strict per-user data isolation. Use SQLCipher/SEE for encrypted deployments (each user database lives at `data/users/<uid>/user.sqlite3`).
 - **CORS (dev)**: `cors()` is permissive for local dev. In production, restrict origins or co‑host UI and API.
 - **Env & secrets**: Load via `.env`; do not commit secrets. Tokens are never logged.
 - **Data dir**: `VX_MAILAGENT_DATA_DIR` overrides `data/` location. Ensure write permissions.
@@ -222,7 +223,7 @@ See `docs/DEVELOPER.md` for details.
   - `http://localhost:3001/api/accounts/oauth/google/callback`
   - `http://localhost:3001/api/accounts/oauth/outlook/callback`
 - Data path issues: set `VX_MAILAGENT_DATA_DIR` to an absolute path and ensure the process has write permissions
-- Encryption key errors: ensure `VX_MAILAGENT_KEY` is exactly 64 hex characters
+- Encrypted deployments: ensure your SQLCipher/SEE build loads before starting the backend. `VX_MAILAGENT_KEY` remains only for legacy JSON tooling.
 - Proxy issues: frontend requests to `/api` should reach the backend at `http://localhost:3001` (see `src/frontend/vite.config.ts`)
 
 ## Contributing
