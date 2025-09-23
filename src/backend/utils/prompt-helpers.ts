@@ -9,16 +9,29 @@ export function clampText(input: string, max: number): string {
 }
 
 export function parseTarget(payload: any, query: any): TargetSpec | null {
-  const raw = (payload?.target ?? query?.target ?? '').toString().trim().toLowerCase();
-  if (!raw) return null;
-  if (raw === 'director') return { role: 'director' };
-  if (raw === 'agent') return { role: 'agent' };
-  // Object form fallback
-  if (typeof payload?.target === 'object' && payload.target) {
-    const r = String(payload.target.role || '').toLowerCase();
-    if (r === 'director') return { role: 'director' };
-    if (r === 'agent') return { role: 'agent' };
+  const normalize = (value: unknown): TargetSpec | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === 'director') return { role: 'director' };
+    if (trimmed === 'agent') return { role: 'agent' };
+    return null;
+  };
+
+  if (typeof payload?.target === 'string') {
+    const spec = normalize(payload.target);
+    if (spec) return spec;
   }
+
+  if (payload?.target && typeof payload.target === 'object') {
+    const role = (payload.target as any).role;
+    const spec = normalize(typeof role === 'string' ? role : undefined);
+    if (spec) return spec;
+  }
+
+  if (typeof query?.target === 'string') {
+    return normalize(query.target);
+  }
+
   return null;
 }
 

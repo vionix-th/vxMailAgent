@@ -17,6 +17,7 @@ import {
   getEmailsRepo
 } from './utils/repo-access';
 import { loadSettings } from './services/settings';
+import { ValidationError } from './services/error-handler';
 import type { ReqLike } from './utils/repo-access';
 
 export interface LiveRepos {
@@ -55,6 +56,21 @@ export interface LiveRepos {
 }
 
 export function createLiveRepos(): LiveRepos {
+  const ensureTimestamps = (thread: ConversationThread, context: string): void => {
+    const { id, startedAt, lastActiveAt } = thread as ConversationThread & { startedAt?: string | null; lastActiveAt?: string | null };
+    if (typeof startedAt !== 'string' || !startedAt.trim()) {
+      throw new ValidationError(`${context}: startedAt missing for conversation ${id}`, 'CONVERSATION_STARTED_AT_MISSING');
+    }
+    if (typeof lastActiveAt !== 'string' || !lastActiveAt.trim()) {
+      throw new ValidationError(`${context}: lastActiveAt missing for conversation ${id}`, 'CONVERSATION_LAST_ACTIVE_MISSING');
+    }
+    if (Number.isNaN(Date.parse(startedAt))) {
+      throw new ValidationError(`${context}: startedAt invalid for conversation ${id}`, 'CONVERSATION_STARTED_AT_INVALID');
+    }
+    if (Number.isNaN(Date.parse(lastActiveAt))) {
+      throw new ValidationError(`${context}: lastActiveAt invalid for conversation ${id}`, 'CONVERSATION_LAST_ACTIVE_INVALID');
+    }
+  };
   const get = <T>(fn: (req: ReqLike) => { getAll: () => Promise<T[]> }) => async (req?: ReqLike) => {
     const repo = fn(requireReq(req));
     return await repo.getAll();
@@ -96,6 +112,7 @@ export function createLiveRepos(): LiveRepos {
     getConversations: get<ConversationThread>((req) => getConversationsRepo(req)),
     setConversations: set<ConversationThread>((req) => getConversationsRepo(req)),
     appendConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
+      ensureTimestamps(thread, 'appendConversation');
       const repo = requireConversationRepo(req);
       const next = await repo.mutate((cur) => {
         const snapshot = Array.isArray(cur) ? cur : [];
@@ -116,7 +133,9 @@ export function createLiveRepos(): LiveRepos {
         const idx = cur.findIndex((c) => c.id === threadId);
         if (idx === -1) return cur;
         const now = new Date().toISOString();
-        const updated: ConversationThread = { ...cur[idx], lastActiveAt: now, messages: [...cur[idx].messages, ...(messages || [])] } as ConversationThread;
+        const current = cur[idx];
+        ensureTimestamps(current, 'appendMessagesToConversation');
+        const updated: ConversationThread = { ...current, lastActiveAt: now, messages: [...current.messages, ...(messages || [])] } as ConversationThread;
         const out = cur.slice();
         out[idx] = updated;
         return out;
@@ -129,7 +148,9 @@ export function createLiveRepos(): LiveRepos {
         const idx = cur.findIndex((c) => c.id === threadId);
         if (idx === -1) return cur;
         const now = new Date().toISOString();
-        const updated: ConversationThread = { ...cur[idx], status, endedAt: now, lastActiveAt: now } as ConversationThread;
+        const current = cur[idx];
+        ensureTimestamps(current, 'finalizeThreadStatusAtomic');
+        const updated: ConversationThread = { ...current, status, endedAt: now, lastActiveAt: now } as ConversationThread;
         const out = cur.slice();
         out[idx] = updated;
         return out;

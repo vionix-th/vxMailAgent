@@ -1,6 +1,23 @@
 import type { ConversationThread, PromptMessage } from '../../shared/types';
 import type { ReqLike } from '../interfaces';
 import type { LiveRepos } from '../liveRepos';
+import { ValidationError } from './error-handler';
+
+function assertTimestampInvariant(thread: ConversationThread, context: string): void {
+  const { id, startedAt, lastActiveAt } = thread as ConversationThread & { startedAt?: string | null; lastActiveAt?: string | null };
+  if (typeof startedAt !== 'string' || !startedAt.trim()) {
+    throw new ValidationError(`${context}: startedAt missing`, 'CONVERSATION_STARTED_AT_MISSING');
+  }
+  if (typeof lastActiveAt !== 'string' || !lastActiveAt.trim()) {
+    throw new ValidationError(`${context}: lastActiveAt missing`, 'CONVERSATION_LAST_ACTIVE_MISSING');
+  }
+  if (Number.isNaN(Date.parse(startedAt))) {
+    throw new ValidationError(`${context}: startedAt invalid`, 'CONVERSATION_STARTED_AT_INVALID');
+  }
+  if (Number.isNaN(Date.parse(lastActiveAt))) {
+    throw new ValidationError(`${context}: lastActiveAt invalid`, 'CONVERSATION_LAST_ACTIVE_INVALID');
+  }
+}
 
 /**
  * In-memory conversation thread mutations (pure functions over arrays)
@@ -13,6 +30,7 @@ export function appendMessageToThread(
 ): ConversationThread[] {
   const idx = conversations.findIndex((c) => c.id === threadId);
   if (idx === -1) return conversations;
+  assertTimestampInvariant(conversations[idx], 'appendMessageToThread');
   const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
   const updated: ConversationThread = {
     ...conversations[idx],
@@ -30,6 +48,7 @@ export function appendMessagesToThread(
 ): ConversationThread[] {
   const idx = conversations.findIndex((c) => c.id === threadId);
   if (idx === -1) return conversations;
+  assertTimestampInvariant(conversations[idx], 'appendMessagesToThread');
   const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
   const updated: ConversationThread = {
     ...conversations[idx],
@@ -47,6 +66,7 @@ export function finalizeThreadStatus(
 ): ConversationThread[] {
   const idx = conversations.findIndex((c) => c.id === threadId);
   if (idx === -1) return conversations;
+  assertTimestampInvariant(conversations[idx], 'finalizeThreadStatus');
   const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
   const updated: ConversationThread = {
     ...conversations[idx],

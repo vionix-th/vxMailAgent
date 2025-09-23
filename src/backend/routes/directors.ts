@@ -3,6 +3,7 @@ import { Director } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
 import { createCrudRoutes } from './helpers';
 import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
+import { validateDirectorToolConfig } from '../services/tool-config-service';
 
 export default function registerDirectorsRoutes(app: express.Express, repos: LiveRepos) {
   createCrudRoutes(
@@ -25,8 +26,11 @@ export default function registerDirectorsRoutes(app: express.Express, repos: Liv
       },
       afterValidate: (director: Director) => {
         const enabled = sanitizeEnabled((director as any).enabledToolCalls);
-        if (enabled === null) throw new Error('enabledToolCalls must be an array (can be empty) of optional tool names');
-        return { ...director, enabledToolCalls: enabled } as Director;
+        if (enabled === null) throw new Error('enabledToolCalls must be an array of optional tool names');
+        if (enabled.length === 0) throw new Error('enabledToolCalls must include at least one optional tool');
+        const normalized = { ...director, enabledToolCalls: enabled } as Director;
+        validateDirectorToolConfig(normalized);
+        return normalized;
       },
       mergeUpdate: (current: Director, patch: Partial<Director>): Director => {
         const next: Director = {
@@ -39,10 +43,14 @@ export default function registerDirectorsRoutes(app: express.Express, repos: Liv
         if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolCalls')) {
           const enabled = sanitizeEnabled((patch as any).enabledToolCalls);
           if (enabled === null) {
-            throw new Error('enabledToolCalls update must be an array (can be empty) of optional tool names');
+            throw new Error('enabledToolCalls update must be an array of optional tool names');
+          }
+          if (enabled.length === 0) {
+            throw new Error('enabledToolCalls update must include at least one optional tool');
           }
           next.enabledToolCalls = enabled;
         }
+        validateDirectorToolConfig(next);
         return next;
       },
     }

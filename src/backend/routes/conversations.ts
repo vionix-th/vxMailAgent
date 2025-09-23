@@ -142,12 +142,18 @@ export default function registerConversationsRoutes(
     );
     if (!threads.length) throw new NotFoundError('Conversation not found');
     // Pick the most recent by lastActiveAt (fallback to startedAt)
-    const thread = threads.reduce((best, cur) => {
-      const bestTs = Date.parse((best as any)?.lastActiveAt || (best as any)?.startedAt || '');
-      const curTs = Date.parse((cur as any)?.lastActiveAt || (cur as any)?.startedAt || '');
-      if (!isNaN(curTs) && (isNaN(bestTs) || curTs > bestTs)) return cur;
-      return best;
-    }, threads[0]);
+    const decorated = threads.map((thread) => {
+      const lastActiveAt = (thread as any)?.lastActiveAt;
+      if (typeof lastActiveAt !== 'string' || !lastActiveAt.trim()) {
+        throw new ValidationError(`Conversation ${thread.id} missing lastActiveAt`, 'CONVERSATION_LAST_ACTIVE_MISSING');
+      }
+      const ts = Date.parse(lastActiveAt);
+      if (Number.isNaN(ts)) {
+        throw new ValidationError(`Conversation ${thread.id} has invalid lastActiveAt`, 'CONVERSATION_LAST_ACTIVE_INVALID');
+      }
+      return { thread, ts };
+    });
+    const thread = decorated.reduce((best, cur) => (cur.ts > best.ts ? cur : best)).thread;
     return res.json(thread);
   }));
 

@@ -1,9 +1,9 @@
 // Tool call handlers for calendar, todo, filesystem, memory
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
-import { ToolCallResult, MemoryEntry, MemoryScope, ApiConfig, ConversationThread } from '../shared/types';
+import { ToolCallResult, MemoryEntry, MemoryScope, ApiConfig, ConversationThread, Director, Agent, ToolDescriptor } from '../shared/types';
 import { validateAgainstSchema, validateWorkspaceProvenance } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
-import { filterToolDescriptorsByRole, selectToolDescriptors } from './utils/tools';
+import { loadDirectorWithDescriptors, loadAgentWithDescriptors, loadMandatoryDescriptors } from './utils/tool-config-fetchers';
 import { TOOL_EXEC_TIMEOUT_MS } from './config';
 import logger from './services/logger';
 import { WorkspaceService } from './services/workspace-service';
@@ -55,24 +55,22 @@ export function createToolHandler(repos: RepoBundle) {
           const agentId = typeof params?.agentId === 'string' ? params.agentId : '';
           let descs;
           if (directorId) {
-            const directors = await repos.directors.getAll();
-            const dir = (directors as any[]).find(d => d.id === directorId);
-            if (!dir) {
-              return { kind: name, success: false, result: null, error: 'Director not found' };
+            try {
+              const { descriptors } = await loadDirectorWithDescriptors(repos, directorId);
+              descs = descriptors;
+            } catch (error: any) {
+              return { kind: name, success: false, result: null, error: error?.message || 'invalid_director_tool_config' };
             }
-            const enabled = Array.isArray((dir as any).enabledToolCalls) ? (dir as any).enabledToolCalls : [];
-            descs = selectToolDescriptors('director', enabled);
           } else if (agentId) {
-            const agents = await repos.agents.getAll();
-            const ag = (agents as any[]).find(a => a.id === agentId);
-            if (!ag) {
-              return { kind: name, success: false, result: null, error: 'Agent not found' };
+            try {
+              const { descriptors } = await loadAgentWithDescriptors(repos, agentId);
+              descs = descriptors;
+            } catch (error: any) {
+              return { kind: name, success: false, result: null, error: error?.message || 'invalid_agent_tool_config' };
             }
-            const enabled = Array.isArray((ag as any).enabledToolCalls) ? (ag as any).enabledToolCalls : [];
-            descs = selectToolDescriptors('agent', enabled);
           } else {
             // No entity context: expose only mandatory after role gating
-            descs = selectToolDescriptors(role);
+            descs = loadMandatoryDescriptors(role);
           }
           const visible = descs.map(d => ({ name: d.name, description: d.description }));
           return { kind: name, success: true, result: visible };
@@ -107,12 +105,21 @@ export function createToolHandler(repos: RepoBundle) {
           const conversations = await repos.conversations.getAll();
           const parent = conversations.find((c: any) => c.id === parentId);
           if (!parent) return { kind: name, success: false, result: null, error: 'Parent conversation not found' };
-          const directors = await repos.directors.getAll();
-          const dirObj = directors.find((d: any) => d.id === directorId);
-          if (!dirObj) return { kind: name, success: false, result: null, error: 'Director not found' };
-          const agents = await repos.agents.getAll();
-          const agentObj = agents.find((a: any) => a.id === agentId);
-          if (!agentObj) return { kind: name, success: false, result: null, error: 'Agent not found' };
+          let dirObj: Director;
+          try {
+            ({ director: dirObj } = await loadDirectorWithDescriptors(repos, directorId));
+          } catch (error: any) {
+            return { kind: name, success: false, result: null, error: error?.message || 'Director not found' };
+          }
+          let agentObj: Agent;
+          let agentToolDescriptors: ToolDescriptor[];
+          try {
+            const agentResult = await loadAgentWithDescriptors(repos, agentId);
+            agentObj = agentResult.agent;
+            agentToolDescriptors = agentResult.descriptors;
+          } catch (error: any) {
+            return { kind: name, success: false, result: null, error: error?.message || 'invalid_agent_tool_config' };
+          }
           const prompts = await repos.prompts.getAll();
           const settingsArr = await repos.settings.getAll();
           const apiConfigs = (Array.isArray(settingsArr) && settingsArr.length > 0 && Array.isArray((settingsArr[0] as any)?.apiConfigs))
@@ -144,7 +151,7 @@ export function createToolHandler(repos: RepoBundle) {
           const agentThread = ensured.agentThread;
           const apiCfg = apiConfigs.find((c: ApiConfig) => c.id === agentThread.apiConfigId);
           if (!apiCfg) return { kind: name, success: false, result: null, error: 'API config not found for agent' };
-          const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
+          const gatedToolDescriptors = agentToolDescriptors;
           const setConversations = async (next: ConversationThread[]) => { await repos.conversations.setAll(next); };
           const rawHandleTool = createToolHandler(repos);
           const handleTool = (toolName: string, toolParams: any) =>

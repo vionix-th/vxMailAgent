@@ -1,6 +1,7 @@
 import type { Agent } from '../../../../shared/types';
 import type { StorageHandle } from '../types';
 import { SqliteRepository, stringify } from './base';
+import { validateAgentToolConfig } from '../../../services/tool-config-service';
 
 export class AgentsRepository extends SqliteRepository {
   constructor(handle: StorageHandle) {
@@ -24,6 +25,9 @@ export class AgentsRepository extends SqliteRepository {
   }
 
   async setAll(agents: Agent[]): Promise<void> {
+    for (const agent of agents) {
+      validateAgentToolConfig(agent);
+    }
     await this.transaction((db) => {
       db.prepare('DELETE FROM agents').run();
       const insert = db.prepare(

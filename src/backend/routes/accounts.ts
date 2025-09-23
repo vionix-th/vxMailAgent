@@ -87,7 +87,32 @@ export default function registerAccountsRoutes(app: express.Express) {
   }));
 
   app.post('/api/accounts', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const newAccount: Account = createAccount(req.body);
+    if (!req.body || typeof req.body !== 'object') {
+      throw new ValidationError('Request body must be a JSON object', 'ACCOUNT_BODY_MISSING');
+    }
+    const payload = req.body as Record<string, unknown>;
+    const hasId = typeof payload.id === 'string' && payload.id.trim().length > 0;
+    const hasProvider = typeof payload.provider === 'string' && payload.provider.trim().length > 0;
+    const hasEmail = typeof payload.email === 'string' && payload.email.trim().length > 0;
+    if (!hasId || !hasProvider || !hasEmail) {
+      throw new ValidationError('id, provider, and email are required', 'ACCOUNT_FIELDS_MISSING');
+    }
+    if (payload.signature == null || typeof payload.signature !== 'string') {
+      throw new ValidationError('signature is required', 'ACCOUNT_SIGNATURE_MISSING');
+    }
+    if (!payload.tokens || typeof payload.tokens !== 'object') {
+      throw new ValidationError('tokens object is required', 'ACCOUNT_TOKENS_MISSING');
+    }
+    const tokens = payload.tokens as Record<string, unknown>;
+    const requiredTokenFields = ['accessToken', 'refreshToken', 'expiry'] as const;
+    for (const key of requiredTokenFields) {
+      const value = tokens[key];
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new ValidationError(`tokens.${key} is required`, 'ACCOUNT_TOKEN_FIELD_MISSING');
+      }
+    }
+
+    const newAccount: Account = createAccount(payload as any);
     const ureq = requireReq(req as ReqLike);
     await upsertAccount(ureq, newAccount);
     const source = `user ${requireUid(ureq)}`;

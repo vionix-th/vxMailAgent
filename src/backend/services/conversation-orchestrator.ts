@@ -1,7 +1,5 @@
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfig } from '../../shared/types';
 import { runAgentConversation, ensureAgentThread } from './orchestration-agent';
-// Tool descriptors are filtered via filterToolDescriptorsByRole
-import { selectToolDescriptors } from '../utils/tools';
 import { createToolHandler } from '../toolCalls';
 import { requireReq, requireRepos } from '../utils/repo-access';
 import logger from './logger';
@@ -13,8 +11,9 @@ import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import { repoAppendMessage, repoAppendMessages, repoFinalizeThreadStatus, repoGetThreadById } from './conversation-mutations';
 import { extractLastUserContent } from '../utils/message-transformers';
-import { ValidationError } from './error-handler';
+import { InvalidAgentConfigError, ValidationError } from './error-handler';
 import { serializeApiConfig, ApiConfigView } from './apiConfigSerializer';
+import { resolveAgentToolDescriptors, resolveDirectorToolDescriptors } from './tool-config-service';
 
 export interface ConversationContext {
   thread: ConversationThread;
@@ -116,10 +115,9 @@ export class ConversationOrchestrator {
       let engineTimeoutId: any;
       // Role gate first, then apply per-entity optional allowlist
       const role = context.thread.kind === 'director' ? 'director' : 'agent';
-      const directorEnabled = context.director?.enabledToolCalls || [];
       const gatedToolDescriptors = role === 'director'
-        ? selectToolDescriptors('director', directorEnabled)
-        : selectToolDescriptors('agent');
+        ? resolveDirectorToolDescriptors(this.requireDirector(context))
+        : resolveAgentToolDescriptors(this.requireAgentForContext(context));
 
       const apiConfigPublic: ApiConfigView = serializeApiConfig(apiCfg);
       const engineInput = {
@@ -240,8 +238,8 @@ export class ConversationOrchestrator {
     // Equal tool exposure for agent, except spawning further agents (disabled)
     // Load agent allowlist and apply role + allowlist gating
     const agents = await userReq.repos.getAgents(userReq.reqLike);
-    const agent = agents.find((a: any) => a.id === thread.agentId);
-    const gatedToolDescriptors = selectToolDescriptors('agent', agent?.enabledToolCalls || []);
+    const agent = this.requireAgentById(thread.agentId, agents, `Agent ${thread.agentId} not found for thread ${thread.id}`);
+    const gatedToolDescriptors = resolveAgentToolDescriptors(agent);
 
     const userContent = extractLastUserContent(thread.messages as any);
 
@@ -342,6 +340,32 @@ export class ConversationOrchestrator {
       (await repoGetThreadById(userReq.repos, userReq.reqLike, context.thread.id)) ||
       context.thread
     );
+  }
+
+  private requireDirector(context: ConversationContext): Director {
+    if (!context.director) {
+      throw new ValidationError('Director configuration missing for conversation context', 'DIRECTOR_CONFIG_MISSING');
+    }
+    return context.director;
+  }
+
+  private requireAgentForContext(context: ConversationContext): Agent {
+    if (context.thread.kind !== 'agent') {
+      throw new InvalidAgentConfigError('Agent tool resolution requested for non-agent thread', 'AGENT_CONTEXT_MISMATCH');
+    }
+    const agentId = context.thread.agentId;
+    if (context.agent && context.agent.id === agentId) {
+      return context.agent;
+    }
+    return this.requireAgentById(agentId, context.agents, `Agent ${agentId} not found for thread ${context.thread.id}`);
+  }
+
+  private requireAgentById(agentId: string, agents: Agent[], message: string): Agent {
+    const match = agents.find((candidate) => candidate.id === agentId);
+    if (!match) {
+      throw new InvalidAgentConfigError(message, 'AGENT_NOT_FOUND');
+    }
+    return match;
   }
 
   private async processIndividualToolCall(
@@ -629,7 +653,12 @@ export class ConversationOrchestrator {
 
   private async validateAgent(agentId: string, userReq: UserRequest): Promise<Agent | null> {
     const agents = await userReq.repos.getAgents(userReq.reqLike);
-    return agents.find((a: Agent) => a.id === agentId) || null;
+    const match = agents.find((a: Agent) => a.id === agentId) || null;
+    if (!match) {
+      return null;
+    }
+    resolveAgentToolDescriptors(match);
+    return match;
   }
 
   // Removed local ensure/create agent thread logic; using ensureAgentThread() from services/orchestration.ts
@@ -700,8 +729,8 @@ export class ConversationOrchestrator {
 
       // Equal tool exposure for agent, except spawning further agents (disabled)
       const agents = await userReq.repos.getAgents(userReq.reqLike);
-      const srcAgent = agents.find((a: any) => a.id === agentThread.agentId);
-      const gatedToolDescriptors = selectToolDescriptors('agent', srcAgent?.enabledToolCalls || []);
+      const srcAgent = this.requireAgentById(agentThread.agentId, agents, `Agent ${agentThread.agentId} not found for agent conversation`);
+      const gatedToolDescriptors = resolveAgentToolDescriptors(srcAgent);
 
       const rawHandleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)));
       const scopedHandleTool = (name: string, params: any) =>

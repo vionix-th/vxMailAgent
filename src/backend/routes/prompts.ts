@@ -109,6 +109,34 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
         }
       }
     };
+    const normalizeRole = (value: unknown, label: string): 'director' | 'agent' => {
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new ValidationError(`${label} is required`, 'PROMPT_TARGET_ROLE_REQUIRED');
+      }
+      const role = value.trim().toLowerCase();
+      if (role !== 'director' && role !== 'agent') {
+        throw new ValidationError(`${label} must be 'director' or 'agent'`, 'PROMPT_TARGET_ROLE_INVALID');
+      }
+      return role as 'director' | 'agent';
+    };
+
+    let normalizedRole: 'director' | 'agent' | null = null;
+    if (typeof payload?.target === 'string') {
+      normalizedRole = normalizeRole(payload.target, 'payload.target');
+      payload.target = normalizedRole;
+    } else if (payload?.target && typeof payload.target === 'object') {
+      const roleValue = (payload.target as any).role;
+      normalizedRole = normalizeRole(roleValue, 'payload.target.role');
+      (payload.target as any).role = normalizedRole;
+    } else if (typeof req.query?.target === 'string') {
+      normalizedRole = normalizeRole(req.query.target, 'query.target');
+      (req.query as any).target = normalizedRole;
+    }
+
+    if (!normalizedRole) {
+      throw new ValidationError('target.role is required', 'PROMPT_TARGET_ROLE_REQUIRED');
+    }
+
     const target = parseTarget(payload, req.query);
     if (!target) {
       throw new ValidationError('target_required');

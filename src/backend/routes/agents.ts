@@ -3,6 +3,7 @@ import { Agent } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
 import { createCrudRoutes } from './helpers';
 import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
+import { validateAgentToolConfig } from '../services/tool-config-service';
 
 export default function registerAgentsRoutes(app: express.Express, repos: LiveRepos) {
   createCrudRoutes(
@@ -26,12 +27,17 @@ export default function registerAgentsRoutes(app: express.Express, repos: LiveRe
       afterValidate: (agent: Agent) => {
         const enabled = sanitizeEnabled((agent as any).enabledToolCalls);
         if (enabled === null) {
-          throw new Error('enabledToolCalls must be an array (can be empty) of optional tool names');
+          throw new Error('enabledToolCalls must be an array of optional tool names');
         }
-        return {
+        if (enabled.length === 0) {
+          throw new Error('enabledToolCalls must include at least one optional tool');
+        }
+        const normalized = {
           ...agent,
           enabledToolCalls: enabled,
         } as Agent;
+        validateAgentToolConfig(normalized);
+        return normalized;
       },
       mergeUpdate: (current: Agent, patch: Partial<Agent>): Agent => {
         const next: Agent = {
@@ -43,10 +49,14 @@ export default function registerAgentsRoutes(app: express.Express, repos: LiveRe
         if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolCalls')) {
           const enabled = sanitizeEnabled((patch as any).enabledToolCalls);
           if (enabled === null) {
-            throw new Error('enabledToolCalls update must be an array (can be empty) of optional tool names');
+            throw new Error('enabledToolCalls update must be an array of optional tool names');
+          }
+          if (enabled.length === 0) {
+            throw new Error('enabledToolCalls update must include at least one optional tool');
           }
           next.enabledToolCalls = enabled;
         }
+        validateAgentToolConfig(next);
         return next;
       }
     }

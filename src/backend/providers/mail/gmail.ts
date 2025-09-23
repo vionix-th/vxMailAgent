@@ -70,12 +70,16 @@ function extractGmailBodies(payload: any): { bodyPlain?: string; bodyHtml?: stri
   const result: { bodyPlain?: string; bodyHtml?: string } = {};
   function walk(part: any) {
     if (!part) return;
-    const mimeType = part.mimeType || '';
+    const rawMime = part.mimeType;
+    if (typeof rawMime !== 'string' || !rawMime.trim()) {
+      throw new Error('gmail_part_missing_mime_type');
+    }
+    const mimeType = rawMime.trim().toLowerCase();
     const bodyData = part.body?.data;
     if (bodyData) {
       const decoded = Buffer.from(bodyData, 'base64').toString('utf8');
-      if (mimeType.toLowerCase() === 'text/plain' && !result.bodyPlain) result.bodyPlain = decoded;
-      if (mimeType.toLowerCase() === 'text/html' && !result.bodyHtml) result.bodyHtml = decoded;
+      if (mimeType === 'text/plain' && !result.bodyPlain) result.bodyPlain = decoded;
+      if (mimeType === 'text/html' && !result.bodyHtml) result.bodyHtml = decoded;
     }
     if (Array.isArray(part.parts)) for (const p of part.parts) walk(p);
   }

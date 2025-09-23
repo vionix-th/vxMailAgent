@@ -1,6 +1,7 @@
 import type { Director } from '../../../../shared/types';
 import type { StorageHandle } from '../types';
 import { SqliteRepository, stringify } from './base';
+import { validateDirectorToolConfig } from '../../../services/tool-config-service';
 
 export class DirectorsRepository extends SqliteRepository {
   constructor(handle: StorageHandle) {
@@ -24,6 +25,9 @@ export class DirectorsRepository extends SqliteRepository {
   }
 
   async setAll(directors: Director[]): Promise<void> {
+    for (const director of directors) {
+      validateDirectorToolConfig(director);
+    }
     await this.transaction((db) => {
       db.prepare('DELETE FROM directors').run();
       const insert = db.prepare(
