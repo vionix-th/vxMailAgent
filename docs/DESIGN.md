@@ -293,13 +293,13 @@ data/
 
 #### 3.2.1 Email Fetcher
 - **Functionality**: Fetches emails from all configured accounts periodically (background loop controlled by API) or on-demand. Runs only while the application is active. Applies regex filters to route emails to directors, supporting multiple directors per email. Control endpoints: `/api/fetcher/status|start|stop|fetch|run` (see `src/backend/routes/fetcher.ts`).
-- **Configuration**: Filter rules defined in UI, stored in JSON (e.g., `{ field: "From", regex: "client[0-9]+@domain\.com", directorId: "director1" }`).
+- **Configuration**: Filter rules defined in the UI are stored in the per-user SQLite `filters` table (columns: `id`, `field`, `regex`, `directorId`, `duplicateAllowed`).
 - **Implementation**: Uses Gmail API (`gmail.users.messages.list/get`) or Microsoft Graph API (`me/messages`) with Node.js `RegExp` for filtering. Errors (e.g., invalid regex) trigger UI alerts (e.g., “Invalid regex pattern”) and log to console.
 
 #### 3.2.2 Authentication Module
 - **Functionality**: Manages OAuth 2.0 flows for Gmail/Outlook (email access; additional scopes like calendar/to-do are planned). Retrieves provider signature where supported or allows custom entry in UI.
-- **Configuration**: Stores account details and signatures in JSON (e.g., `{ id: "jane@company.com", provider: "gmail", signature: "Best, Jane" }`).
-- **Implementation**: Handles OAuth redirects, token storage (encrypted JSON), and signature retrieval. UI shows signature preview/edit field during account setup.
+- **Configuration**: Per-user SQLite `accounts` table holds provider metadata, signatures, and tokens. The frontend payload conforms to `Account` in `shared/types.ts`.
+- **Implementation**: Handles OAuth redirects, token persistence in SQLite (use SQLCipher/SEE for encrypted deployments), and signature retrieval. UI shows signature preview/edit fields during account setup.
 
 ##### 3.2.2a Session Authentication (App Login)
 - Separate from provider account OAuth, the app login uses Google OIDC with minimal scopes (`openid email profile`). A distinct Google OAuth client is used for login to avoid interference with Gmail refresh tokens.

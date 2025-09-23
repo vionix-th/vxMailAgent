@@ -67,6 +67,7 @@ _Last updated: 2025-09-22_
 - Document bootstrap steps in `docs/DEVELOPER.md` (dependency, init command, backup/restore).
 - Provide runbook snippet for per-user DB inspection (`sqlite3 data/users/<uid>/user.sqlite3`).
 - Leave encryption hooks disabled but documented for future activation.
+- **Status:** ✅ Completed (2025-09-23) — Added a SQLite operational cheat sheet to `docs/DEVELOPER.md` with bootstrap, env overrides, backups, inspection commands, and integration-test invocation guidance.
 
 ## Completed SQLite Milestones (for reference)
 - Storage contract foundation (paths, handle, factory, pragmas).

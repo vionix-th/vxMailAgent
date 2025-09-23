@@ -262,6 +262,24 @@ Lint command (backend): `npm run lint` from `src/backend/`.
 
 - Storage lives under `data/` (overridable via `VX_MAILAGENT_DATA_DIR`).
 - Persistence uses SQLite: `data/system.sqlite3` holds global metadata (user registry); every user gets a dedicated `data/users/<uid>/user.sqlite3` database for accounts, prompts, conversations, logs, traces, etc. When running from the compiled output (`dist/`), execute `node scripts/sqlite-init.ts` once to pre-create the shared database.
+
+### SQLite Operational Cheat Sheet
+
+- **Bootstrap:**
+  1. Install native deps – `npm install` inside `src/backend` pulls `better-sqlite3`.
+  2. Initialize schema – `npm run build && node src/backend/scripts/sqlite-init.ts` (or run the script from `dist/backend/scripts/sqlite-init.js` in production).
+  3. Optional override – set `VX_MAILAGENT_DATA_DIR=/var/vxmailagent` (or any writable absolute path) before boot so all SQLite files land under that directory.
+- **Local inspection:** `sqlite3 $VX_MAILAGENT_DATA_DIR/users/<uid>/user.sqlite3 '.tables'` lists user tables; add `.schema conversation_threads` or `SELECT * FROM provider_events LIMIT 5;` for deeper dives.
+- **Backups:** run `sqlite3 $VX_MAILAGENT_DATA_DIR/users/<uid>/user.sqlite3 "VACUUM INTO '/tmp/<uid>.sqlite3'"` for a consistent snapshot. Repeat for `data/system.sqlite3`. Automate with the same command wrapped in cron/systemd timer if routine backups are required.
+- **Vacuum & maintenance:** periodic `VACUUM` is built into SQLite; for manual compaction run `sqlite3 <db> 'VACUUM;'` during low traffic windows.
+- **Tests:** Integration coverage lives under `src/backend/tests/sqlite/*.cjs`. To run a suite locally you must build first (`npm run build`) and export minimal env vars (`VX_MAILAGENT_KEY`, `JWT_SECRET`, Google/Outlook placeholders). Example:
+  ```bash
+  VX_MAILAGENT_KEY=<64hex> JWT_SECRET=<>=32chars> JWT_EXPIRES_IN_SEC=86400 \
+  GOOGLE_CLIENT_ID=dummy GOOGLE_CLIENT_SECRET=dummy GOOGLE_REDIRECT_URI=https://example.com \
+  OUTLOOK_CLIENT_ID=dummy OUTLOOK_CLIENT_SECRET=dummy OUTLOOK_REDIRECT_URI=https://example.com \
+  node --test src/backend/tests/sqlite/settings.integration.cjs
+  ```
+- **Diagnostics:** use `node src/backend/utils/test-auth.js list` (after `npm run build`) to enumerate system users from SQLite, or generate a short-lived JWT for manual API calls.
 - Page encryption is supported by linking an encrypted SQLite runtime (SQLCipher/SEE) and providing keys at startup. The historic JSON encryption path (`VX_MAILAGENT_KEY`) is retained only for compatibility tooling.
 - Tracing/provider events retention settings are enforced in SQL (`TRACE_TTL_DAYS`, `PROVIDER_TTL_DAYS`, `ORCHESTRATION_TTL_DAYS`, `FETCHER_TTL_DAYS`).
 
