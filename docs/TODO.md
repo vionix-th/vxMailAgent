@@ -30,6 +30,7 @@ _Last updated: 2025-09-22_
 - **Goal:** Make `list_tools` fail closed when director/agent lookups miss, updating callers/tests.
 - **Depends on:** Tasks 1 and 2.
 - **Unblocks:** Task 4 onward.
+- **Status:** ✅ Completed (2025-09-23) — `list_tools` now returns explicit `Director not found` / `Agent not found` errors instead of falling back to mandatory descriptors.
 
 ### 4. Tighten agent CRUD validation
 - **Goal:** Require explicit `enabledToolCalls` arrays, have `sanitizeEnabled` throw on non-arrays, and document the contract.

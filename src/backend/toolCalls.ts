@@ -56,11 +56,19 @@ export function createToolHandler(repos: RepoBundle) {
           if (directorId) {
             const directors = await repos.directors.getAll();
             const dir = (directors as any[]).find(d => d.id === directorId);
-            descs = selectToolDescriptors('director', dir?.enabledToolCalls || []);
+            if (!dir) {
+              return { kind: name, success: false, result: null, error: 'Director not found' };
+            }
+            const enabled = Array.isArray((dir as any).enabledToolCalls) ? (dir as any).enabledToolCalls : [];
+            descs = selectToolDescriptors('director', enabled);
           } else if (agentId) {
             const agents = await repos.agents.getAll();
             const ag = (agents as any[]).find(a => a.id === agentId);
-            descs = selectToolDescriptors('agent', ag?.enabledToolCalls || []);
+            if (!ag) {
+              return { kind: name, success: false, result: null, error: 'Agent not found' };
+            }
+            const enabled = Array.isArray((ag as any).enabledToolCalls) ? (ag as any).enabledToolCalls : [];
+            descs = selectToolDescriptors('agent', enabled);
           } else {
             // No entity context: expose only mandatory after role gating
             descs = selectToolDescriptors(role);
