@@ -46,9 +46,9 @@ export async function cleanupWorkspaceItems(): Promise<{ success: boolean; delet
 }
 
 /** Delete a single workspace item (soft by default; pass hard=true to permanently remove). */
-export async function deleteWorkspaceItem(itemId: string, opts?: { hard?: boolean }): Promise<any> {
-  const hard = opts?.hard ? '?hard=true' : '';
-  return apiFetch(`/api/workspaces/default/items/${encodeURIComponent(itemId)}${hard}`, { method: 'DELETE' });
+export async function deleteWorkspaceItem(conversationId: string, itemId: string, opts?: { hard?: boolean }): Promise<any> {
+  const search = opts?.hard ? '?hard=true' : '';
+  return apiFetch(`/api/workspaces/${encodeURIComponent(conversationId)}/items/${encodeURIComponent(itemId)}${search}`, { method: 'DELETE' });
 }
 
 /** Delete provider event logs. */

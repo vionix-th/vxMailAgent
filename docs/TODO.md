@@ -1,5 +1,5 @@
 # Development Backlog
-_Last updated: 2025-09-22_
+_Last updated: 2025-09-23_
 
 ## Dependency Roadmap
 1. Seal config invariants (`src/backend/config.ts`).
@@ -10,6 +10,9 @@ _Last updated: 2025-09-22_
 6. Complete SQLite service layer integration (depends on 5).
 7. Finish SQLite testing & verification (depends on 6).
 8. Publish SQLite operational notes (depends on 7).
+9. Align frontend workspace APIs with conversation scope (depends on 6).
+10. Rebuild Results workspace aggregation (depends on 9).
+11. Redesign API config management UI (depends on 5).
 
 ## Task Details
 
@@ -68,6 +71,24 @@ _Last updated: 2025-09-22_
 - Provide runbook snippet for per-user DB inspection (`sqlite3 data/users/<uid>/user.sqlite3`).
 - Leave encryption hooks disabled but documented for future activation.
 - **Status:** ✅ Completed (2025-09-23) — Added a SQLite operational cheat sheet to `docs/DEVELOPER.md` with bootstrap, env overrides, backups, inspection commands, and integration-test invocation guidance.
+
+### 9. Align frontend workspace APIs with conversation scope
+- **Goal:** Replace `/api/workspaces/default/items` usage with conversation-scoped requests that include the thread/workspace id, and ensure delete helpers route through `/api/workspaces/:id/items/:itemId` using provenance data.
+- **Depends on:** Task 6 (SQLite-backed workspace repos).
+- **Unblocks:** Task 10.
+- **Status:** ✅ Completed (2025-09-23) — `Results` now loads items by iterating `/api/workspaces/:conversationId/items`, aggregates them locally, and deletion helpers send the conversation id into the scoped endpoints.
+
+### 10. Rebuild Results workspace aggregation
+- **Goal:** Rework `Results` data loading to gather workspace items per conversation and aggregate via provenance/lifecycle metadata instead of relying on the deleted default workspace.
+- **Depends on:** Task 9.
+- **Unblocks:** None.
+- **Status:** ✅ Completed (2025-09-23) — Results now caches workspace items per conversation, only refetches threads whose snapshots change, and surfaces conversation status/last activity in the email navigator.
+
+### 11. Redesign API config management UI
+- **Goal:** Update `Settings` API config management to respect backend secret constraints by removing client-side creation/updating of configs through `PUT /api/settings` and introducing a flow that either calls a backend-managed creation endpoint or clearly marks configs as read-only with guidance for secret provisioning.
+- **Depends on:** Task 5 (centralized API config serialization and secret handling).
+- **Unblocks:** Stable frontend settings management.
+- **Status:** ⏳ Pending — Current UI still attempts to POST freshly generated configs without `apiKey` (`src/frontend/src/Settings.tsx:147`), which the backend now rejects after Task 5.
 
 ## Completed SQLite Milestones (for reference)
 - Storage contract foundation (paths, handle, factory, pragmas).

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -34,11 +34,19 @@ import { useTranslation } from 'react-i18next';
 import { deleteWorkspaceItem } from './utils/api';
 import { apiFetch } from './utils/http';
 
+const conversationMarker = (conversation: ConversationThread): string => {
+  const lastActive = conversation.lastActiveAt || conversation.startedAt || '';
+  const messageCount = Array.isArray(conversation.messages) ? conversation.messages.length : 0;
+  const status = conversation.status || '';
+  return `${lastActive}|${status}|${messageCount}`;
+};
+
 // Note: OrchestrationResultEntry was deprecated and removed in backend refactor
 
 export default function Results() {
   const { t, i18n } = useTranslation();
-  const [workspaceItems, setWorkspaceItems] = useState<WorkspaceItem[]>([]);
+  const [workspaceItemsByConversation, setWorkspaceItemsByConversation] = useState<Record<string, WorkspaceItem[]>>({});
+  const [workspaceSnapshots, setWorkspaceSnapshots] = useState<Record<string, string>>({});
   const [conversations, setConversations] = useState<ConversationThread[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -53,6 +61,8 @@ export default function Results() {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [expandedDirs, setExpandedDirs] = useState<Record<string, boolean>>({});
   const [deleting, setDeleting] = useState(false);
+
+  const workspaceItems = useMemo(() => Object.values(workspaceItemsByConversation).flat(), [workspaceItemsByConversation]);
 
   // WorkspaceItem render kind derived strictly from mimeType
   type RenderKind = 'markdown' | 'text' | 'html' | 'json' | 'image' | 'attachment' | 'binary' | 'draft_reply' | 'error';
@@ -110,25 +120,90 @@ export default function Results() {
   const directorNameMap = useMemo(() => Object.fromEntries(directors.map((d: any) => [d.id, d.name])), [directors]);
   // No agent grouping or names in simplified browser
 
-  const fetchThreads = () => {
+  const conversationLookup = useMemo(() => Object.fromEntries(conversations.map((c) => [c.id, c])), [conversations]);
+
+  const loadWorkspaceItems = useCallback(async (conversationIds: string[], snapshotMap: Record<string, string>) => {
+    if (!conversationIds.length) return;
+    const results = await Promise.all(conversationIds.map(async (conversationId) => {
+      try {
+        const items = await apiFetch<WorkspaceItem[]>(`/api/workspaces/${encodeURIComponent(conversationId)}/items`);
+        return { conversationId, items: Array.isArray(items) ? items : [] };
+      } catch (err: any) {
+        setError(prev => prev ?? (err?.message || t('results.failedLoad')));
+        return { conversationId, items: [] as WorkspaceItem[] };
+      }
+    }));
+
+    setWorkspaceItemsByConversation(prev => {
+      const next = { ...prev };
+      for (const { conversationId, items } of results) {
+        next[conversationId] = items;
+      }
+      return next;
+    });
+
+    setWorkspaceSnapshots(prev => {
+      const next = { ...prev };
+      for (const { conversationId } of results) {
+        const marker = snapshotMap[conversationId];
+        if (marker) next[conversationId] = marker;
+        else delete next[conversationId];
+      }
+      return next;
+    });
+    return results;
+  }, [t]);
+
+  const fetchThreads = async () => {
     setLoading(true);
-    apiFetch('/api/workspaces/default/items')
-      .then((workspaceData) => {
-        setWorkspaceItems(Array.isArray(workspaceData) ? workspaceData : []);
-        setLoading(false);
-      })
-      .catch(() => { setError(t('results.failedLoad')); setLoading(false); });
+    setError(null);
+    try {
+      const resp = await apiFetch<{ items?: ConversationThread[] }>('/api/conversations?limit=1000&offset=0');
+      const convItems = Array.isArray(resp?.items) ? (resp.items as ConversationThread[]) : [];
+      setConversations(convItems);
+
+      const nextSnapshots = convItems.reduce<Record<string, string>>((acc, conv) => {
+        acc[conv.id] = conversationMarker(conv);
+        return acc;
+      }, {});
+
+      const staleIds = Object.keys(workspaceItemsByConversation).filter((id) => !(id in nextSnapshots));
+      if (staleIds.length) {
+        setWorkspaceItemsByConversation(prev => {
+          const next = { ...prev };
+          staleIds.forEach((id) => { delete next[id]; });
+          return next;
+        });
+        setWorkspaceSnapshots(prev => {
+          const next = { ...prev };
+          staleIds.forEach((id) => { delete next[id]; });
+          return next;
+        });
+      }
+
+      const idsToRefresh = convItems
+        .map((conv) => conv.id)
+        .filter((id) => workspaceSnapshots[id] !== nextSnapshots[id]);
+
+      if (idsToRefresh.length) {
+        await loadWorkspaceItems(idsToRefresh, nextSnapshots);
+      }
+    } catch (err: any) {
+      setError(err?.message || t('results.failedLoad'));
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchThreads(); }, []);
-  useEffect(() => {
-    apiFetch('/api/conversations?limit=1000&offset=0')
-      .then((resp: any) => {
-        const arr = Array.isArray(resp?.items) ? resp.items as ConversationThread[] : [];
-        setConversations(arr);
-      })
-      .catch(() => void 0);
-  }, []);
+  useEffect(() => { void fetchThreads(); }, []);
+
+  const refreshWorkspace = useCallback(async (conversationId: string) => {
+    const marker = conversationLookup[conversationId] ? conversationMarker(conversationLookup[conversationId]) : '';
+    const snapshot = marker ? { [conversationId]: marker } : {};
+    const results = await loadWorkspaceItems([conversationId], snapshot);
+    const [first] = results;
+    return first?.items ?? [];
+  }, [conversationLookup, loadWorkspaceItems]);
 
   // Delete a single workspace item
   const handleDeleteItem = async (item: WorkspaceItem) => {
@@ -136,9 +211,13 @@ export default function Results() {
       if (!item?.id) return;
       if (!window.confirm('Delete this item?')) return;
       setDeleting(true);
-      await deleteWorkspaceItem(item.id);
-      // Refresh and clear active selection
-      await fetchThreads();
+      const conversationId = (item as any)?.provenance?.conversationId;
+      if (!conversationId) {
+        setError(t('results.failedLoad'));
+        return;
+      }
+      await deleteWorkspaceItem(conversationId, item.id);
+      await refreshWorkspace(conversationId);
       setActiveItemId(null);
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -160,11 +239,28 @@ export default function Results() {
       const confirmMsg = `Delete ${items.length} item(s) for this director?`;
       if (!window.confirm(confirmMsg)) return;
       setDeleting(true);
+      let missingConversation = false;
+      const touched = new Set<string>();
       for (const it of items) {
-        await deleteWorkspaceItem(it.id);
+        const conversationId = (it as any)?.provenance?.conversationId;
+        if (!conversationId) {
+          missingConversation = true;
+          continue;
+        }
+        touched.add(conversationId);
+        await deleteWorkspaceItem(conversationId, it.id);
       }
-      await fetchThreads();
+      await Promise.all(Array.from(touched).map(async (id) => {
+        try {
+          await refreshWorkspace(id);
+        } catch (e) {
+          // refreshWorkspace sets error state; swallow to continue other refreshes
+        }
+      }));
       setActiveItemId(null);
+      if (missingConversation) {
+        setError(t('results.failedLoad'));
+      }
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -183,11 +279,28 @@ export default function Results() {
       const confirmMsg = `Delete ${items.length} item(s) for this email?`;
       if (!window.confirm(confirmMsg)) return;
       setDeleting(true);
+      let missingConversation = false;
+      const touched = new Set<string>();
       for (const it of items) {
-        await deleteWorkspaceItem(it.id);
+        const conversationId = (it as any)?.provenance?.conversationId;
+        if (!conversationId) {
+          missingConversation = true;
+          continue;
+        }
+        touched.add(conversationId);
+        await deleteWorkspaceItem(conversationId, it.id);
       }
-      await fetchThreads();
+      await Promise.all(Array.from(touched).map(async (id) => {
+        try {
+          await refreshWorkspace(id);
+        } catch (e) {
+          // refreshWorkspace handles errors; continue processing remaining ids
+        }
+      }));
       setActiveItemId(null);
+      if (missingConversation) {
+        setError(t('results.failedLoad'));
+      }
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -274,7 +387,7 @@ export default function Results() {
         <Stack direction="row" spacing={1}>
           <Tooltip title={t('results.refresh')}>
             <span>
-              <IconButton size="small" onClick={fetchThreads} disabled={loading}>
+              <IconButton size="small" onClick={() => { void fetchThreads(); }} disabled={loading}>
                 <RefreshIcon fontSize="small" />
               </IconButton>
             </span>
@@ -317,6 +430,12 @@ export default function Results() {
                   const isExpanded = expandedGroups[g.key] ?? (activeGroupKey === g.key);
                   const toggleGroup = (e: React.MouseEvent) => { e.stopPropagation(); setExpandedGroups((s) => ({ ...s, [g.key]: !isExpanded })); };
                   const selectGroup = () => { setActiveGroupKey(g.key); setActiveDirectorId('all'); setActiveItemId(null); };
+                  const conv = convByEmail.get(g.key);
+                  const lastActiveSource = conv?.lastActiveAt || conv?.startedAt || g.date;
+                  const summaryParts: string[] = [];
+                  if (g.from) summaryParts.push(g.from);
+                  if (lastActiveSource) summaryParts.push(formatDateStr(lastActiveSource));
+                  const secondary = summaryParts.join(' • ');
                   return (
                     <>
                       <ListItemButton selected={activeGroupKey === g.key} onClick={selectGroup} sx={{ alignItems: 'center', pl: 1.25, pr: 1, py: 0.75, borderRadius: 1, position: 'relative', '&:hover': { backgroundColor: 'action.hover' }, '&.Mui-selected': { backgroundColor: 'action.selected' }, '&.Mui-selected::before': { content: '""', position: 'absolute', left: 0, top: 5, bottom: 5, width: 2, bgcolor: 'primary.main', borderRadius: 2 }, '& .MuiListItemIcon-root': { color: 'text.secondary' }, '&.Mui-selected .MuiListItemIcon-root': { color: 'primary.main' } }}>
@@ -327,9 +446,12 @@ export default function Results() {
                           primaryTypographyProps={{ variant: 'body2', fontWeight: 600, noWrap: true, sx: { lineHeight: 1.4 } }}
                           secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary', noWrap: true, sx: { lineHeight: 1.3 } }}
                           primary={g.subject}
-                          secondary={`${g.from || ''}${g.date ? ` • ${formatDateStr(g.date)}` : ''}`}
+                          secondary={secondary}
                         />
                         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, pr: 1 }}>
+                          {conv?.status && (
+                            <Chip label={conv.status} size="small" variant="outlined" sx={{ textTransform: 'capitalize' }} />
+                          )}
                           <IconButton size="small" edge="end" aria-label={isExpanded ? t('results.collapse') : t('results.expand')} onClick={toggleGroup} sx={{ ml: 0 }}>
                             {isExpanded ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
                           </IconButton>
