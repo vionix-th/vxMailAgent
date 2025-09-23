@@ -8,19 +8,43 @@ if (String(process.env.DISABLE_DOTENV ?? '').toLowerCase() !== 'true') {
 
 // Centralized configuration and environment validation
 
-// Required configuration - fail fast if missing
-
-function getOptionalEnv(key: string, defaultValue: string): string {
-  return process.env[key] ?? defaultValue;
+function requireEnv(key: string): string {
+  const raw = process.env[key];
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  return raw;
 }
 
-function getOptionalIntEnv(key: string, defaultValue: number): number {
-  const value = process.env[key];
-  return value ? parseInt(value, 10) : defaultValue;
+function requireIntEnv(key: string): number {
+  const value = requireEnv(key);
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`Invalid integer for environment variable ${key}`);
+  }
+  return parsed;
+}
+
+function getOptionalEnv(key: string, fallback: string): string {
+  const raw = process.env[key];
+  if (typeof raw === 'string' && raw.trim() !== '') return raw;
+  return fallback;
+}
+
+function getOptionalIntEnv(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isNaN(parsed)) {
+      throw new Error(`Invalid integer for environment variable ${key}`);
+    }
+    return parsed;
+  }
+  return fallback;
 }
 
 // VX-only configuration
-export const VX_MAILAGENT_KEY = getOptionalEnv('VX_MAILAGENT_KEY', '');
+export const VX_MAILAGENT_KEY = requireEnv('VX_MAILAGENT_KEY');
 export const PORT: number = getOptionalIntEnv('PORT', 3001);
 export const HOST = getOptionalEnv('HOST', '0.0.0.0');
 export const CORS_ORIGIN = getOptionalEnv('CORS_ORIGIN', '*');
@@ -29,9 +53,9 @@ export const isProd = getOptionalEnv('NODE_ENV', 'development') === 'production'
 export const ENABLE_TEST_ROUTES = /^true$/i.test(getOptionalEnv('ENABLE_TEST_ROUTES', ''));
 
 // OAuth: Google - allow empty for optional configuration
-export const GOOGLE_CLIENT_ID = getOptionalEnv('GOOGLE_CLIENT_ID', '');
-export const GOOGLE_CLIENT_SECRET = getOptionalEnv('GOOGLE_CLIENT_SECRET', '');
-export const GOOGLE_REDIRECT_URI = getOptionalEnv('GOOGLE_REDIRECT_URI', '');
+export const GOOGLE_CLIENT_ID = requireEnv('GOOGLE_CLIENT_ID');
+export const GOOGLE_CLIENT_SECRET = requireEnv('GOOGLE_CLIENT_SECRET');
+export const GOOGLE_REDIRECT_URI = requireEnv('GOOGLE_REDIRECT_URI');
 
 // OAuth: Google (Login client - OIDC only)
 export const GOOGLE_LOGIN_CLIENT_ID = getOptionalEnv('GOOGLE_LOGIN_CLIENT_ID', '');
@@ -39,14 +63,13 @@ export const GOOGLE_LOGIN_CLIENT_SECRET = getOptionalEnv('GOOGLE_LOGIN_CLIENT_SE
 export const GOOGLE_LOGIN_REDIRECT_URI = getOptionalEnv('GOOGLE_LOGIN_REDIRECT_URI', '');
 
 // OAuth: Outlook
-export const OUTLOOK_CLIENT_ID = getOptionalEnv('OUTLOOK_CLIENT_ID', '');
-export const OUTLOOK_CLIENT_SECRET = getOptionalEnv('OUTLOOK_CLIENT_SECRET', '');
-export const OUTLOOK_REDIRECT_URI = getOptionalEnv('OUTLOOK_REDIRECT_URI', '');
+export const OUTLOOK_CLIENT_ID = requireEnv('OUTLOOK_CLIENT_ID');
+export const OUTLOOK_CLIENT_SECRET = requireEnv('OUTLOOK_CLIENT_SECRET');
+export const OUTLOOK_REDIRECT_URI = requireEnv('OUTLOOK_REDIRECT_URI');
 
 // Auth / Sessions (JWT)
-export const DEFAULT_JWT_SECRET = 'dev-insecure-jwt';
-export const JWT_SECRET = getOptionalEnv('JWT_SECRET', DEFAULT_JWT_SECRET);
-export const JWT_EXPIRES_IN_SEC = getOptionalIntEnv('JWT_EXPIRES_IN_SEC', 86400); // 24h default
+export const JWT_SECRET = requireEnv('JWT_SECRET');
+export const JWT_EXPIRES_IN_SEC = requireIntEnv('JWT_EXPIRES_IN_SEC');
 
 // Diagnostics / Tracing configuration
 export const TRACE_VERBOSE = /^true$/i.test(getOptionalEnv('TRACE_VERBOSE', ''));
@@ -169,32 +192,22 @@ export function envSummary() {
   };
 }
 
-export function warnIfInsecure() {
-  const keyInvalid = !VX_MAILAGENT_KEY || VX_MAILAGENT_KEY.length !== 64;
-  const jwtInsecure = JWT_SECRET === DEFAULT_JWT_SECRET;
-
-  if (isProd) {
-    if (keyInvalid) {
-      const msg = 'VX_MAILAGENT_KEY missing or invalid in production (require 64-char hex). Refusing to start.';
-      logger.error(msg, { envVar: 'VX_MAILAGENT_KEY' });
-      throw new Error(msg);
-    }
-    if (jwtInsecure) {
-      const msg = 'JWT_SECRET uses insecure default in production. Set a strong secret. Refusing to start.';
-      logger.error(msg, { envVar: 'JWT_SECRET' });
-      throw new Error(msg);
-    }
-    return; // Production checks passed
+export function assertSecureConfig() {
+  if (!/^[0-9a-fA-F]{64}$/.test(VX_MAILAGENT_KEY)) {
+    const msg = 'VX_MAILAGENT_KEY must be a 64-character hex string.';
+    logger.error(msg, { envVar: 'VX_MAILAGENT_KEY' });
+    throw new Error(msg);
   }
 
-  // Non-production: warn but continue
-  if (keyInvalid) {
-    logger.warn('Encryption key missing or invalid; persistence will use PLAINTEXT mode. Backend will run WITHOUT encryption.', {
-      hint: 'Expect 64 hex in VX_MAILAGENT_KEY',
-      envVar: 'VX_MAILAGENT_KEY',
-    });
+  if (JWT_SECRET.length < 32) {
+    const msg = 'JWT_SECRET must be at least 32 characters.';
+    logger.error(msg, { envVar: 'JWT_SECRET' });
+    throw new Error(msg);
   }
-  if (jwtInsecure) {
-    logger.warn('JWT_SECRET uses a development default. Do not use in production.', { envVar: 'JWT_SECRET' });
+
+  if (!Number.isFinite(JWT_EXPIRES_IN_SEC) || JWT_EXPIRES_IN_SEC <= 0) {
+    const msg = 'JWT_EXPIRES_IN_SEC must be a positive integer (seconds).';
+    logger.error(msg, { envVar: 'JWT_EXPIRES_IN_SEC', value: JWT_EXPIRES_IN_SEC });
+    throw new Error(msg);
   }
 }
