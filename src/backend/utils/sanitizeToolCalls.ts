@@ -6,8 +6,8 @@ import { OPTIONAL_TOOL_NAMES } from '../../shared/tools';
  * - Filters values to the known OPTIONAL_TOOL_NAMES allowlist.
  * - Returns undefined when input is not an array (treat as omitted), otherwise returns a possibly-empty array.
  */
-export function sanitizeEnabled(v: unknown): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
+export function sanitizeEnabled(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
   const out: string[] = [];
   for (const x of v) {
     if (typeof x !== 'string') continue;

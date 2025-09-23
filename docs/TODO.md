@@ -36,6 +36,7 @@ _Last updated: 2025-09-22_
 - **Goal:** Require explicit `enabledToolCalls` arrays, have `sanitizeEnabled` throw on non-arrays, and document the contract.
 - **Depends on:** Task 3.
 - **Unblocks:** Task 5 onward.
+- **Status:** ✅ Completed (2025-09-23) — CRUD routes reject missing/non-array `enabledToolCalls`, sanitizer returns `null` for invalid inputs, and updates enforce the array contract.
 
 ### 5. Consolidate API config serialization
 - **Goal:** Drop the duplicate public types, keep `ApiConfig` as the single domain shape, and introduce a REST serializer (`serializeApiConfigForClient`) that strips secrets.

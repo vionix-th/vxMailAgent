@@ -25,7 +25,7 @@ export default function registerDirectorsRoutes(app: express.Express, repos: Liv
       },
       afterValidate: (director: Director) => {
         const enabled = sanitizeEnabled((director as any).enabledToolCalls);
-        if (!Array.isArray(enabled)) throw new Error('enabledToolCalls is required and must be an array');
+        if (enabled === null) throw new Error('enabledToolCalls must be an array (can be empty) of optional tool names');
         return { ...director, enabledToolCalls: enabled } as Director;
       },
       mergeUpdate: (current: Director, patch: Partial<Director>): Director => {
@@ -35,8 +35,14 @@ export default function registerDirectorsRoutes(app: express.Express, repos: Liv
           ...(Array.isArray((patch as any).agentIds) ? { agentIds: (patch as any).agentIds } : {}),
           ...(typeof (patch as any).promptId === 'string' ? { promptId: (patch as any).promptId } : {}),
           ...(typeof (patch as any).apiConfigId === 'string' ? { apiConfigId: (patch as any).apiConfigId } : {}),
-          ...(Array.isArray((patch as any).enabledToolCalls) ? { enabledToolCalls: (patch as any).enabledToolCalls as any } : {}),
         } as Director;
+        if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolCalls')) {
+          const enabled = sanitizeEnabled((patch as any).enabledToolCalls);
+          if (enabled === null) {
+            throw new Error('enabledToolCalls update must be an array (can be empty) of optional tool names');
+          }
+          next.enabledToolCalls = enabled;
+        }
         return next;
       },
     }

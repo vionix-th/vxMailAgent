@@ -25,9 +25,12 @@ export default function registerAgentsRoutes(app: express.Express, repos: LiveRe
       },
       afterValidate: (agent: Agent) => {
         const enabled = sanitizeEnabled((agent as any).enabledToolCalls);
+        if (enabled === null) {
+          throw new Error('enabledToolCalls must be an array (can be empty) of optional tool names');
+        }
         return {
           ...agent,
-          enabledToolCalls: Array.isArray(enabled) ? enabled : [],
+          enabledToolCalls: enabled,
         } as Agent;
       },
       mergeUpdate: (current: Agent, patch: Partial<Agent>): Agent => {
@@ -36,8 +39,14 @@ export default function registerAgentsRoutes(app: express.Express, repos: LiveRe
           ...(typeof (patch as any).name === 'string' ? { name: (patch as any).name } : {}),
           ...(typeof (patch as any).promptId === 'string' ? { promptId: (patch as any).promptId } : {}),
           ...(typeof (patch as any).apiConfigId === 'string' ? { apiConfigId: (patch as any).apiConfigId } : {}),
-          ...(Array.isArray((patch as any).enabledToolCalls) ? { enabledToolCalls: (patch as any).enabledToolCalls as any } : {}),
         } as Agent;
+        if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolCalls')) {
+          const enabled = sanitizeEnabled((patch as any).enabledToolCalls);
+          if (enabled === null) {
+            throw new Error('enabledToolCalls update must be an array (can be empty) of optional tool names');
+          }
+          next.enabledToolCalls = enabled;
+        }
         return next;
       }
     }
