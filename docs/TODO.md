@@ -24,6 +24,7 @@ _Last updated: 2025-09-22_
 - **Depends on:** Task 1.
 - **Unblocks:** Tasks 3-8.
 - **Notes:** After Task 5, revisit orchestrator helpers to consume the centralized serializer output instead of re-creating public views inline.
+- **Status:** ✅ Completed (2025-09-23) — orchestrator now validates presence of `apiConfig.apiKey` and passes `{ apiKey }` into `runAgentConversation`.
 
 ### 3. Enforce entity presence in `list_tools`
 - **Goal:** Make `list_tools` fail closed when director/agent lookups miss, updating callers/tests.

@@ -1,6 +1,6 @@
 // Tool call handlers for calendar, todo, filesystem, memory
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
-import { ToolCallResult, MemoryEntry, MemoryScope, WorkspaceItem, ApiConfigPublic, ConversationThread } from '../shared/types';
+import { ToolCallResult, MemoryEntry, MemoryScope, ApiConfigPublic, ConversationThread } from '../shared/types';
 import { validateAgainstSchema, validateWorkspaceProvenance } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
 import { filterToolDescriptorsByRole, selectToolDescriptors } from './utils/tools';

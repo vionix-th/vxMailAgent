@@ -706,6 +706,10 @@ export class ConversationOrchestrator {
       const scopedHandleTool = (name: string, params: any) =>
         rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined);
 
+      if (typeof apiConfig.apiKey !== 'string' || !apiConfig.apiKey.trim()) {
+        throw new ValidationError('apiConfig.apiKey missing for agent conversation');
+      }
+
       const agentResult = await runAgentConversation(
         agentThread,
         args.content || args.title || 'New task assigned',
@@ -715,7 +719,7 @@ export class ConversationOrchestrator {
         async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
         scopedHandleTool,
         userReq.traceId,
-        apiConfig.apiKey,
+        { apiKey: apiConfig.apiKey },
         async (ev: ProviderEvent) => {
           try {
             const t = (ev as any).type;
