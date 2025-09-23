@@ -57,6 +57,8 @@ const getStatusColor = (status: string): 'success' | 'error' | 'info' | 'default
   }
 };
 
+const MotionTableRow = motion(TableRow);
+
 export default function EmailProcessingDashboard({ onEmailSelect }: { onEmailSelect: (email: EmailWithConversations) => void }) {
   const { t } = useTranslation();
   const [emails, setEmails] = useState<EmailWithConversations[]>([]);
@@ -192,14 +194,13 @@ export default function EmailProcessingDashboard({ onEmailSelect }: { onEmailSel
             <TableBody>
               <AnimatePresence>
                 {filteredEmails.map((email) => (
-                  <motion.tr
+                  <MotionTableRow
                     key={email.id}
-                    component={TableRow}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
                     transition={{ duration: 0.2 }}
-                    hover
+                    whileHover={{ backgroundColor: 'rgba(0,0,0,0.02)' }}
                   >
                     <TableCell>
                       <Chip
@@ -260,7 +261,7 @@ export default function EmailProcessingDashboard({ onEmailSelect }: { onEmailSel
                         <VisibilityIcon />
                       </IconButton>
                     </TableCell>
-                  </motion.tr>
+                  </MotionTableRow>
                 ))}
               </AnimatePresence>
             </TableBody>

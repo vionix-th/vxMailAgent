@@ -9,6 +9,7 @@ import { Prompt, PromptMessage } from './types/shared';
 import { useTranslation } from 'react-i18next';
 import { useCookieState } from './hooks/useCookieState';
 import { apiFetch } from './utils/http';
+import { randomId } from './utils/randomId';
 import MessageListEditor from './components/MessageListEditor';
 
 interface PromptEditDialogProps {
@@ -99,7 +100,15 @@ export default function PromptEditDialog({ open, editing, onChange, onClose, onS
                       if (prompt && templates) {
                         const tpl = templates.find(t => t.id === id);
                         if (tpl && Array.isArray(tpl.messages)) {
-                          onChange({ ...prompt, messages: tpl.messages });
+                          onChange({
+                            ...prompt,
+                            messages: tpl.messages.map((m) => ({
+                              id: randomId(),
+                              role: m.role,
+                              content: m.content,
+                              name: m.name,
+                            } as PromptMessage)),
+                          });
                         }
                       }
                     }}

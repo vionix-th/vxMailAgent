@@ -19,20 +19,24 @@ import { ConversationThread, PromptMessage, ProviderEvent } from './types/shared
 import JsonPretty from './components/JsonPretty';
 import { apiFetch } from './utils/http';
 
-interface ThreadWithContext extends ConversationThread {
+type ThreadWithContext = ConversationThread & {
   fullMessages: PromptMessage[];
   toolCalls: ToolCallTrace[];
   providerEvents: ProviderEvent[];
-}
+};
 
 interface ToolCallTrace {
   id: string;
-  name: string;
-  arguments: string;
+  name?: string;
+  arguments?: string;
   result?: any;
   error?: string;
-  timestamp: string;
+  timestamp?: string;
   durationMs?: number;
+  function?: {
+    name: string;
+    arguments: string;
+  };
 }
 
 const getRoleIcon = (role: string) => {
@@ -74,7 +78,7 @@ export default function ThreadInspector({
     setLoading(true);
     setError(null);
     try {
-      const response = await apiFetch(`/api/conversations/threads/${threadId}/full`);
+      const response = await apiFetch<ThreadWithContext>(`/api/conversations/threads/${threadId}/full`);
       setThread(response);
     } catch (err: any) {
       setError(err.message || 'Failed to load thread');
@@ -141,7 +145,7 @@ export default function ThreadInspector({
     );
   };
 
-  const renderToolCalls = (toolCalls: any[]) => {
+  const renderToolCalls = (toolCalls: ToolCallTrace[]) => {
     if (!toolCalls || toolCalls.length === 0) return null;
 
     return (
@@ -182,7 +186,7 @@ export default function ThreadInspector({
 
     return (
       <Stack spacing={2}>
-        {thread.fullMessages.map((message, index) => (
+        {thread.fullMessages.map((message: PromptMessage, index) => (
           <motion.div
             key={index}
             initial={{ opacity: 0, y: 20 }}
@@ -257,14 +261,17 @@ export default function ThreadInspector({
         <CardContent>
           <Typography variant="h6" gutterBottom>Tool Execution Trace</Typography>
           <Stack spacing={2}>
-            {thread.toolCalls.map((tc, index) => (
+          {thread.toolCalls.map((tc, index) => {
+            const callName = tc.name || tc.function?.name || 'tool_call';
+            const argumentString = tc.arguments ?? tc.function?.arguments ?? '';
+            return (
               <Accordion key={tc.id}>
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%' }}>
                     <BuildIcon color="action" />
-                    <Typography variant="body1" fontWeight="medium">{tc.name}</Typography>
+                    <Typography variant="body1" fontWeight="medium">{callName}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {new Date(tc.timestamp).toLocaleTimeString()}
+                      {tc.timestamp ? new Date(tc.timestamp).toLocaleTimeString() : '—'}
                     </Typography>
                     {tc.durationMs && (
                       <Chip label={`${tc.durationMs}ms`} size="small" />
@@ -281,12 +288,15 @@ export default function ThreadInspector({
                     <Box>
                       <Typography variant="subtitle2" gutterBottom>Arguments:</Typography>
                       {(() => {
+                        if (!argumentString) {
+                          return <Typography variant="body2" color="text.secondary">(none)</Typography>;
+                        }
                         try {
-                          const parsed = JSON.parse(tc.arguments);
+                          const parsed = JSON.parse(argumentString);
                           return <JsonPretty data={parsed} filename={`tool-args-${tc.id}.json`} maxHeight={260} />;
                         } catch {
                           return (
-                            <Box component="pre" sx={{ backgroundColor: 'grey.100', p: 1, borderRadius: 1, overflow: 'auto', fontSize: '0.75rem' }}>{tc.arguments}</Box>
+                            <Box component="pre" sx={{ backgroundColor: 'grey.100', p: 1, borderRadius: 1, overflow: 'auto', fontSize: '0.75rem' }}>{argumentString}</Box>
                           );
                         }
                       })()}
@@ -307,7 +317,8 @@ export default function ThreadInspector({
                   </Stack>
                 </AccordionDetails>
               </Accordion>
-            ))}
+            );
+          })}
           </Stack>
         </CardContent>
       </Card>
@@ -322,7 +333,7 @@ export default function ThreadInspector({
         <CardContent>
           <Typography variant="h6" gutterBottom>Provider Events</Typography>
           <Stack spacing={1}>
-            {thread.providerEvents.map((event, index) => (
+            {thread.providerEvents.map((event: ProviderEvent, index: number) => (
               <Box key={index} sx={{ p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Stack direction="row" spacing={2} alignItems="center">

@@ -14,13 +14,17 @@ import { useCookieState } from './hooks/useCookieState';
 import { useCrudResource } from './hooks/useCrudResource';
 import { randomId } from './utils/randomId';
 
-const emptyPrompt: Prompt = {
+const createPromptMessage = (role: PromptMessage['role'], content = ''): PromptMessage => ({
+  id: randomId(),
+  role,
+  content,
+});
+
+const createEmptyPrompt = (): Prompt => ({
   id: '',
   name: '',
-  messages: [
-    { role: 'system', content: '' }
-  ]
-};
+  messages: [createPromptMessage('system')],
+});
 
 export default function Prompts() {
   const { t } = useTranslation('common');
@@ -39,7 +43,7 @@ export default function Prompts() {
   const handleMsgAdd = () => {
     if (!editing) return;
     const msgs = Array.isArray(editing.messages) ? editing.messages : [];
-    setEditing({ ...editing, messages: [...msgs, { role: 'user', content: '' }] });
+    setEditing({ ...editing, messages: [...msgs, createPromptMessage('user')] });
   };
   const handleMsgDelete = (idx: number) => {
     if (!editing) return;
@@ -115,7 +119,7 @@ export default function Prompts() {
         <motion.div key={`prompts-tab-${tab}`} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}>
       {tab === 0 && (
         <>
-          <Button variant="contained" color="primary" onClick={() => { setEditing({ ...emptyPrompt, id: randomId() }); setOpen(true); }}>{t('prompts.buttons.addPrompt')}</Button>
+          <Button variant="contained" color="primary" onClick={() => { const base = createEmptyPrompt(); setEditing({ ...base, id: randomId() }); setOpen(true); }}>{t('prompts.buttons.addPrompt')}</Button>
           <TableContainer sx={{ mt: 1 }}>
             <Table size="small">
               <TableHead>
@@ -150,7 +154,7 @@ export default function Prompts() {
       )}
       {tab === 1 && (
         <>
-          <Button variant="contained" color="primary" onClick={() => { setTplEditing({ id: randomId(), name: '', messages: [{ role: 'system', content: '' }] }); setTplOpen(true); }}>{t('templates.buttons.addTemplate')}</Button>
+          <Button variant="contained" color="primary" onClick={() => { setTplEditing({ id: randomId(), name: '', messages: [createPromptMessage('system')] }); setTplOpen(true); }}>{t('templates.buttons.addTemplate')}</Button>
           <TableContainer sx={{ mt: 1 }}>
             <Table size="small">
               <TableHead>

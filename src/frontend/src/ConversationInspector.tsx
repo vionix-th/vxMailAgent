@@ -18,16 +18,16 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import TokenIcon from '@mui/icons-material/Token';
 import CodeIcon from '@mui/icons-material/Code';
 import VisibilityIcon from '@mui/icons-material/Visibility';
-import { ConversationThread, OrchestrationEvent, ProviderEvent, WorkspaceItem } from './types/shared';
+import { ConversationThread, OrchestrationEvent, ProviderEvent, WorkspaceItem, PromptMessage } from './types/shared';
 import JsonPretty from './components/JsonPretty';
 import { apiFetch } from './utils/http';
 
-interface ConversationDetails extends ConversationThread {
+type ConversationDetails = ConversationThread & {
   providerEvents: ProviderEvent[];
   orchestrationEvents: OrchestrationEvent[];
   workspaceItems: WorkspaceItem[];
   metrics: ConversationMetrics;
-}
+};
 
 interface ConversationMetrics {
   totalTokens: number;
@@ -39,20 +39,24 @@ interface ConversationMetrics {
   toolCallCount: number;
 }
 
-interface ThreadWithContext extends ConversationThread {
+type ThreadWithContext = ConversationThread & {
   fullMessages: any[];
   toolCalls: ToolCallTrace[];
   providerEvents: ProviderEvent[];
-}
+};
 
 interface ToolCallTrace {
   id: string;
-  name: string;
-  arguments: string;
+  name?: string;
+  arguments?: string;
   result?: any;
   error?: string;
-  timestamp: string;
+  timestamp?: string;
   durationMs?: number;
+  function?: {
+    name: string;
+    arguments: string;
+  };
 }
 
 function TabPanel({ children, value, index, ...other }: any) {
@@ -89,7 +93,7 @@ export default function ConversationInspector({
     setLoading(true);
     setError(null);
     try {
-      const response = await apiFetch(`/api/conversations/${conversationId}/details`);
+      const response = await apiFetch<ConversationDetails>(`/api/conversations/${conversationId}/details`);
       setConversation(response);
     } catch (err: any) {
       setError(err.message || 'Failed to load conversation');
@@ -100,7 +104,7 @@ export default function ConversationInspector({
 
   const loadThreadDetails = async (threadId: string) => {
     try {
-      const response = await apiFetch(`/api/conversations/threads/${threadId}/full`);
+      const response = await apiFetch<ThreadWithContext>(`/api/conversations/threads/${threadId}/full`);
       setThreadDetails(response);
       setSelectedThread(threadId);
     } catch (err: any) {
@@ -220,7 +224,7 @@ export default function ConversationInspector({
                 </Button>
               </Stack>
               <List>
-                {conversation.messages.slice(0, 5).map((message, index) => (
+                {conversation.messages.slice(0, 5).map((message: PromptMessage, index: number) => (
                   <ListItem key={index} divider>
                     <ListItemIcon>
                       <MessageIcon color={message.role === 'user' ? 'primary' : 'secondary'} />
@@ -259,7 +263,7 @@ export default function ConversationInspector({
 
     return (
       <Stack spacing={2}>
-        {conversation.providerEvents.map((event, index) => (
+        {conversation.providerEvents.map((event: ProviderEvent, index: number) => (
           <Accordion key={index}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
               <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%' }}>
@@ -316,7 +320,7 @@ export default function ConversationInspector({
             </TableRow>
           </TableHead>
           <TableBody>
-            {conversation.orchestrationEvents.map((event, index) => (
+            {conversation.orchestrationEvents.map((event: OrchestrationEvent, index: number) => (
               <TableRow key={index}>
                 <TableCell>
                   <Typography variant="body2">
@@ -324,7 +328,7 @@ export default function ConversationInspector({
                   </Typography>
                 </TableCell>
                 <TableCell>
-                  <Typography variant="body2">{event.context.event}</Typography>
+                  <Typography variant="body2">{event.phase}</Typography>
                 </TableCell>
                 <TableCell>
                   {event.outcome.success ? (
