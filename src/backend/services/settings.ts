@@ -85,6 +85,9 @@ export async function updateSettingsPartial(
       if (!currentCfg) {
         throw new RepositoryError(`Invalid settings patch: apiConfig ${cfg.id} not found`);
       }
+      if (Object.prototype.hasOwnProperty.call(cfg, 'apiKey')) {
+        throw new RepositoryError('Invalid settings patch: apiKey updates are not allowed');
+      }
       return {
         ...currentCfg,
         ...(typeof cfg.name === 'string' ? { name: cfg.name } : {}),

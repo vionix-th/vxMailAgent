@@ -61,6 +61,7 @@ _Last updated: 2025-09-22_
 - Add integration tests under `src/backend/tests/sqlite/*.cjs` with ephemeral DB fixtures.
 - Validate schema invariants: required fields reject with descriptive errors; wrong enums throw before SQL execution.
 - Include regression coverage asserting that serialized settings responses exclude `apiKey` after Task 5.
+- **Status:** ✅ Completed (2025-09-23) — Added SQLite integration suites for settings, accounts, and workspace invariants, validated serializer behavior, and exercised them against the compiled backend (requires `npm run build` plus SQLite env vars to run locally).
 
 ### 8. SQLite operational notes — Status: ⏳ Pending
 - Document bootstrap steps in `docs/DEVELOPER.md` (dependency, init command, backup/restore).
