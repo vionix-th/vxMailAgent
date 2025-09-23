@@ -85,10 +85,10 @@ _Last updated: 2025-09-23_
 - **Status:** ✅ Completed (2025-09-23) — Results now caches workspace items per conversation, only refetches threads whose snapshots change, and surfaces conversation status/last activity in the email navigator.
 
 ### 11. Redesign API config management UI
-- **Goal:** Update `Settings` API config management to respect backend secret constraints by removing client-side creation/updating of configs through `PUT /api/settings` and introducing a flow that either calls a backend-managed creation endpoint or clearly marks configs as read-only with guidance for secret provisioning.
+- **Goal:** Keep full CRUD for API configs in the Settings UI while respecting that the backend never returns `apiKey`. Collect the secret only at creation/update time, send it to a dedicated backend input, and present read-only metadata afterwards (name/model/maxCompletionTokens) with no secret echo.
 - **Depends on:** Task 5 (centralized API config serialization and secret handling).
 - **Unblocks:** Stable frontend settings management.
-- **Status:** ⏳ Pending — Current UI still attempts to POST freshly generated configs without `apiKey` (`src/frontend/src/Settings.tsx:147`), which the backend now rejects after Task 5.
+- **Status:** ✅ Completed (2025-09-23) — Backend now exposes create/update/delete endpoints that persist secrets without returning them, and the Settings UI uses those routes with write-only API key inputs while rendering sanitized config metadata.
 
 ## Completed SQLite Milestones (for reference)
 - Storage contract foundation (paths, handle, factory, pragmas).

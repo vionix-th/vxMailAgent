@@ -123,7 +123,7 @@ export default function Results() {
   const conversationLookup = useMemo(() => Object.fromEntries(conversations.map((c) => [c.id, c])), [conversations]);
 
   const loadWorkspaceItems = useCallback(async (conversationIds: string[], snapshotMap: Record<string, string>) => {
-    if (!conversationIds.length) return;
+    if (!conversationIds.length) return [] as { conversationId: string; items: WorkspaceItem[] }[];
     const results = await Promise.all(conversationIds.map(async (conversationId) => {
       try {
         const items = await apiFetch<WorkspaceItem[]>(`/api/workspaces/${encodeURIComponent(conversationId)}/items`);

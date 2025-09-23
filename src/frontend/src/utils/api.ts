@@ -5,6 +5,29 @@
 
 import { apiFetch } from './http';
 
+export interface ApiConfigView {
+  id: string;
+  name: string;
+  model: string;
+  maxCompletionTokens?: number;
+}
+
+export interface CreateApiConfigRequest {
+  name: string;
+  model: string;
+  apiKey: string;
+  provider?: string;
+  maxCompletionTokens?: number;
+}
+
+export interface UpdateApiConfigRequest {
+  name?: string;
+  model?: string;
+  apiKey?: string;
+  provider?: string;
+  maxCompletionTokens?: number | null;
+}
+
 export interface CleanupStats {
   fetcherLogs: number;
   orchestrationLogs: number;
@@ -49,6 +72,34 @@ export async function cleanupWorkspaceItems(): Promise<{ success: boolean; delet
 export async function deleteWorkspaceItem(conversationId: string, itemId: string, opts?: { hard?: boolean }): Promise<any> {
   const search = opts?.hard ? '?hard=true' : '';
   return apiFetch(`/api/workspaces/${encodeURIComponent(conversationId)}/items/${encodeURIComponent(itemId)}${search}`, { method: 'DELETE' });
+}
+
+export async function createApiConfig(input: CreateApiConfigRequest): Promise<ApiConfigView> {
+  const response = await apiFetch<{ success: boolean; apiConfig: ApiConfigView }>(
+    '/api/settings/api-configs',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return response.apiConfig;
+}
+
+export async function updateApiConfig(id: string, input: UpdateApiConfigRequest): Promise<ApiConfigView> {
+  const response = await apiFetch<{ success: boolean; apiConfig: ApiConfigView }>(
+    `/api/settings/api-configs/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return response.apiConfig;
+}
+
+export async function deleteApiConfig(id: string): Promise<void> {
+  await apiFetch(`/api/settings/api-configs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 /** Delete provider event logs. */

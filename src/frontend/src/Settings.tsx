@@ -4,15 +4,18 @@ import {
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats } from './utils/api';
+import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats, createApiConfig, updateApiConfig, deleteApiConfig, ApiConfigView, CreateApiConfigRequest, UpdateApiConfigRequest } from './utils/api';
 import log from './utils/log';
 import { apiFetch } from './utils/http';
 
-type ApiConfigResponse = {
+type ApiConfigResponse = ApiConfigView;
+
+type ApiConfigDraft = {
   id: string;
   name: string;
   model: string;
   maxCompletionTokens?: number;
+  apiKey: string;
 };
 
 interface SettingsData {
@@ -101,12 +104,12 @@ export default function Settings() {
   // API Configs management handlers
   const [editingApiConfig, setEditingApiConfig] = useState<ApiConfigResponse | null>(null);
   const [addingApiConfig, setAddingApiConfig] = useState(false);
-  const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfigResponse>({ id: '', name: '', model: '' });
+  const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfigDraft>({ id: '', name: '', model: '', apiKey: '' });
 
-  const handleApiConfigChange = (field: keyof ApiConfigResponse) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleApiConfigChange = (field: 'name' | 'model' | 'apiKey') => (e: React.ChangeEvent<HTMLInputElement>) => {
     setApiConfigDraft(d => ({ ...d, [field]: e.target.value }));
   };
-  const handleApiConfigChangeNumber = (field: keyof ApiConfigResponse) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleApiConfigChangeNumber = (field: 'maxCompletionTokens') => (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
     const num = v === '' ? undefined : Number(v);
     setApiConfigDraft(d => ({ ...d, [field]: (Number.isFinite(num as number) ? (num as number) : undefined) as any }));
@@ -114,21 +117,18 @@ export default function Settings() {
   const handleApiConfigEdit = (cfg: ApiConfigResponse) => {
     setEditingApiConfig(cfg);
     setAddingApiConfig(false);
-    setApiConfigDraft(cfg);
+    setApiConfigDraft({ ...cfg, apiKey: '' });
   };
   const handleApiConfigDelete = async (id: string) => {
-    const nextApiConfigs = (settings.apiConfigs || []).filter(c => c.id !== id);
-    const nextSettings = { ...settings, apiConfigs: nextApiConfigs };
-    setSettings(nextSettings);
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      await apiFetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nextSettings),
-      });
+      await deleteApiConfig(id);
+      setSettings(prev => ({
+        ...prev,
+        apiConfigs: (prev.apiConfigs || []).filter(c => c.id !== id)
+      }));
       setSuccess(t('settings.apiConfigs.messages.deletedSaved'));
     } catch (e: any) {
       setError(e.message || t('settings.errors.failedSave'));
@@ -139,30 +139,70 @@ export default function Settings() {
   const handleApiConfigAdd = () => {
     setAddingApiConfig(true);
     setEditingApiConfig(null);
-    setApiConfigDraft({ id: '', name: '', model: '' });
+    setApiConfigDraft({ id: '', name: '', model: '', apiKey: '' });
   };
   const handleApiConfigSave = async () => {
-    let nextApiConfigs: ApiConfigResponse[];
-    if (editingApiConfig) {
-      nextApiConfigs = (settings.apiConfigs || []).map(c => c.id === editingApiConfig.id ? apiConfigDraft : c);
-    } else {
-      nextApiConfigs = [...(settings.apiConfigs || []), { ...apiConfigDraft, id: Date.now().toString(36) + Math.random().toString(36).slice(2) }];
+    const trimmedName = apiConfigDraft.name.trim();
+    const trimmedModel = apiConfigDraft.model.trim();
+    const trimmedKey = apiConfigDraft.apiKey.trim();
+    if (!trimmedName) {
+      setError('API config name is required');
+      return;
     }
-    const nextSettings = { ...settings, apiConfigs: nextApiConfigs };
-    setSettings(nextSettings);
-    setEditingApiConfig(null);
-    setAddingApiConfig(false);
-    setApiConfigDraft({ id: '', name: '', model: '' });
+    if (!trimmedModel) {
+      setError('API config model is required');
+      return;
+    }
+
+    const maxTokensDraft = apiConfigDraft.maxCompletionTokens;
+    const isEditing = Boolean(editingApiConfig);
+    if (!isEditing && !trimmedKey) {
+      setError('API key is required');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      await apiFetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nextSettings),
-      });
+      if (isEditing && editingApiConfig) {
+        const patch: UpdateApiConfigRequest = {};
+        if (trimmedName !== editingApiConfig.name) patch.name = trimmedName;
+        if (trimmedModel !== editingApiConfig.model) patch.model = trimmedModel;
+        if (trimmedKey) patch.apiKey = trimmedKey;
+
+        const currentMax = editingApiConfig.maxCompletionTokens;
+        if (typeof maxTokensDraft === 'number') {
+          if (currentMax !== maxTokensDraft) patch.maxCompletionTokens = maxTokensDraft;
+        } else if (typeof currentMax === 'number') {
+          patch.maxCompletionTokens = null;
+        }
+
+        const updated = await updateApiConfig(editingApiConfig.id, patch);
+        setSettings(prev => ({
+          ...prev,
+          apiConfigs: (prev.apiConfigs || []).map(c => c.id === updated.id ? updated : c),
+        }));
+      } else {
+        const payload: CreateApiConfigRequest = {
+          name: trimmedName,
+          model: trimmedModel,
+          apiKey: trimmedKey,
+        };
+        if (typeof maxTokensDraft === 'number') {
+          payload.maxCompletionTokens = maxTokensDraft;
+        }
+        const created = await createApiConfig(payload);
+        setSettings(prev => ({
+          ...prev,
+          apiConfigs: [...(prev.apiConfigs || []), created],
+        }));
+      }
+
       setSuccess(t('settings.apiConfigs.messages.savedUpdated'));
+      setEditingApiConfig(null);
+      setAddingApiConfig(false);
+      setApiConfigDraft({ id: '', name: '', model: '', apiKey: '' });
     } catch (e: any) {
       setError(e.message || t('settings.errors.failedSave'));
     } finally {
@@ -172,7 +212,7 @@ export default function Settings() {
   const handleApiConfigCancel = () => {
     setEditingApiConfig(null);
     setAddingApiConfig(false);
-    setApiConfigDraft({ id: '', name: '', model: '' });
+    setApiConfigDraft({ id: '', name: '', model: '', apiKey: '' });
   };
 
   // Unified cleanup handlers
@@ -277,7 +317,7 @@ export default function Settings() {
               {typeof (cfg as any).maxCompletionTokens === 'number' && (
                 <Typography variant="body2" color="text.secondary">{t('settings.apiConfigs.labels.maxTokens')}: {(cfg as any).maxCompletionTokens}</Typography>
               )}
-              {/* apiKey is secret and not part of public settings */}
+              <Typography variant="body2" color="text.secondary">{t('settings.apiConfigs.labels.key')}: {t('settings.apiConfigs.labels.notSet')}</Typography>
             </Box>
             <Button size="small" variant="outlined" onClick={() => handleApiConfigEdit(cfg)}>{t('actions.edit')}</Button>
             <Button size="small" color="error" variant="outlined" onClick={() => handleApiConfigDelete(cfg.id)}>{t('actions.delete')}</Button>
@@ -309,7 +349,16 @@ export default function Settings() {
           <Typography variant="subtitle1" gutterBottom>{editingApiConfig ? t('settings.apiConfigs.editTitle') : t('settings.apiConfigs.addTitle')}</Typography>
           <TextField label={t('settings.apiConfigs.fields.name')} value={apiConfigDraft.name} onChange={handleApiConfigChange('name')} fullWidth margin="normal" />
           <TextField label={t('settings.apiConfigs.fields.model')} value={apiConfigDraft.model} onChange={handleApiConfigChange('model')} fullWidth margin="normal" />
-          {/* apiKey editing is backend-only; not exposed in public type */}
+          <TextField
+            label={t('settings.apiConfigs.fields.apiKey')}
+            value={apiConfigDraft.apiKey}
+            onChange={handleApiConfigChange('apiKey')}
+            fullWidth
+            margin="normal"
+            type="password"
+            placeholder={editingApiConfig ? t('settings.apiConfigs.labels.notSet') : ''}
+            helperText={editingApiConfig ? 'Leave blank to keep the existing key' : undefined}
+          />
           <TextField
             label={t('settings.apiConfigs.fields.maxOutputTokens')}
             type="number"
