@@ -1,6 +1,6 @@
 // Tool call handlers for calendar, todo, filesystem, memory
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
-import { ToolCallResult, MemoryEntry, MemoryScope, ApiConfigPublic, ConversationThread } from '../shared/types';
+import { ToolCallResult, MemoryEntry, MemoryScope, ApiConfig, ConversationThread } from '../shared/types';
 import { validateAgainstSchema, validateWorkspaceProvenance } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
 import { filterToolDescriptorsByRole, selectToolDescriptors } from './utils/tools';
@@ -13,6 +13,7 @@ import type { RepoBundle } from './repository/registry';
 import { ensureAgentThread, runAgentConversation } from './services/orchestration-agent';
 import { ValidationError } from './services/error-handler';
 import { WorkspaceItemsRepository } from './storage/sqlite/repositories/workspaceItems';
+import { serializeApiConfig } from './services/apiConfigSerializer';
 
 interface ToolCallExecutionContext {
   workspace?: {
@@ -115,7 +116,7 @@ export function createToolHandler(repos: RepoBundle) {
           const prompts = await repos.prompts.getAll();
           const settingsArr = await repos.settings.getAll();
           const apiConfigs = (Array.isArray(settingsArr) && settingsArr.length > 0 && Array.isArray((settingsArr[0] as any)?.apiConfigs))
-            ? (settingsArr[0] as any).apiConfigs
+            ? (settingsArr[0] as any).apiConfigs as ApiConfig[]
             : null;
           if (!apiConfigs) {
             return { kind: name, success: false, result: null, error: 'settings_not_initialized' };
@@ -141,7 +142,7 @@ export function createToolHandler(repos: RepoBundle) {
           await repos.conversations.setAll(ensured.conversations);
 
           const agentThread = ensured.agentThread;
-          const apiCfg = apiConfigs.find((c: any) => c.id === agentThread.apiConfigId);
+          const apiCfg = apiConfigs.find((c: ApiConfig) => c.id === agentThread.apiConfigId);
           if (!apiCfg) return { kind: name, success: false, result: null, error: 'API config not found for agent' };
           const gatedToolDescriptors = filterToolDescriptorsByRole('agent');
           const setConversations = async (next: ConversationThread[]) => { await repos.conversations.setAll(next); };
@@ -156,7 +157,7 @@ export function createToolHandler(repos: RepoBundle) {
             agentThread,
             input,
             ensured.conversations,
-            { id: apiCfg.id, name: apiCfg.name, model: apiCfg.model, ...(typeof apiCfg.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiCfg.maxCompletionTokens } : {}) } as ApiConfigPublic,
+            serializeApiConfig(apiCfg),
             gatedToolDescriptors,
             setConversations as any,
             handleTool,

@@ -546,9 +546,7 @@ These examples illustrate final, unambiguous shapes. Field omissions are intenti
 
 ### ApiConfig
 
-Two shapes enforce secret separation:
-- ApiConfigPublic (response DTO): id, name, model, maxCompletionTokens?
-- Persisted backend configs include an apiKey field, but no secret-bearing type is exported. The engine receives secrets via a separate parameter.
+Persisted backend configs store the provider secret (apiKey). REST responses and engine invocations derive a filtered view at the boundary (strip apiKey, keep id/name/model/maxCompletionTokens) via `serializeApiConfig`.
 
 Engine invocation passes the key separately and never embeds it in the input:
 - conversationEngine.run(input: ConversationEngineRunInput, secrets: { apiKey: string })

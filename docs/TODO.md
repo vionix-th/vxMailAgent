@@ -47,6 +47,7 @@ _Last updated: 2025-09-22_
   - Add serializer helpers in `services/settings` (server) and typed client equivalents; ensure routes call them instead of manual spreads.
   - Add lint/test guard preventing `apiKey` from appearing in JSON responses.
   - Update frontend consumers to rely on the REST response contract rather than shared public types.
+- **Status:** ✅ Completed (2025-09-23) — domain `ApiConfig` now carries secrets, `serializeApiConfig` filters REST/engine payloads, tests guard against leaking `apiKey`, and frontend consumes a local response type.
 
 ### 6. SQLite service layer integration — Status: ⏳ Pending
 - Update `repo-access.ts`, `liveRepos.ts`, and service routes (accounts, settings, memory, templates, workspaces, cleanup, conversations) to call SQLite repositories directly.

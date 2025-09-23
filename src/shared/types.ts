@@ -333,6 +333,16 @@ export interface AccountPublic {
   };
 }
 
+export interface ApiConfig {
+  id: string;
+  name: string;
+  model: string;
+  apiKey: string;
+  provider?: string;
+  /** Optional maximum output tokens for chat completions (maps to OpenAI max_completion_tokens). */
+  maxCompletionTokens?: number;
+}
+
 /** Application user (authenticated principal). */
 export interface User {
   /** Stable app user id (e.g., `google:{sub}`) */
@@ -342,14 +352,6 @@ export interface User {
   picture?: string;
   createdAt: string;
   lastLoginAt: string;
-}
-
-export interface ApiConfigPublic {
-  id: string;
-  name: string;
-  model: string;
-  /** Optional maximum output tokens for chat completions (maps to OpenAI max_completion_tokens). */
-  maxCompletionTokens?: number;
 }
 
 export type MemoryScope = 'global' | 'shared' | 'local';
@@ -511,7 +513,7 @@ export type ConversationRole = 'director' | 'agent';
 /** Conversation engine input. */
 export interface ConversationEngineRunInput {
   messages: PromptMessage[];
-  apiConfig: ApiConfigPublic;
+  apiConfig: Pick<ApiConfig, 'id' | 'name' | 'model' | 'maxCompletionTokens'>;
   role: ConversationRole;
   toolRegistry: ToolDescriptor[];
   /** Optional context bag for diagnostics and prompt construction. */

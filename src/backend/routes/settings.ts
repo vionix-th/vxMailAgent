@@ -5,6 +5,7 @@ import { securityAudit } from '../services/security-audit';
 import logger from '../services/logger';
 import { requireReq, requireUid, ReqLike } from '../utils/repo-access';
 import { loadSettings, updateSettingsPartial } from '../services/settings';
+import { serializeApiConfig } from '../services/apiConfigSerializer';
 
 export interface SettingsRoutesDeps {}
 
@@ -24,7 +25,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
     const settings = await loadSettings(ureq);
     logger.info('GET /api/settings', { uid });
     const apiConfigsPublic = Array.isArray(settings.apiConfigs)
-      ? settings.apiConfigs.map((c: any) => ({ id: c.id, name: c.name, model: c.model, ...(typeof c.maxCompletionTokens === 'number' ? { maxCompletionTokens: c.maxCompletionTokens } : {}) }))
+      ? settings.apiConfigs.map(serializeApiConfig)
       : [];
     res.json({
       virtualRoot: settings.virtualRoot,

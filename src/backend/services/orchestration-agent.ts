@@ -1,4 +1,4 @@
-import { ConversationThread, Agent, Director, Prompt, ApiConfigPublic } from '../../shared/types';
+import { ConversationThread, Agent, Director, Prompt, ApiConfig } from '../../shared/types';
 import { beginSpan, endSpan } from './logging';
 import logger from './logger';
 import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
@@ -7,6 +7,7 @@ import { newId } from '../utils/id';
 import type { ReqLike } from '../interfaces';
 import { InvalidAgentConfigError } from './error-handler';
 import { appendMessageToThread, finalizeThreadStatus } from './conversation-mutations';
+import { ApiConfigView } from './apiConfigSerializer';
 
 export interface AgentConversationResult {
   finalMessages: any[];
@@ -28,7 +29,7 @@ export function ensureAgentThread(
   agent: Agent,
   emailEnvelope: any,
   prompts: Prompt[],
-  apiConfigs: any[],
+  apiConfigs: ApiConfig[],
   nowIso: string,
   newIdFn: () => string,
   accountId: string,
@@ -52,7 +53,7 @@ export function ensureAgentThread(
     }
   }
   const agentPrompt = prompts.find(p => p.id === agent.promptId);
-  const agentApi = apiConfigs.find((c: any) => c.id === agent.apiConfigId);
+  const agentApi = apiConfigs.find((c) => c.id === agent.apiConfigId);
   if (!agentApi || !agentPrompt) {
     if (traceId && spanId) endSpan(traceId, spanId, { status: 'error', error: 'missing agent api/prompt' }, req);
     // Throw to avoid returning a union type and to simplify call sites.
@@ -86,7 +87,7 @@ export async function runAgentConversation(
   agentThread: ConversationThread,
   initialUserMessage: string,
   conversations: ConversationThread[],
-  apiConfig: ApiConfigPublic,
+  apiConfig: ApiConfigView,
   toolRegistry: any[],
   setConversations: (next: ConversationThread[]) => void,
   handleTool: (name: string, params: any) => Promise<any>,

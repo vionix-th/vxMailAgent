@@ -1,4 +1,4 @@
-import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfigPublic } from '../../shared/types';
+import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfig } from '../../shared/types';
 import { runAgentConversation, ensureAgentThread } from './orchestration-agent';
 // Tool descriptors are filtered via filterToolDescriptorsByRole
 import { selectToolDescriptors } from '../utils/tools';
@@ -14,13 +14,14 @@ import { newId } from '../utils/id';
 import { repoAppendMessage, repoAppendMessages, repoFinalizeThreadStatus, repoGetThreadById } from './conversation-mutations';
 import { extractLastUserContent } from '../utils/message-transformers';
 import { ValidationError } from './error-handler';
+import { serializeApiConfig, ApiConfigView } from './apiConfigSerializer';
 
 export interface ConversationContext {
   thread: ConversationThread;
   director?: Director;
   agent?: Agent;
   agents: Agent[];
-  apiConfigs: any[];
+  apiConfigs: ApiConfig[];
   prompts: any[];
   traceId: string;
 }
@@ -108,7 +109,7 @@ export class ConversationOrchestrator {
     await this.stepLogger.logEngineStart(threadId, stepType, context.thread.messages.length, emailId, context.thread.directorId);
 
     try {
-      const apiCfg = context.apiConfigs.find((c: any) => c.id === context.thread.apiConfigId);
+      const apiCfg = context.apiConfigs.find((c) => c.id === context.thread.apiConfigId);
       if (!apiCfg) {
         throw new Error(`API config not found for thread apiConfigId=${context.thread.apiConfigId}`);
       }
@@ -120,7 +121,7 @@ export class ConversationOrchestrator {
         ? selectToolDescriptors('director', directorEnabled)
         : selectToolDescriptors('agent');
 
-      const apiConfigPublic: ApiConfigPublic = { id: apiCfg.id, name: apiCfg.name, model: apiCfg.model, ...(typeof apiCfg.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiCfg.maxCompletionTokens } : {}) };
+      const apiConfigPublic: ApiConfigView = serializeApiConfig(apiCfg);
       const engineInput = {
         messages: context.thread.messages,
         apiConfig: apiConfigPublic,
@@ -230,8 +231,8 @@ export class ConversationOrchestrator {
     userReq: UserRequest
   ): Promise<{ assistantMessage: PromptMessage | null; content?: string }> {
     // Resolve API config for this agent thread
-    const apiConfigs = (await userReq.repos.getSettings(requireReq(userReq.reqLike))).apiConfigs;
-    const apiConfig = apiConfigs.find((c: any) => c.id === thread.apiConfigId);
+    const apiConfigs = (await userReq.repos.getSettings(requireReq(userReq.reqLike))).apiConfigs as ApiConfig[];
+    const apiConfig = apiConfigs.find((c) => c.id === thread.apiConfigId);
     if (!apiConfig) {
       throw new Error('API config not found');
     }
@@ -252,7 +253,7 @@ export class ConversationOrchestrator {
       thread,
       userContent,
       await userReq.repos.getConversations(userReq.reqLike),
-      { id: apiConfig.id, name: apiConfig.name, model: apiConfig.model, ...(typeof apiConfig.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiConfig.maxCompletionTokens } : {}) } as ApiConfigPublic,
+      serializeApiConfig(apiConfig),
       gatedToolDescriptors,
       async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
       scopedHandleTool,
@@ -690,8 +691,8 @@ export class ConversationOrchestrator {
     userReq: UserRequest
   ): Promise<void> {
     try {
-      const apiConfigs = (await userReq.repos.getSettings(requireReq(userReq.reqLike))).apiConfigs;
-      const apiConfig = apiConfigs.find((c: any) => c.id === parentThread.apiConfigId);
+      const apiConfigs = (await userReq.repos.getSettings(requireReq(userReq.reqLike))).apiConfigs as ApiConfig[];
+      const apiConfig = apiConfigs.find((c) => c.id === parentThread.apiConfigId);
       if (!apiConfig) {
         logger.warn('API config not found for agent conversation', { apiConfigId: parentThread.apiConfigId });
         return;

@@ -4,14 +4,20 @@ import {
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-import { ApiConfigPublic } from './types/shared';
 import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats } from './utils/api';
 import log from './utils/log';
 import { apiFetch } from './utils/http';
 
+type ApiConfigResponse = {
+  id: string;
+  name: string;
+  model: string;
+  maxCompletionTokens?: number;
+};
+
 interface SettingsData {
   virtualRoot?: string;
-  apiConfigs?: ApiConfigPublic[];
+  apiConfigs?: ApiConfigResponse[];
   sessionTimeoutMinutes?: number;
 }
 
@@ -93,19 +99,19 @@ export default function Settings() {
   };
 
   // API Configs management handlers
-  const [editingApiConfig, setEditingApiConfig] = useState<ApiConfigPublic | null>(null);
+  const [editingApiConfig, setEditingApiConfig] = useState<ApiConfigResponse | null>(null);
   const [addingApiConfig, setAddingApiConfig] = useState(false);
-  const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfigPublic>({ id: '', name: '', model: '' } as any);
+  const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfigResponse>({ id: '', name: '', model: '' });
 
-  const handleApiConfigChange = (field: keyof ApiConfigPublic) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleApiConfigChange = (field: keyof ApiConfigResponse) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setApiConfigDraft(d => ({ ...d, [field]: e.target.value }));
   };
-  const handleApiConfigChangeNumber = (field: keyof ApiConfigPublic) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleApiConfigChangeNumber = (field: keyof ApiConfigResponse) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
     const num = v === '' ? undefined : Number(v);
     setApiConfigDraft(d => ({ ...d, [field]: (Number.isFinite(num as number) ? (num as number) : undefined) as any }));
   };
-  const handleApiConfigEdit = (cfg: ApiConfigPublic) => {
+  const handleApiConfigEdit = (cfg: ApiConfigResponse) => {
     setEditingApiConfig(cfg);
     setAddingApiConfig(false);
     setApiConfigDraft(cfg);
@@ -133,10 +139,10 @@ export default function Settings() {
   const handleApiConfigAdd = () => {
     setAddingApiConfig(true);
     setEditingApiConfig(null);
-    setApiConfigDraft({ id: '', name: '', model: '' } as any);
+    setApiConfigDraft({ id: '', name: '', model: '' });
   };
   const handleApiConfigSave = async () => {
-    let nextApiConfigs: ApiConfigPublic[];
+    let nextApiConfigs: ApiConfigResponse[];
     if (editingApiConfig) {
       nextApiConfigs = (settings.apiConfigs || []).map(c => c.id === editingApiConfig.id ? apiConfigDraft : c);
     } else {
@@ -146,7 +152,7 @@ export default function Settings() {
     setSettings(nextSettings);
     setEditingApiConfig(null);
     setAddingApiConfig(false);
-    setApiConfigDraft({ id: '', name: '', model: '' } as any);
+    setApiConfigDraft({ id: '', name: '', model: '' });
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -166,7 +172,7 @@ export default function Settings() {
   const handleApiConfigCancel = () => {
     setEditingApiConfig(null);
     setAddingApiConfig(false);
-    setApiConfigDraft({ id: '', name: '', model: '' } as any);
+    setApiConfigDraft({ id: '', name: '', model: '' });
   };
 
   // Unified cleanup handlers
