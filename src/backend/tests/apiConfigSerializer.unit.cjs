@@ -1,9 +1,23 @@
 #!/usr/bin/env node
 
-import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+const assert = require('node:assert/strict');
+const { describe, it } = require('node:test');
+const path = require('path');
+const fs = require('fs');
 
-import { serializeApiConfig } from '../services/apiConfigSerializer';
+function loadSerializer() {
+  const backendRoot = path.resolve(__dirname, '..');
+  const distRoot = path.join(backendRoot, 'dist');
+  const candidates = [
+    path.join(distRoot, 'backend', 'services', 'apiConfigSerializer.js'),
+    path.join(distRoot, 'services', 'apiConfigSerializer.js'),
+  ];
+  const target = candidates.find(fs.existsSync);
+  if (!target) throw new Error('apiConfigSerializer.js not found in dist. Run `npm run build` in backend.');
+  return require(target);
+}
+
+const { serializeApiConfig } = loadSerializer();
 
 describe('serializeApiConfig', () => {
   it('strips apiKey and preserves public fields', () => {

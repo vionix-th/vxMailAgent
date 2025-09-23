@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const distBackend = path.join(__dirname, '..', 'dist', 'backend');
-const { initRepos } = require(path.join(distBackend, 'initRepos.js'));
+const { initRepos, shutdownRepos } = require(path.join(distBackend, 'initRepos.js'));
 const {
   getUserRepoBundle,
   repoBundleRegistry,
@@ -17,18 +17,17 @@ function withTempDataDir(fn) {
   process.env.VX_MAILAGENT_DATA_DIR = tempDir;
 
   const cleanup = () => {
-    try {
-      repoBundleRegistry.destroy();
-    } catch {}
+    const shutdown = shutdownRepos().catch(() => {});
     if (originalDir === undefined) {
       delete process.env.VX_MAILAGENT_DATA_DIR;
     } else {
       process.env.VX_MAILAGENT_DATA_DIR = originalDir;
     }
     fs.rmSync(tempDir, { recursive: true, force: true });
+    return shutdown;
   };
 
-  return fn().finally(cleanup);
+  return fn().finally(() => Promise.resolve(cleanup()));
 }
 
 test('SQLite LiveRepos conversation mutation flows', async () => {
@@ -102,12 +101,35 @@ test('Provider events remain isolated per user', async () => {
     const reqA = { userContext: { uid: uidA, repos: bundleA } };
     const reqB = { userContext: { uid: uidB, repos: bundleB } };
 
+    const nowIso = new Date().toISOString();
+    const baseConversation = {
+      id: 'conv-a',
+      kind: 'director',
+      parentId: null,
+      directorId: 'dir-1',
+      agentId: null,
+      accountId: 'acct-1',
+      email: { id: 'email-1', subject: 'subj', from: 'from', to: 'to', date: nowIso },
+      promptId: 'prompt-1',
+      apiConfigId: 'config-1',
+      status: 'ongoing',
+      startedAt: nowIso,
+      lastActiveAt: nowIso,
+      endedAt: null,
+      result: undefined,
+      errors: undefined,
+      messages: [],
+    };
+
+    await bundleA.conversations.setAll([baseConversation]);
+    await bundleB.conversations.setAll([{ ...baseConversation, id: 'conv-b' }]);
+
     const eventA1 = {
       id: 'ev-a-1',
       conversationId: 'conv-a',
       provider: 'openai',
       type: 'request',
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso,
       latencyMs: 42,
       usage: { totalTokens: 10 },
     };

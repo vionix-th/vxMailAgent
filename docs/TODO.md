@@ -55,6 +55,7 @@ _Last updated: 2025-09-22_
 - Remove file-lock scaffolding; rely on SQLite transactions.
 - Validate `LiveRepos` mutate/append flows via `src/backend/tests/liveRepos.sqlite.unit.cjs`.
 - **Adjustments post-Task 5:** Audit repository return shapes to confirm they align with the new serializer boundary (no accidental secret strips at the data layer).
+- **Status:** ✅ Completed (2025-09-23) — CLI tooling now reads users from SQLite, provider-event pruning uses proper literals, `RepoBundleRegistry` exposes `shutdownRepos()` for clean handles, and `liveRepos` mutation tests pass under the SQLite stack.
 
 ### 7. SQLite testing & verification — Status: ⏳ Pending
 - Add integration tests under `src/backend/tests/sqlite/*.cjs` with ephemeral DB fixtures.

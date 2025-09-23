@@ -6,7 +6,7 @@ import { SqliteRepository, stringify } from './base';
 
 function pruneProviderEvents(db: any) {
   if (PROVIDER_TTL_DAYS > 0) {
-    db.prepare('DELETE FROM provider_events WHERE timestamp < datetime("now", ?)')
+    db.prepare("DELETE FROM provider_events WHERE timestamp < datetime('now', ?)")
       .run(`-${PROVIDER_TTL_DAYS} days`);
   }
   if (USER_MAX_LOGS_PER_TYPE > 0) {
