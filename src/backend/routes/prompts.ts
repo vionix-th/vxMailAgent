@@ -138,9 +138,6 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     }
 
     const target = parseTarget(payload, req.query);
-    if (!target) {
-      throw new ValidationError('target_required');
-    }
     // Filter affordances based on target to avoid irrelevant details
     let affordancesObj: any;
     if (target?.role === 'agent') {
