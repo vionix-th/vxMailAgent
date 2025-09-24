@@ -52,6 +52,10 @@ export function resolveAgentToolDescriptors(agent: Agent): ToolDescriptor[] {
   return selectToolDescriptors('agent', allowlist);
 }
 
+export function resolveMandatoryToolDescriptors(role: 'director' | 'agent'): ToolDescriptor[] {
+  return selectToolDescriptors(role);
+}
+
 export function validateDirectorToolConfig(director: Director): void {
   void ensureEnabledToolCalls('director', director.enabledToolCalls);
 }

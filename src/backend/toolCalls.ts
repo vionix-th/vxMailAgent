@@ -3,7 +3,6 @@
 import { ToolCallResult, MemoryEntry, MemoryScope, ApiConfig, ConversationThread, Director, Agent, ToolDescriptor } from '../shared/types';
 import { validateAgainstSchema, validateWorkspaceProvenance } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
-import { loadDirectorWithDescriptors, loadAgentWithDescriptors, loadMandatoryDescriptors } from './utils/tool-config-fetchers';
 import { TOOL_EXEC_TIMEOUT_MS } from './config';
 import logger from './services/logger';
 import { WorkspaceService } from './services/workspace-service';
@@ -11,14 +10,39 @@ import { Repository } from './repository/core';
 import { newId } from './utils/id';
 import type { RepoBundle } from './repository/registry';
 import { ensureAgentThread, runAgentConversation } from './services/orchestration-agent';
-import { ValidationError } from './services/error-handler';
+import { ValidationError, InvalidAgentConfigError } from './services/error-handler';
 import { WorkspaceItemsRepository } from './storage/sqlite/repositories/workspaceItems';
 import { serializeApiConfig } from './services/apiConfigSerializer';
+import { resolveAgentToolDescriptors, resolveDirectorToolDescriptors, resolveMandatoryToolDescriptors } from './services/tool-config-service';
 
 interface ToolCallExecutionContext {
   workspace?: {
     conversationId: string;
   };
+}
+
+async function getDirectorWithDescriptors(
+  repos: RepoBundle,
+  directorId: string
+): Promise<{ director: Director; descriptors: ToolDescriptor[] }> {
+  const directors = await repos.directors.getAll();
+  const director = (directors as Director[]).find((d) => d.id === directorId);
+  if (!director) {
+    throw new ValidationError('Director not found', 'DIRECTOR_NOT_FOUND');
+  }
+  return { director, descriptors: resolveDirectorToolDescriptors(director) };
+}
+
+async function getAgentWithDescriptors(
+  repos: RepoBundle,
+  agentId: string
+): Promise<{ agent: Agent; descriptors: ToolDescriptor[] }> {
+  const agents = await repos.agents.getAll();
+  const agent = (agents as Agent[]).find((a) => a.id === agentId);
+  if (!agent) {
+    throw new InvalidAgentConfigError('Agent not found', 'AGENT_NOT_FOUND');
+  }
+  return { agent, descriptors: resolveAgentToolDescriptors(agent) };
 }
 
 export function createToolHandler(repos: RepoBundle) {
@@ -56,21 +80,21 @@ export function createToolHandler(repos: RepoBundle) {
           let descs;
           if (directorId) {
             try {
-              const { descriptors } = await loadDirectorWithDescriptors(repos, directorId);
+              const { descriptors } = await getDirectorWithDescriptors(repos, directorId);
               descs = descriptors;
             } catch (error: any) {
               return { kind: name, success: false, result: null, error: error?.message || 'invalid_director_tool_config' };
             }
           } else if (agentId) {
             try {
-              const { descriptors } = await loadAgentWithDescriptors(repos, agentId);
+              const { descriptors } = await getAgentWithDescriptors(repos, agentId);
               descs = descriptors;
             } catch (error: any) {
               return { kind: name, success: false, result: null, error: error?.message || 'invalid_agent_tool_config' };
             }
           } else {
             // No entity context: expose only mandatory after role gating
-            descs = loadMandatoryDescriptors(role);
+            descs = resolveMandatoryToolDescriptors(role);
           }
           const visible = descs.map(d => ({ name: d.name, description: d.description }));
           return { kind: name, success: true, result: visible };
@@ -107,14 +131,14 @@ export function createToolHandler(repos: RepoBundle) {
           if (!parent) return { kind: name, success: false, result: null, error: 'Parent conversation not found' };
           let dirObj: Director;
           try {
-            ({ director: dirObj } = await loadDirectorWithDescriptors(repos, directorId));
+            ({ director: dirObj } = await getDirectorWithDescriptors(repos, directorId));
           } catch (error: any) {
             return { kind: name, success: false, result: null, error: error?.message || 'Director not found' };
           }
           let agentObj: Agent;
           let agentToolDescriptors: ToolDescriptor[];
           try {
-            const agentResult = await loadAgentWithDescriptors(repos, agentId);
+            const agentResult = await getAgentWithDescriptors(repos, agentId);
             agentObj = agentResult.agent;
             agentToolDescriptors = agentResult.descriptors;
           } catch (error: any) {
