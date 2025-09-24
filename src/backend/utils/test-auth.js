@@ -13,15 +13,16 @@ async function loadUserRepository() {
 
 async function getExistingUsers() {
   const repo = await loadUserRepository();
-  return await repo.getAll();
+  return await repo.list();
 }
 
 async function generateTestToken(userId) {
-  const users = await getExistingUsers();
-  const user = users.find(u => u.id === userId);
+  const repo = await loadUserRepository();
+  const user = await repo.findById(userId);
 
   if (!user) {
     console.error('User not found:', userId);
+    const users = await repo.list();
     console.log('Available users:');
     users.forEach(u => console.log(`  ${u.id} (${u.email})`));
     process.exit(1);

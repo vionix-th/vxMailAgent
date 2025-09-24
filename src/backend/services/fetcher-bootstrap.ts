@@ -11,7 +11,7 @@ import type { FetcherManager } from './fetcher-manager';
  */
 export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise<void> {
   try {
-    const users = await getUserAccountsRepo().getAll();
+    const users = await getUserAccountsRepo().list();
     const limit = Math.max(1, FETCHER_BOOTSTRAP_CONCURRENCY || 1);
 
     async function worker(u: any) {

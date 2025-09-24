@@ -188,6 +188,29 @@ Core Concept: For each routed email, a director AI orchestrates specialized agen
 - **Backend**: Node.js with Express.js for routing, email processing, tool calls, and persistence.
 - **Frontend**: React with HTML/JavaScript/CSS, styled with Tailwind CSS for a professional look, using Material-UI (or similar) for components (modals, tables, buttons) to ensure developer/user-friendliness.
 - **Persistence**: SQLite (shared + per-user databases). Critical tables mirror the types in `src/shared/types.ts` and remove the need for JSON synthesis.
+
+### 5.1.1 Repository Contracts
+- **Principle**: Each repository publishes explicit domain operations; bulk list replacement (`setAll`) is forbidden. Callers never synthesize or reorder persisted state in memory.
+- **Base Types**: `src/backend/repository/core.ts` defines narrow interfaces per entity (e.g., `AccountsRepository`, `TemplatesRepository`, `ConversationRepository`). All require:
+  - `list()` read path returning immutable snapshots.
+  - `getById(...)` or domain-specific lookup helpers.
+  - Mutations expressed as single-entity operations (`insert`, `update`, `remove`, `appendMessages`, etc.) that execute inside one storage transaction.
+- **Invariants**:
+  - Identifiers (`id`, `conversationId`, `entry.id`) are required inputs; repositories fail fast if missing.
+  - Timestamp fields written by repositories (`createdAt`, `updatedAt`, `lastActiveAt`) must be ISO strings validated before persistence.
+  - Tag/metadata tables (`memory_entry_tags`, `workspace_item_tags`) are managed exclusively by their repositories; no caller may hand-edit join tables.
+- **Concurrency**: Every mutation occurs inside the storage handle transaction gate (`StorageHandle.transaction`). Repositories are responsible for optimistic checks (e.g., preventing duplicate IDs) and for ordering guarantees (e.g., workspace item reorder).
+- **Extensibility**: Adding a new repository requires updating `docs/DESIGN.md` with its contract and extending `src/backend/repository/core.ts` with the typed interface before coding the producer.
+
+#### Repository Interfaces (contract summary)
+- **SystemUsersRepository**: `list`, `findById`, `findByEmail`, `upsert`, `delete`. Invariants — `id`, `email`, `createdAt`, `lastLoginAt` must be non-empty ISO strings; email uniqueness enforced by the repository.
+- **AccountsRepository**: `list`, `getById`, `insert`, `update`, `delete`. Enforces immutable `id`, validates provider enum, persists token JSON atomically, and stamps `updated_at` inside the transaction.
+- **PromptsRepository / TemplatesRepository / AgentsRepository / DirectorsRepository**: Standard CRUD (`list/get/insert/update/delete`) with optional reorder support (filters only). IDs are unique strings; repositories reject duplicate inserts and ensure reorders cover the existing set exactly once.
+- **FiltersRepository**: Extends CRUD with `reorder(orderedIds: string[])`. Validates referential integrity (`directorId` exists) and guarantees stable ordering when ids are omitted.
+- **ImprintsRepository**: CRUD preserving `owner`/`scope` invariants; rejects partial records.
+- **MemoryRepository**: `list`, `findById`, `insert`, `update`, `delete`, `deleteMany`. Repository validates scope/owner/content, normalizes tags, and manages tag join table internally.
+- **ConversationsRepository**: `list`, `getById`, `insert`, `update`, `appendMessages`, `finalizeStatus`, `delete`. Ensures timestamp integrity (`startedAt`, `lastActiveAt`, `endedAt`) and enforces unique `id` per thread.
+- **WorkspaceItemsRepository**: `list`, `listByConversation`, `insert`, `update`, `delete`, `deleteByConversation`. Maintains join-table tags and ensures lifecycle revision increments during updates.
 - **Email Access**: Gmail API (`googleapis`) and Microsoft Graph API (`msal-node`) for email, calendar, and to-do access.
 - **AI Integration**: OpenAI API (`openai` library) for director-led orchestration and agent tasks, using function-calling (tools, `tool_choice`).
 - **OS Functions**: Node.js `fs` and `path` modules for file system access, restricted to virtual root.

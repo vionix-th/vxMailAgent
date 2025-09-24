@@ -1,9 +1,8 @@
-- [x] Audit existing memory entries for missing or invalid scopes/owners; added `scripts/audit-memory.ts` to report issues and generate cleanup DELETE statements. (Completed 2025-09-24)
-- [x] Extend `MemoryRepository` with atomic helpers (`upsert`, `deleteById`, `mutate`) built on `INSERT ... ON CONFLICT` to avoid full rewrites. (Completed 2025-09-24)
-- [x] Refactor `handleMemoryToolCall` and REST memory routes to use the new repository helpers, rejecting absent/invalid scopes and owners. (Completed 2025-09-24)
-- [x] Tighten `memory_search` semantics to obey explicit scope-only queries and raise validation errors for unsupported scope values. (Completed 2025-09-24)
-- [x] Implement shared prompt template validator (`src/shared/promptValidation.ts`) covering `id`, `name`, `messages` invariants. (Completed 2025-09-24)
-- [x] Update `routes/prompts` POST/PUT handlers to call the shared validator before persisting prompts. (Completed 2025-09-24)
-- [x] Require non-optional provider API keys in `conversationEngine.run` and call sites, eliminating empty-string fallbacks. (Completed 2025-09-24)
-- [x] Confirm `providers/openai.chatCompletion` covers test-route knobs (tools, tool_choice, max tokens) and reuse it for diagnostics. (Completed 2025-09-24)
-- [x] Delete `openaiTest.ts`; route `/api/test/*` requests now flow through canonical `chatCompletion` while preserving diagnostics. (Completed 2025-09-24)
+# TODO — Replace `setAll`/`getAll`
+
+1. Finalize per-entity repository contracts (methods + invariants) in `docs/DESIGN.md` and adjust `src/backend/repository/core.ts` to drop the bulk-write interface.
+2. Update repository factory/wiring (`src/backend/repository/registry.ts`, `src/backend/utils/repo-access.ts`) to return typed repositories exposing the new methods.
+3. Implement targeted persistence operations for accounts (insert/update/delete) inside `src/backend/storage/sqlite/repositories/accounts.ts` and migrate `src/backend/services/accounts.ts` to call them.
+4. Repeat step 3 for prompts/templates/agents/directors/filters (shared CRUD routes) so `createCrudRoutes` delegates to repository-level operations instead of array rewrites.
+5. Implement conversation/workspace/memory-specific operations (`append`, `update`, `delete`) directly in their repositories; remove list-surgery logic from `src/backend/liveRepos.ts` and related tool calls.
+6. Delete remaining `setAll` usages, remove the method from repositories/tests, and backfill concurrency-kill tests to confirm no regression.

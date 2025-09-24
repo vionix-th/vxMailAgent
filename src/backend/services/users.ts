@@ -1,15 +1,15 @@
-import { Repository } from '../repository/core';
-import { User } from '../../shared/types';
+import type { SystemUsersRepository } from '../repository/core';
+import type { User } from '../../shared/types';
 
-let userAccountsRepo: Repository<User> | null = null;
+let userAccountsRepo: SystemUsersRepository | null = null;
 
 /** Inject the repository used for user accounts persistence. */
-export function setUserAccountsRepo(repo: Repository<User>) {
+export function setUserAccountsRepo(repo: SystemUsersRepository) {
   userAccountsRepo = repo;
 }
 
 /** Retrieve the configured user accounts repository. */
-export function getUserAccountsRepo(): Repository<User> {
+export function getUserAccountsRepo(): SystemUsersRepository {
   if (!userAccountsRepo) throw new Error('User accounts repository not initialized');
   return userAccountsRepo;
 }
@@ -17,28 +17,19 @@ export function getUserAccountsRepo(): Repository<User> {
 /** Insert or update a user record. */
 export async function upsertUser(next: User): Promise<User> {
   const repo = getUserAccountsRepo();
-  const all = await repo.getAll();
-  const idx = all.findIndex(u => u.id === next.id);
-  if (idx >= 0) {
-    const cur = all[idx];
-    all[idx] = { ...next, createdAt: (typeof cur.createdAt === 'string' && cur.createdAt) ? cur.createdAt : next.createdAt };
-  } else {
-    all.push(next);
-  }
-  await repo.setAll(all);
-  return next;
+  return await repo.upsert(next);
 }
 
 /** Find a user by identifier. */
 export async function findUserById(id: string): Promise<User | undefined> {
   const repo = getUserAccountsRepo();
-  const all = await repo.getAll();
-  return all.find(u => u.id === id);
+  const result = await repo.findById(id);
+  return result ?? undefined;
 }
 
 /** Find a user by email address (case-insensitive). */
 export async function findUserByEmail(email: string): Promise<User | undefined> {
   const repo = getUserAccountsRepo();
-  const all = await repo.getAll();
-  return all.find(u => u.email.toLowerCase() === email.toLowerCase());
+  const result = await repo.findByEmail(email);
+  return result ?? undefined;
 }
