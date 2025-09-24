@@ -728,9 +728,19 @@ export class ConversationOrchestrator {
       logger.warn('Workspace add failed', { error: addResult.error });
       return null;
     }
-    const added: { item?: WorkspaceItem } = (addResult.result || {}) as any;
-    logger.info('Added workspace item', { itemId: added?.item?.id, agentId, label: added?.item?.metadata.label });
-    return (added?.item as WorkspaceItem) || null;
+    const resultPayload = addResult.result;
+    if (!resultPayload || typeof resultPayload !== 'object') {
+      throw new ValidationError('workspace_add_item returned empty result payload', 'WORKSPACE_ADD_EMPTY_RESULT');
+    }
+    const addedItem = (resultPayload as any).item;
+    if (!addedItem || typeof addedItem !== 'object') {
+      throw new ValidationError('workspace_add_item missing item in result payload', 'WORKSPACE_ADD_MISSING_ITEM');
+    }
+    if (typeof addedItem.id !== 'string' || addedItem.id.trim().length === 0) {
+      throw new ValidationError('workspace_add_item returned invalid item id', 'WORKSPACE_ADD_INVALID_ITEM');
+    }
+    logger.info('Added workspace item', { itemId: addedItem.id, agentId, label: addedItem?.metadata?.label });
+    return addedItem as WorkspaceItem;
   }
 
   private async executeAgentConversation(
