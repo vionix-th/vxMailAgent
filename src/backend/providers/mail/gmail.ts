@@ -4,6 +4,7 @@ import { getGoogleOAuthConfig } from '../../config';
 import { ensureValidGoogleAccessToken } from '../../oauth/google';
 import { google } from 'googleapis';
 import { createEmailEnvelope } from '../../../shared/constructors';
+import { ValidationError } from '../../services/error-handler';
 
 export const gmailProvider: IMailProvider = {
   id: 'gmail',
@@ -72,7 +73,7 @@ function extractGmailBodies(payload: any): { bodyPlain?: string; bodyHtml?: stri
     if (!part) return;
     const rawMime = part.mimeType;
     if (typeof rawMime !== 'string' || !rawMime.trim()) {
-      throw new Error('gmail_part_missing_mime_type');
+      throw new ValidationError('gmail part missing mimeType', 'GMAIL_PART_MIME_MISSING');
     }
     const mimeType = rawMime.trim().toLowerCase();
     const bodyData = part.body?.data;
