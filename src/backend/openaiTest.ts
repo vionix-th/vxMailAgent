@@ -13,7 +13,7 @@ export async function testOpenAI(
     const payload: any = {
       model,
       messages: messages.map((m) => {
-        const base: any = { role: m.role, content: (m as any).content ?? '' };
+        const base: any = { role: m.role, content: typeof m.content === 'string' ? m.content : null };
         if ((m as any).name) base.name = (m as any).name;
         if (m.role === 'assistant' && (m as any).tool_calls) base.tool_calls = (m as any).tool_calls;
         if (m.role === 'tool' && (m as any).tool_call_id) base.tool_call_id = (m as any).tool_call_id;

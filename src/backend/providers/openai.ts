@@ -3,7 +3,7 @@ import { OPENAI_REQUEST_TIMEOUT_MS } from '../config';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 export interface ChatCompletionResult {
-  content: string;
+  content: string | null;
   request: Record<string, any>;
   response: any;
   toolCalls?: Array<{ id: string; name: string; arguments: string }>;
@@ -30,7 +30,7 @@ export async function chatCompletion(
     const response = await openai.chat.completions.create(payload, { signal: controller.signal });
     clearTimeout(t);
     const choice = response.choices?.[0];
-    const content = choice?.message?.content ?? '';
+    const content = typeof choice?.message?.content === 'string' ? choice.message.content : null;
     const toolCalls = (choice?.message as any)?.tool_calls?.map((tc: any) => ({
       id: tc.id,
       name: tc.function?.name,
