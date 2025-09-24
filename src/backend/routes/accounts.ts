@@ -129,8 +129,15 @@ export default function registerAccountsRoutes(app: express.Express) {
       if (!existing) {
         throw new NotFoundError('Account not found');
       }
-      const body = (req.body || {}) as Partial<Account>;
-      const patch = { signature: typeof body.signature === 'string' ? body.signature : undefined };
+      const payload = req.body;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        throw new ValidationError('Request body must be a JSON object', 'ACCOUNT_UPDATE_BODY_INVALID');
+      }
+      const signatureRaw = (payload as any).signature;
+      if (typeof signatureRaw !== 'string' || !signatureRaw.trim()) {
+        throw new ValidationError('signature is required and must be a non-empty string', 'ACCOUNT_SIGNATURE_MISSING');
+      }
+      const patch = { signature: signatureRaw.trim() };
       await svcUpdateAccountPartial(req as ReqLike, id, patch);
     } catch (e: any) {
       if (String(e?.message ?? '').toLowerCase().includes('not found')) {
