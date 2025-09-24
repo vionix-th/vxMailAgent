@@ -5,6 +5,7 @@ import { ConversationOrchestrator, createUserRequest } from './conversation-orch
 import type { ReqLike } from '../interfaces';
 import { newId } from '../utils/id';
 import { beginSpan, endSpan } from './logging';
+import { ValidationError } from './error-handler';
 
 export interface EmailProcessingContext {
   envelope: EmailEnvelope;
@@ -112,6 +113,8 @@ export class EmailProcessor {
     traceId: string,
     userReq: ReqLike
   ): Promise<any[]> {
+    this.ensureFilterContext(envelope);
+
     const sFilters = beginSpan(traceId, {
       type: 'filters_eval',
       name: 'evaluateFilters',
@@ -139,6 +142,26 @@ export class EmailProcessor {
     }, userReq);
 
     return filterEvaluations;
+  }
+
+  private ensureFilterContext(envelope: EmailEnvelope): void {
+    const checks: Array<[string, unknown]> = [
+      ['email.from', envelope.from],
+      ['email.subject', envelope.subject],
+      ['email.to', envelope.to],
+      ['email.date', envelope.date],
+    ];
+    for (const [label, value] of checks) {
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new ValidationError(`Filter context ${label} missing`, 'EMAIL_FILTER_CONTEXT_MISSING');
+      }
+    }
+    const hasBody = typeof envelope.bodyPlain === 'string' && envelope.bodyPlain.trim().length > 0;
+    const hasHtml = typeof envelope.bodyHtml === 'string' && envelope.bodyHtml.trim().length > 0;
+    const hasSnippet = typeof envelope.snippet === 'string' && envelope.snippet.trim().length > 0;
+    if (!hasBody && !hasHtml && !hasSnippet) {
+      throw new ValidationError('Filter context missing email body content', 'EMAIL_FILTER_CONTEXT_BODY_MISSING');
+    }
   }
 
   /**
