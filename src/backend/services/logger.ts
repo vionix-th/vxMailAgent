@@ -55,10 +55,10 @@ function buildEntry(meta?: LogMeta, ctx?: LogContext): Record<string, any> | und
   const safeMeta = ensureMeta(meta);
   const safeCtx = ensureContext(ctx);
   if (!safeMeta && !safeCtx) return undefined;
-  return {
-    ...(safeMeta || {}),
-    ...(safeCtx ? { ctx: safeCtx } : {}),
-  };
+  const entry: Record<string, any> = {};
+  if (safeMeta) Object.assign(entry, safeMeta);
+  if (safeCtx) entry.ctx = safeCtx;
+  return Object.keys(entry).length ? entry : undefined;
 }
 
 export const logger = {

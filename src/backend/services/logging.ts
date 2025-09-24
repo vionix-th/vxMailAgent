@@ -178,7 +178,13 @@ export function annotateSpan(traceId: string, spanId: string, annotations: Recor
   void repo.update(traceId, (t) => {
     const s = t.spans.find((span) => span.id === spanId);
     if (!s) return;
-    s.annotations = Object.assign({}, s.annotations || {}, annotations);
+    if (!annotations || typeof annotations !== 'object' || Array.isArray(annotations)) {
+      throw new Error('annotations must be a non-empty object');
+    }
+    if (Object.keys(annotations).length === 0) {
+      throw new Error('annotations must not be empty');
+    }
+    s.annotations = annotations;
   });
 }
 
