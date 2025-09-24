@@ -25,7 +25,25 @@ async function validateConversationRequest(
   const thread = conversations.find((c) => c.id === id);
   if (!thread) throw new NotFoundError('Conversation not found');
 
+  ensureThreadTimestamps(thread, 'validateConversationRequest');
+
   return { thread };
+}
+
+function ensureThreadTimestamps(thread: ConversationThread, context: string): void {
+  const { startedAt, lastActiveAt } = thread as ConversationThread & { startedAt?: string | null; lastActiveAt?: string | null };
+  if (typeof startedAt !== 'string' || !startedAt.trim()) {
+    throw new ValidationError(`${context}: conversation ${thread.id} missing startedAt`, 'CONVERSATION_STARTED_AT_MISSING');
+  }
+  if (Number.isNaN(Date.parse(startedAt))) {
+    throw new ValidationError(`${context}: conversation ${thread.id} has invalid startedAt`, 'CONVERSATION_STARTED_AT_INVALID');
+  }
+  if (typeof lastActiveAt !== 'string' || !lastActiveAt.trim()) {
+    throw new ValidationError(`${context}: conversation ${thread.id} missing lastActiveAt`, 'CONVERSATION_LAST_ACTIVE_MISSING');
+  }
+  if (Number.isNaN(Date.parse(lastActiveAt))) {
+    throw new ValidationError(`${context}: conversation ${thread.id} has invalid lastActiveAt`, 'CONVERSATION_LAST_ACTIVE_INVALID');
+  }
 }
 
 // Agent processing moved under ConversationOrchestrator.runAgentAssistant
@@ -59,6 +77,7 @@ export default function registerConversationsRoutes(
     const offset = hasOffset ? Number(rawOffset) : 0;
 
     const list = await repos.getConversations(req as any as ReqLike);
+    list.forEach((thread) => ensureThreadTimestamps(thread, 'GET /api/conversations'));
     const paged = list.slice(offset, offset + limit);
     return res.json({ total: list.length, items: paged });
   }));
@@ -71,6 +90,7 @@ export default function registerConversationsRoutes(
     if (!conversation) {
       throw new NotFoundError(`Conversation ${conversationId} not found`);
     }
+    ensureThreadTimestamps(conversation, 'GET /api/conversations/:id/details');
     const [orchestrationEvents, providerEvents, workspaceItems] = await Promise.all([
       repos.getOrchestrationLogByConversation(reqLike, conversationId),
       repos.getProviderEventsByConversation(reqLike, conversationId),
@@ -141,16 +161,11 @@ export default function registerConversationsRoutes(
       (c) => c.kind === 'director' && c.directorId === directorId && (c.email as any)?.id === emailId
     );
     if (!threads.length) throw new NotFoundError('Conversation not found');
-    // Pick the most recent by lastActiveAt (fallback to startedAt)
+    // Pick the most recent by lastActiveAt (strict)
     const decorated = threads.map((thread) => {
-      const lastActiveAt = (thread as any)?.lastActiveAt;
-      if (typeof lastActiveAt !== 'string' || !lastActiveAt.trim()) {
-        throw new ValidationError(`Conversation ${thread.id} missing lastActiveAt`, 'CONVERSATION_LAST_ACTIVE_MISSING');
-      }
+      ensureThreadTimestamps(thread, 'GET /api/conversations/byDirectorEmail');
+      const lastActiveAt = (thread as any).lastActiveAt as string;
       const ts = Date.parse(lastActiveAt);
-      if (Number.isNaN(ts)) {
-        throw new ValidationError(`Conversation ${thread.id} has invalid lastActiveAt`, 'CONVERSATION_LAST_ACTIVE_INVALID');
-      }
       return { thread, ts };
     });
     const thread = decorated.reduce((best, cur) => (cur.ts > best.ts ? cur : best)).thread;
@@ -250,7 +265,12 @@ export default function registerConversationsRoutes(
     const ureq = requireReq(req as any as ReqLike);
     const list = await repos.getConversations(ureq);
     const set = new Set(ids);
-    const next = list.filter((c) => !c.id || !set.has(c.id));
+    const next = list.filter((c) => {
+      if (!c.id) {
+        throw new ValidationError('Conversation id missing during bulk delete', 'CONVERSATION_ID_MISSING');
+      }
+      return !set.has(c.id);
+    });
     const deleted = list.length - next.length;
     await repos.setConversations(ureq, next);
     return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
