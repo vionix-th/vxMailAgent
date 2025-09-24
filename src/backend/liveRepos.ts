@@ -1,4 +1,5 @@
 import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent, WorkspaceItem } from '../shared/types';
+import { createAccount } from '../shared/constructors';
 import {
   requireReq,
   requireRepos,
@@ -168,11 +169,28 @@ export function createLiveRepos(): LiveRepos {
     getTracesRepo: (req?: ReqLike) => resolveTracesRepo(requireReq(req)),
     getAccounts: async (req?: ReqLike) => {
       const repo = getAccountsRepo(requireReq(req));
-      return await repo.getAll();
+      const rows = await repo.list();
+      return [...rows];
     },
     setAccounts: async (req: ReqLike, next: any[]) => {
       const repo = getAccountsRepo(requireReq(req));
-      await repo.setAll(next);
+      const incoming = Array.isArray(next) ? next : [];
+      const existing = await repo.list();
+      const existingIds = new Set(existing.map((acc) => acc.id));
+
+      for (const raw of incoming) {
+        const account = createAccount(raw as any);
+        if (existingIds.has(account.id)) {
+          await repo.update(account);
+          existingIds.delete(account.id);
+        } else {
+          await repo.insert(account);
+        }
+      }
+
+      for (const leftover of existingIds) {
+        await repo.delete(leftover);
+      }
     },
     getFetcherLog: async (req?: ReqLike) => {
       const repo = getFetcherLogRepo(requireReq(req));

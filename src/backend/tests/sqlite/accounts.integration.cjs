@@ -52,14 +52,13 @@ test('account repository enforces per-user isolation', async () => {
       },
     };
 
-    await bundleA.accounts.setAll([account]);
-    const storedA = await bundleA.accounts.getAll();
+    await bundleA.accounts.insert(account);
+    const storedA = await bundleA.accounts.list();
     assert.strictEqual(storedA.length, 1);
-    const storedB = await bundleB.accounts.getAll();
+    const storedB = await bundleB.accounts.list();
     assert.strictEqual(storedB.length, 0);
 
     repoBundleRegistry.removeBundle(uidA);
     repoBundleRegistry.removeBundle(uidB);
   });
 });
-

@@ -13,36 +13,37 @@ import { revokeGoogleToken } from '../oauth/google';
 export async function listAccounts(req: ReqLike): Promise<Account[]> {
   const ureq = requireReq(req);
   const repo = getAccountsRepo(ureq);
-  return await repo.getAll();
-}
-
-async function persistAccounts(req: ReqLike, accounts: Account[]): Promise<void> {
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
-  await repo.setAll(accounts);
+  const rows = await repo.list();
+  return [...rows];
 }
 
 export async function upsertAccount(req: ReqLike, next: Account): Promise<void> {
-  const accounts = await listAccounts(req);
-  const idx = accounts.findIndex(a => a.id === next.id);
-  if (idx >= 0) accounts[idx] = next; else accounts.push(next);
-  await persistAccounts(req, accounts);
-  logger.info('Saved account', { id: next.id, uid: requireUid(req) });
+  const ureq = requireReq(req);
+  const repo = getAccountsRepo(ureq);
+  if (typeof next?.id !== 'string' || !next.id.trim()) {
+    throw new ValidationError('Account id required');
+  }
+  const existing = await repo.getById(next.id);
+  if (existing) {
+    await repo.update(next);
+  } else {
+    await repo.insert(next);
+  }
+  logger.info('Saved account', { id: next.id, uid: requireUid(ureq) });
 }
 
 export async function updateAccount(req: ReqLike, id: string, next: Account): Promise<void> {
-  const accounts = await listAccounts(req);
-  const idx = accounts.findIndex(a => a.id === id);
-  if (idx === -1) throw new Error('Account not found');
+  const ureq = requireReq(req);
+  const repo = getAccountsRepo(ureq);
+  const current = await repo.getById(id);
+  if (!current) throw new Error('Account not found');
 
-  // Ensure payload id matches path id
   if (next.id && next.id !== id) {
     throw new ValidationError('Account id mismatch');
   }
   next.id = id;
 
-  accounts[idx] = next;
-  await persistAccounts(req, accounts);
+  await repo.update(next);
   logger.info('Updated account', { id });
 }
 
@@ -55,25 +56,23 @@ export async function updateAccountPartial(
   id: string,
   patch: { signature?: string }
 ): Promise<void> {
-  const accounts = await listAccounts(req);
-  const idx = accounts.findIndex(a => a.id === id);
-  if (idx === -1) throw new Error('Account not found');
+  const ureq = requireReq(req);
+  const repo = getAccountsRepo(ureq);
+  const current = await repo.getById(id);
+  if (!current) throw new Error('Account not found');
 
-  const current = accounts[idx];
   if (typeof patch.signature === 'string') {
     current.signature = patch.signature;
   }
-  const next = current;
-  accounts[idx] = next;
-  await persistAccounts(req, accounts);
+  await repo.update(current);
   logger.info('Updated account (partial)', { id, fields: Object.keys(patch).filter(k => (patch as any)[k] !== undefined) });
 }
 
 export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeStatus?: boolean; revokeError?: string }> {
-  const accounts = await listAccounts(req);
-  const idx = accounts.findIndex(a => a.id === id);
-  if (idx === -1) throw new Error('Account not found');
-  const account = accounts[idx];
+  const ureq = requireReq(req);
+  const repo = getAccountsRepo(ureq);
+  const account = await repo.getById(id);
+  if (!account) throw new Error('Account not found');
 
   let revokeStatus: boolean | undefined = undefined;
   let revokeError: string | undefined = undefined;
@@ -95,9 +94,8 @@ export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeS
     revokeError = e?.message || String(e);
   }
 
-  const filtered = accounts.filter(a => a.id !== id);
-  await persistAccounts(req, filtered);
-  logger.debug('Deleted account', { id, before: accounts.length, after: filtered.length });
+  const removed = await repo.delete(id);
+  logger.debug('Deleted account', { id, removed });
   const resp: { revokeStatus?: boolean; revokeError?: string } = {};
   if (typeof revokeStatus === 'boolean') resp.revokeStatus = revokeStatus;
   if (typeof revokeError === 'string') resp.revokeError = revokeError;
@@ -108,11 +106,10 @@ export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeS
 
 // Refresh tokens and provider tests
 export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
-  const accounts = await listAccounts(req);
-  if (accounts.length === 0) throw new Error('no accounts found');
-  const idx = accounts.findIndex(a => a.id === id);
-  if (idx === -1) throw new Error('account not found');
-  const account = accounts[idx];
+  const ureq = requireReq(req);
+  const repo = getAccountsRepo(ureq);
+  const account = await repo.getById(id);
+  if (!account) throw new Error('account not found');
 
   if (account.provider === 'gmail') {
     const cfg = getGoogleOAuthConfig();
@@ -125,8 +122,7 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
         account.tokens.accessToken = result.accessToken;
         account.tokens.expiry = result.expiry;
         account.tokens.refreshToken = result.refreshToken;
-        accounts[idx] = account;
-        await persistAccounts(req, accounts);
+        await repo.update(account);
         logger.info('Refreshed + persisted Gmail access token', { id });
       }
       return { ok: true, updated: result.updated, tokens: account.tokens };
@@ -155,8 +151,7 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
         account.tokens.accessToken = result.accessToken;
         account.tokens.expiry = result.expiry;
         account.tokens.refreshToken = result.refreshToken;
-        accounts[idx] = account;
-        await persistAccounts(req, accounts);
+        await repo.update(account);
         logger.info('Refreshed + persisted Outlook access token', { id });
       }
       return { ok: true, updated: result.updated, tokens: account.tokens };
@@ -175,11 +170,10 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
 
 export async function outlookTest(req: ReqLike, id: string): Promise<any> {
   const cfg = getOutlookOAuthConfig();
-  const accounts = await listAccounts(req);
-  if (accounts.length === 0) throw new Error('no accounts found');
-  const idx = accounts.findIndex(a => a.id === id);
-  if (idx === -1) throw new Error('account not found');
-  const account = accounts[idx];
+  const ureq = requireReq(req);
+  const repo = getAccountsRepo(ureq);
+  const account = await repo.getById(id);
+  if (!account) throw new Error('account not found');
   if (account.provider !== 'outlook') throw new Error('Only outlook supported for this test');
 
   let result: { accessToken: string; expiry: string; refreshToken: string; updated: boolean };
@@ -199,8 +193,7 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
     account.tokens.accessToken = result.accessToken;
     account.tokens.expiry = result.expiry;
     account.tokens.refreshToken = result.refreshToken;
-    accounts[idx] = account;
-    await persistAccounts(req, accounts);
+    await repo.update(account);
     logger.info('Refreshed + persisted during outlook-test', { id });
   }
 
@@ -238,10 +231,10 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
 
 export async function gmailTest(req: ReqLike, id: string): Promise<any> {
   const cfg = getGoogleOAuthConfig();
-  const accounts = await listAccounts(req);
-  const idx = accounts.findIndex(a => a.id === id);
-  if (idx === -1) throw new Error('account not found');
-  const account = accounts[idx];
+  const ureq = requireReq(req);
+  const repo = getAccountsRepo(ureq);
+  const account = await repo.getById(id);
+  if (!account) throw new Error('account not found');
   if (account.provider !== 'gmail') throw new Error('Only gmail supported for this test');
 
   let result: { accessToken: string; expiry: string; refreshToken: string; updated: boolean };
@@ -266,8 +259,7 @@ export async function gmailTest(req: ReqLike, id: string): Promise<any> {
     account.tokens.accessToken = result.accessToken;
     account.tokens.expiry = result.expiry;
     account.tokens.refreshToken = result.refreshToken;
-    accounts[idx] = account;
-    await persistAccounts(req, accounts);
+    await repo.update(account);
     logger.info('Refreshed + persisted during gmail-test', { id });
   }
 

@@ -72,14 +72,19 @@ function attachBasicCrud<T extends { id: string }, R extends LegacyListRepo<T>>(
   repo: R,
   entityName: string
 ): R & BasicCrud<T> {
-  return Object.assign(repo, {
-    list: async () => listAll(repo),
-    getById: async (id: string) => {
+  const target = repo as R & Partial<BasicCrud<T>>;
+  if (!target.list) {
+    target.list = async () => listAll(repo);
+  }
+  if (!target.getById) {
+    target.getById = async (id: string) => {
       ensureId(entityName, id);
       const all = await repo.getAll();
       return all.find((item) => item.id === id) ?? null;
-    },
-    insert: async (item: T) => {
+    };
+  }
+  if (!target.insert) {
+    target.insert = async (item: T) => {
       ensureId(entityName, item?.id);
       const all = await repo.getAll();
       if (all.some((existing) => existing.id === item.id)) {
@@ -87,8 +92,10 @@ function attachBasicCrud<T extends { id: string }, R extends LegacyListRepo<T>>(
       }
       const next = [...all, item];
       await repo.setAll(next);
-    },
-    update: async (item: T) => {
+    };
+  }
+  if (!target.update) {
+    target.update = async (item: T) => {
       ensureId(entityName, item?.id);
       const all = await repo.getAll();
       const idx = all.findIndex((existing) => existing.id === item.id);
@@ -98,8 +105,10 @@ function attachBasicCrud<T extends { id: string }, R extends LegacyListRepo<T>>(
       const next = all.slice();
       next[idx] = item;
       await repo.setAll(next);
-    },
-    delete: async (id: string) => {
+    };
+  }
+  if (!target.delete) {
+    target.delete = async (id: string) => {
       ensureId(entityName, id);
       const all = await repo.getAll();
       const next = all.filter((item) => item.id !== id);
@@ -108,21 +117,26 @@ function attachBasicCrud<T extends { id: string }, R extends LegacyListRepo<T>>(
       }
       await repo.setAll(next);
       return true;
-    },
-  }) as R & BasicCrud<T>;
+    };
+  }
+  return target as R & BasicCrud<T>;
 }
 
-export type AccountsRepoInstance = SqlAccountsRepository & AccountsContract & BasicCrud<Account>;
+export type AccountsRepoInstance = SqlAccountsRepository & AccountsContract;
 
 export function augmentAccountsRepository(repo: SqlAccountsRepository): AccountsRepoInstance {
-  const entityName = 'Account';
-  const target = attachBasicCrud<Account, SqlAccountsRepository>(repo, entityName) as AccountsRepoInstance;
-  target.getById = async (id: string) => {
-    ensureId(entityName, id);
-    const all = await repo.getAll();
-    return all.find((item) => item.id === id) ?? null;
-  };
-  return target;
+  const candidate = repo as unknown as Partial<AccountsContract>;
+  if (
+    typeof candidate.list === 'function' &&
+    typeof candidate.getById === 'function' &&
+    typeof candidate.insert === 'function' &&
+    typeof candidate.update === 'function' &&
+    typeof candidate.delete === 'function'
+  ) {
+    return repo as AccountsRepoInstance;
+  }
+  const legacy = repo as unknown as LegacyListRepo<Account>;
+  return attachBasicCrud<Account, typeof legacy>(legacy, 'Account') as unknown as AccountsRepoInstance;
 }
 
 export type PromptsRepoInstance = SqlPromptsRepository & PromptsContract & BasicCrud<Prompt>;
