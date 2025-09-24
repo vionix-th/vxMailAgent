@@ -33,10 +33,9 @@ export async function loadUserTemplates(req?: ReqLike): Promise<TemplateItem[]> 
   try {
     const ureq = requireReq(req);
     const repo = getTemplatesRepo(ureq);
-    const arr = await repo.getAll();
+    const arr = await repo.list();
     // Producer initializes/ensures optimizer; do not seed here.
-    if (!Array.isArray(arr)) return [];
-    return arr as TemplateItem[];
+    return Array.from(arr) as TemplateItem[];
   } catch (e) {
     // Strict escalation: propagate repository errors; do not seed on error
     logger.error('loadUserTemplates failed (escalating)', { err: e });
@@ -52,17 +51,14 @@ export async function updateTemplatePartial(
 ): Promise<void> {
   const ureq = requireReq(req);
   const repo = getTemplatesRepo(ureq);
-  const all = await repo.getAll();
-  const idx = all.findIndex(t => t.id === id);
-  if (idx === -1) throw new Error('Template not found');
-  const cur = all[idx];
+  const current = await repo.getById(id);
+  if (!current) throw new Error('Template not found');
   const next: TemplateItem = {
-    ...cur,
+    ...current,
     ...(typeof patch.name === 'string' ? { name: patch.name } : {}),
     ...(typeof patch.description === 'string' || patch.description === undefined ? { description: patch.description } : {}),
     ...(Array.isArray(patch.messages) ? { messages: patch.messages as any } : {}),
   };
-  all[idx] = next;
-  await repo.setAll(all);
+  await repo.update(next);
   logger.info('Updated template (partial)', { id });
 }

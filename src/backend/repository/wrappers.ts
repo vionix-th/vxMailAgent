@@ -139,28 +139,72 @@ export function augmentAccountsRepository(repo: SqlAccountsRepository): Accounts
   return attachBasicCrud<Account, typeof legacy>(legacy, 'Account') as unknown as AccountsRepoInstance;
 }
 
-export type PromptsRepoInstance = SqlPromptsRepository & PromptsContract & BasicCrud<Prompt>;
+export type PromptsRepoInstance = SqlPromptsRepository & PromptsContract;
 
 export function augmentPromptsRepository(repo: SqlPromptsRepository): PromptsRepoInstance {
-  return attachBasicCrud<Prompt, SqlPromptsRepository>(repo, 'Prompt') as PromptsRepoInstance;
+  const candidate = repo as unknown as Partial<PromptsContract>;
+  if (
+    typeof candidate.list === 'function' &&
+    typeof candidate.getById === 'function' &&
+    typeof candidate.insert === 'function' &&
+    typeof candidate.update === 'function' &&
+    typeof candidate.delete === 'function'
+  ) {
+    return repo as PromptsRepoInstance;
+  }
+  const legacy = repo as unknown as LegacyListRepo<Prompt>;
+  return attachBasicCrud<Prompt, typeof legacy>(legacy, 'Prompt') as unknown as PromptsRepoInstance;
 }
 
-export type AgentsRepoInstance = SqlAgentsRepository & AgentsContract & BasicCrud<Agent>;
+export type AgentsRepoInstance = SqlAgentsRepository & AgentsContract;
 
 export function augmentAgentsRepository(repo: SqlAgentsRepository): AgentsRepoInstance {
-  return attachBasicCrud<Agent, SqlAgentsRepository>(repo, 'Agent') as AgentsRepoInstance;
+  const candidate = repo as unknown as Partial<AgentsContract>;
+  if (
+    typeof candidate.list === 'function' &&
+    typeof candidate.getById === 'function' &&
+    typeof candidate.insert === 'function' &&
+    typeof candidate.update === 'function' &&
+    typeof candidate.delete === 'function'
+  ) {
+    return repo as AgentsRepoInstance;
+  }
+  const legacy = repo as unknown as LegacyListRepo<Agent>;
+  return attachBasicCrud<Agent, typeof legacy>(legacy, 'Agent') as unknown as AgentsRepoInstance;
 }
 
-export type DirectorsRepoInstance = SqlDirectorsRepository & DirectorsContract & BasicCrud<Director>;
+export type DirectorsRepoInstance = SqlDirectorsRepository & DirectorsContract;
 
 export function augmentDirectorsRepository(repo: SqlDirectorsRepository): DirectorsRepoInstance {
-  return attachBasicCrud<Director, SqlDirectorsRepository>(repo, 'Director') as DirectorsRepoInstance;
+  const candidate = repo as unknown as Partial<DirectorsContract>;
+  if (
+    typeof candidate.list === 'function' &&
+    typeof candidate.getById === 'function' &&
+    typeof candidate.insert === 'function' &&
+    typeof candidate.update === 'function' &&
+    typeof candidate.delete === 'function'
+  ) {
+    return repo as DirectorsRepoInstance;
+  }
+  const legacy = repo as unknown as LegacyListRepo<Director>;
+  return attachBasicCrud<Director, typeof legacy>(legacy, 'Director') as unknown as DirectorsRepoInstance;
 }
 
-export type TemplatesRepoInstance = SqlTemplatesRepository & TemplatesContract & BasicCrud<TemplateItem>;
+export type TemplatesRepoInstance = SqlTemplatesRepository & TemplatesContract;
 
 export function augmentTemplatesRepository(repo: SqlTemplatesRepository): TemplatesRepoInstance {
-  return attachBasicCrud<TemplateItem, SqlTemplatesRepository>(repo, 'Template') as TemplatesRepoInstance;
+  const candidate = repo as unknown as Partial<TemplatesContract>;
+  if (
+    typeof candidate.list === 'function' &&
+    typeof candidate.getById === 'function' &&
+    typeof candidate.insert === 'function' &&
+    typeof candidate.update === 'function' &&
+    typeof candidate.delete === 'function'
+  ) {
+    return repo as TemplatesRepoInstance;
+  }
+  const legacy = repo as unknown as LegacyListRepo<TemplateItem>;
+  return attachBasicCrud<TemplateItem, typeof legacy>(legacy, 'Template') as unknown as TemplatesRepoInstance;
 }
 
 export type ImprintsRepoInstance = SqlImprintsRepository & ImprintsContract & BasicCrud<Imprint>;
@@ -169,12 +213,24 @@ export function augmentImprintsRepository(repo: SqlImprintsRepository): Imprints
   return attachBasicCrud<Imprint, SqlImprintsRepository>(repo, 'Imprint') as ImprintsRepoInstance;
 }
 
-export type FiltersRepoInstance = SqlFiltersRepository & FiltersContract & BasicCrud<Filter>;
+export type FiltersRepoInstance = SqlFiltersRepository & FiltersContract;
 
 export function augmentFiltersRepository(repo: SqlFiltersRepository): FiltersRepoInstance {
-  const target = attachBasicCrud<Filter, SqlFiltersRepository>(repo, 'Filter') as FiltersRepoInstance;
+  const candidate = repo as unknown as Partial<FiltersContract>;
+  if (
+    typeof candidate.list === 'function' &&
+    typeof candidate.getById === 'function' &&
+    typeof candidate.insert === 'function' &&
+    typeof candidate.update === 'function' &&
+    typeof candidate.delete === 'function' &&
+    typeof candidate.reorder === 'function'
+  ) {
+    return repo as FiltersRepoInstance;
+  }
+  const legacy = repo as unknown as LegacyListRepo<Filter>;
+  const target = attachBasicCrud<Filter, typeof legacy>(legacy, 'Filter') as unknown as FiltersRepoInstance;
   target.reorder = async (orderedIds: readonly string[]) => {
-    const all = await repo.getAll();
+    const all = await legacy.getAll();
     const byId = new Map(all.map((item) => [item.id, item] as const));
     const reordered: Filter[] = [];
     for (const id of orderedIds) {
@@ -187,7 +243,7 @@ export function augmentFiltersRepository(repo: SqlFiltersRepository): FiltersRep
         reordered.push(item);
       }
     }
-    await repo.setAll(reordered);
+    await legacy.setAll(reordered);
   };
   return target;
 }

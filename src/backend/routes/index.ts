@@ -1,5 +1,5 @@
 import express from 'express';
-import { ReqLike } from '../utils/repo-access';
+import { ReqLike, requireReq, getPromptsRepo } from '../utils/repo-access';
 import registerAuthSessionRoutes from './auth-session';
 import registerTestRoutes from './test';
 import registerMemoryRoutes from './memory';
@@ -21,6 +21,7 @@ import { FetcherManager } from '../services/fetcher-manager';
 import { LiveRepos } from '../liveRepos';
 import { isProd, ENABLE_TEST_ROUTES } from '../config';
 import logger from '../services/logger';
+import type { Prompt } from '../../shared/types';
 
 export default function registerRoutes(
   app: express.Express, 
@@ -47,7 +48,31 @@ export default function registerRoutes(
   registerAgentsRoutes(app, repos);
   registerFiltersRoutes(app, repos);
   registerDirectorsRoutes(app, repos);
-  registerPromptsRoutes(app, repos);
+  registerPromptsRoutes(app, {
+    listPrompts: async (req?: ReqLike) => {
+      const repo = getPromptsRepo(requireReq(req));
+      return await repo.list();
+    },
+    getPrompt: async (req: ReqLike, id: string) => {
+      const repo = getPromptsRepo(requireReq(req));
+      return await repo.getById(id);
+    },
+    createPrompt: async (req: ReqLike, item: Prompt) => {
+      const repo = getPromptsRepo(requireReq(req));
+      await repo.insert(item);
+    },
+    updatePrompt: async (req: ReqLike, item: Prompt) => {
+      const repo = getPromptsRepo(requireReq(req));
+      await repo.update(item);
+    },
+    deletePrompt: async (req: ReqLike, id: string) => {
+      const repo = getPromptsRepo(requireReq(req));
+      return await repo.delete(id);
+    },
+    getSettings: repos.getSettings,
+    getAgents: repos.getAgents,
+    getDirectors: repos.getDirectors,
+  });
   registerTemplatesRoutes(app);
   registerConversationsRoutes(app, repos);
   registerWorkspacesRoutes(app, repos);

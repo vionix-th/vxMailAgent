@@ -1,18 +1,39 @@
 import express from 'express';
+import type { LiveRepos } from '../liveRepos';
 import { Agent } from '../../shared/types';
-import { LiveRepos } from '../liveRepos';
 import { createCrudRoutes } from './helpers';
 import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
 import { validateAgentToolConfig } from '../services/tool-config-service';
+import { getAgentsRepo, requireReq, ReqLike } from '../utils/repo-access';
 
-export default function registerAgentsRoutes(app: express.Express, repos: LiveRepos) {
+export default function registerAgentsRoutes(app: express.Express, _repos: LiveRepos) {
+  const repoFns = {
+    list: async (req?: ReqLike) => {
+      const repo = getAgentsRepo(requireReq(req));
+      return await repo.list();
+    },
+    getById: async (req: ReqLike, id: string) => {
+      const repo = getAgentsRepo(requireReq(req));
+      return await repo.getById(id);
+    },
+    create: async (req: ReqLike, item: Agent) => {
+      const repo = getAgentsRepo(requireReq(req));
+      await repo.insert(item);
+    },
+    update: async (req: ReqLike, item: Agent) => {
+      const repo = getAgentsRepo(requireReq(req));
+      await repo.update(item);
+    },
+    delete: async (req: ReqLike, id: string) => {
+      const repo = getAgentsRepo(requireReq(req));
+      return await repo.delete(id);
+    },
+  };
+
   createCrudRoutes(
     app,
     '/api/agents',
-    {
-      getAll: repos.getAgents,
-      setAll: repos.setAgents,
-    },
+    repoFns,
     {
       itemName: 'Agent',
       idField: 'id'

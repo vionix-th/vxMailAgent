@@ -1,18 +1,43 @@
 import express from 'express';
+import type { LiveRepos } from '../liveRepos';
 import { Filter } from '../../shared/types';
-import { LiveRepos } from '../liveRepos';
 import { createCrudRoutes } from './helpers';
+import { getFiltersRepo, requireReq, ReqLike } from '../utils/repo-access';
 
-export default function registerFiltersRoutes(app: express.Express, repos: LiveRepos) {
+export default function registerFiltersRoutes(app: express.Express, _repos: LiveRepos) {
   const allowedFields = ['from', 'to', 'cc', 'bcc', 'subject', 'body', 'date'] as const;
+
+  const repoFns = {
+    list: async (req?: ReqLike) => {
+      const repo = getFiltersRepo(requireReq(req));
+      return await repo.list();
+    },
+    getById: async (req: ReqLike, id: string) => {
+      const repo = getFiltersRepo(requireReq(req));
+      return await repo.getById(id);
+    },
+    create: async (req: ReqLike, item: Filter) => {
+      const repo = getFiltersRepo(requireReq(req));
+      await repo.insert(item);
+    },
+    update: async (req: ReqLike, item: Filter) => {
+      const repo = getFiltersRepo(requireReq(req));
+      await repo.update(item);
+    },
+    delete: async (req: ReqLike, id: string) => {
+      const repo = getFiltersRepo(requireReq(req));
+      return await repo.delete(id);
+    },
+    reorder: async (req: ReqLike, orderedIds: readonly string[]) => {
+      const repo = getFiltersRepo(requireReq(req));
+      await repo.reorder(orderedIds);
+    },
+  };
 
   createCrudRoutes(
     app,
     '/api/filters',
-    {
-      getAll: repos.getFilters,
-      setAll: repos.setFilters,
-    },
+    repoFns,
     {
       itemName: 'Filter',
       idField: 'id',

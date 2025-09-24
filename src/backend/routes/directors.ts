@@ -1,18 +1,39 @@
 import express from 'express';
+import type { LiveRepos } from '../liveRepos';
 import { Director } from '../../shared/types';
-import { LiveRepos } from '../liveRepos';
 import { createCrudRoutes } from './helpers';
 import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
 import { validateDirectorToolConfig } from '../services/tool-config-service';
+import { getDirectorsRepo, requireReq, ReqLike } from '../utils/repo-access';
 
-export default function registerDirectorsRoutes(app: express.Express, repos: LiveRepos) {
+export default function registerDirectorsRoutes(app: express.Express, _repos: LiveRepos) {
+  const repoFns = {
+    list: async (req?: ReqLike) => {
+      const repo = getDirectorsRepo(requireReq(req));
+      return await repo.list();
+    },
+    getById: async (req: ReqLike, id: string) => {
+      const repo = getDirectorsRepo(requireReq(req));
+      return await repo.getById(id);
+    },
+    create: async (req: ReqLike, item: Director) => {
+      const repo = getDirectorsRepo(requireReq(req));
+      await repo.insert(item);
+    },
+    update: async (req: ReqLike, item: Director) => {
+      const repo = getDirectorsRepo(requireReq(req));
+      await repo.update(item);
+    },
+    delete: async (req: ReqLike, id: string) => {
+      const repo = getDirectorsRepo(requireReq(req));
+      return await repo.delete(id);
+    },
+  };
+
   createCrudRoutes(
     app,
     '/api/directors',
-    {
-      getAll: repos.getDirectors,
-      setAll: repos.setDirectors,
-    },
+    repoFns,
     {
       itemName: 'Director',
       idField: 'id'

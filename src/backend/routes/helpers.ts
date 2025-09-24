@@ -4,8 +4,12 @@ import logger from '../services/logger';
 import { errorHandler, ValidationError, NotFoundError, ConflictError } from '../services/error-handler';
 
 export interface CrudRepoFunctions<T> {
-  getAll: (req?: ReqLike) => Promise<T[]>;
-  setAll: (req: ReqLike, items: T[]) => Promise<void> | void;
+  list: (req?: ReqLike) => Promise<readonly T[]>;
+  getById: (req: ReqLike, id: string) => Promise<T | null>;
+  create: (req: ReqLike, item: T) => Promise<void>;
+  update: (req: ReqLike, item: T) => Promise<void>;
+  delete: (req: ReqLike, id: string) => Promise<boolean>;
+  reorder?: (req: ReqLike, orderedIds: readonly string[]) => Promise<void>;
 }
 
 export interface CrudCallbacks<T> {
@@ -62,7 +66,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
   // GET /api/{resource}
   app.get(basePath, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     logger.info(`GET ${basePath}`);
-    let items = await repoFns.getAll(req as ReqLike);
+    let items = Array.from(await repoFns.list(req as ReqLike));
     if (transformList) {
       items = transformList(items);
     }
@@ -85,17 +89,16 @@ export function createCrudRoutes<T extends Record<string, any>>(
       item = afterValidate(item, false);
     }
 
-    const current = await repoFns.getAll(req as ReqLike);
     const newId = item[idField] as any;
     if (newId === undefined || newId === null || String(newId).length === 0) {
       throw new ValidationError(`${itemName} ${String(idField)} is required`);
     }
-    if (current.some(existing => existing[idField] === newId)) {
+    const existing = await repoFns.getById(req as ReqLike, String(newId));
+    if (existing) {
       throw new ConflictError(`${itemName} with ${String(idField)} '${String(newId)}' already exists`);
     }
 
-    const next = [...current, item];
-    await repoFns.setAll(req as ReqLike, next);
+    await repoFns.create(req as ReqLike, item);
 
     logger.info(`POST ${basePath}: added ${itemName}`, { id: newId });
     res.status(201)
@@ -106,10 +109,9 @@ export function createCrudRoutes<T extends Record<string, any>>(
   // PUT /api/{resource}/:id
   app.put(`${basePath}/:id`, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const current = await repoFns.getAll(req as ReqLike);
-    const idx = current.findIndex(item => item[idField] === id);
+    const current = await repoFns.getById(req as ReqLike, id);
 
-    if (idx === -1) {
+    if (!current) {
       logger.warn(`PUT ${basePath}/:id not found`, { id });
       throw new NotFoundError(`${itemName} not found`);
     }
@@ -127,7 +129,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
       throw new ValidationError(`${itemName} ID mismatch`);
     }
 
-    let candidate: T = mergeUpdate ? mergeUpdate(current[idx], patch) : (patch as T);
+    let candidate: T = mergeUpdate ? mergeUpdate(current, patch) : (patch as T);
 
     if ((candidate as any)[idField] == null) {
       (candidate as any)[idField] = id;
@@ -141,9 +143,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
       candidate = afterValidate(candidate, true);
     }
 
-    const next = current.slice();
-    next[idx] = candidate;
-    await repoFns.setAll(req as ReqLike, next);
+    await repoFns.update(req as ReqLike, candidate);
 
     logger.info(`PUT ${basePath}/:id updated`, { id });
     res.json(candidate);
@@ -152,15 +152,11 @@ export function createCrudRoutes<T extends Record<string, any>>(
   // DELETE /api/{resource}/:id
   app.delete(`${basePath}/:id`, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const current = await repoFns.getAll(req as ReqLike);
-    const idx = current.findIndex(item => item[idField] === id);
-    if (idx === -1) {
+    const removed = await repoFns.delete(req as ReqLike, id);
+    if (!removed) {
       logger.warn(`DELETE ${basePath}/:id not found`, { id });
       throw new NotFoundError(`${itemName} not found`);
     }
-    const next = current.slice();
-    next.splice(idx, 1);
-    await repoFns.setAll(req as ReqLike, next);
 
     logger.info(`DELETE ${basePath}/:id deleted`, { id, deleted: 1 });
     res.status(204).send();
@@ -176,21 +172,12 @@ export function createCrudRoutes<T extends Record<string, any>>(
         throw new ValidationError('orderedIds is required and must be a non-empty array');
       }
 
-      const current = await repoFns.getAll(req as ReqLike);
-      const byId = new Map(current.map(item => [item[idField], item] as const));
-      const reordered: T[] = [];
-
-      for (const id of orderedIds) {
-        const item = byId.get(id as any);
-        if (item) reordered.push(item);
+      if (typeof repoFns.reorder !== 'function') {
+        throw new Error('Reorder operation not supported for this resource');
       }
 
-      for (const item of current) {
-        if (!orderedIds.includes(item[idField] as any)) reordered.push(item);
-      }
-
-      await repoFns.setAll(req as ReqLike, reordered);
-      logger.info(`PUT ${basePath}/reorder: reordered ${itemName}s`, { count: reordered.length });
+      await repoFns.reorder(req as ReqLike, orderedIds);
+      logger.info(`PUT ${basePath}/reorder: reordered ${itemName}s`, { count: orderedIds.length });
       res.json({ success: true });
     }));
   }

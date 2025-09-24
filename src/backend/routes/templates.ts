@@ -6,16 +6,6 @@ import type { TemplateItem } from '../../shared/types';
 import { errorHandler, ValidationError } from '../services/error-handler';
 import { updateTemplatePartial, loadUserTemplates } from '../services/templates';
 
- 
-
-// No seeding here; producer initializes in repository/registry.ts
-
-async function saveTemplates(req: ReqLike, items: TemplateItem[]) {
-  const ureq = requireReq(req);
-  const repo = getTemplatesRepo(ureq);
-  await repo.setAll(items);
-}
-
 export default function registerTemplatesRoutes(app: express.Express) {
   // List templates
   app.get('/api/prompt-templates', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
@@ -30,10 +20,10 @@ export default function registerTemplatesRoutes(app: express.Express) {
     if (!item || !item.id || !item.name || !Array.isArray(item.messages)) {
       throw new ValidationError('Invalid template');
     }
-    const current = await loadUserTemplates(req as ReqLike);
-    if (current.some(t => t.id === item.id)) throw new ValidationError('Duplicate id');
-    const next = [...current, item];
-    await saveTemplates(req as ReqLike, next);
+    const repo = getTemplatesRepo(requireReq(req as ReqLike));
+    const existing = await repo.getById(item.id);
+    if (existing) throw new ValidationError('Duplicate id');
+    await repo.insert(item);
     res.json({ success: true });
   }));
 
@@ -56,9 +46,11 @@ export default function registerTemplatesRoutes(app: express.Express) {
     if (id === 'prompt_optimizer') {
       throw new ValidationError('prompt_optimizer is required and cannot be deleted');
     }
-    const current = await loadUserTemplates(req as ReqLike);
-    const next = current.filter(t => t.id !== id);
-    await saveTemplates(req as ReqLike, next);
+    const repo = getTemplatesRepo(requireReq(req as ReqLike));
+    const removed = await repo.delete(id);
+    if (!removed) {
+      throw new ValidationError('Template not found');
+    }
     res.json({ success: true });
   }));
 }

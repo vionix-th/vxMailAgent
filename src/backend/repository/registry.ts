@@ -210,12 +210,17 @@ export class RepoBundleRegistry {
       await bundle.settings.setAll([defaultSettings()]);
     }
 
-    const templates = await bundle.templates.getAll();
+    const templates = await bundle.templates.list();
     const defaultTpl = defaultTemplates();
     if (!templates.length) {
-      await bundle.templates.setAll(defaultTpl);
+      for (const tpl of defaultTpl) {
+        await bundle.templates.insert(tpl);
+      }
     } else if (!templates.some((t) => t.id === 'prompt_optimizer')) {
-      await bundle.templates.setAll([...defaultTpl, ...templates]);
+      const optimizer = defaultTpl.find((tpl) => tpl.id === 'prompt_optimizer');
+      if (optimizer) {
+        await bundle.templates.insert(optimizer);
+      }
     }
   }
 

@@ -7,14 +7,17 @@ import { chatCompletion } from '../providers/openai';
 import { requireUserContext } from '../middleware/user-context';
 import logger from '../services/logger';
 import { ReqLike } from '../utils/repo-access';
-import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
+import { errorHandler, ValidationError, NotFoundError, ConflictError } from '../services/error-handler';
 import { buildTargetMessage, parseContextSelection, parseIncluding, parseTarget, TemplateMsg } from '../utils/prompt-helpers';
 import { buildSelectedPacks } from '../services/promptContext';
 import { loadUserTemplates } from '../services/templates';
 
 export interface PromptsRoutesDeps {
-  getPrompts: (req?: ReqLike) => Promise<Prompt[]>;
-  setPrompts: (req: ReqLike, next: Prompt[]) => Promise<void>;
+  listPrompts: (req?: ReqLike) => Promise<readonly Prompt[]>;
+  getPrompt: (req: ReqLike, id: string) => Promise<Prompt | null>;
+  createPrompt: (req: ReqLike, item: Prompt) => Promise<void>;
+  updatePrompt: (req: ReqLike, item: Prompt) => Promise<void>;
+  deletePrompt: (req: ReqLike, id: string) => Promise<boolean>;
   getSettings: (req?: ReqLike) => Promise<any>;
   getAgents: (req?: ReqLike) => Promise<Array<{ id: string; name: string; promptId?: string; apiConfigId: string }>>;
   getDirectors: (req?: ReqLike) => Promise<Array<{ id: string; name: string; agentIds: string[]; promptId?: string; apiConfigId: string }>>;
@@ -35,15 +38,18 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // GET /api/prompts
   app.get('/api/prompts', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     logger.info('GET /api/prompts');
-    res.json(await deps.getPrompts(req as ReqLike));
+    const list = await deps.listPrompts(req as ReqLike);
+    res.json(Array.from(list));
   }));
 
   // POST /api/prompts
   app.post('/api/prompts', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const prompt = ensurePromptPayload(req.body, 'body');
-    const current = await deps.getPrompts(req as ReqLike);
-    const next = [...current, prompt];
-    await deps.setPrompts(req as ReqLike, next);
+    const existing = await deps.getPrompt(req as ReqLike, prompt.id);
+    if (existing) {
+      throw new ConflictError(`Prompt with id '${prompt.id}' already exists`);
+    }
+    await deps.createPrompt(req as ReqLike, prompt);
     logger.info('POST /api/prompts: added prompt', { id: prompt.id });
     res.json({ success: true });
   }));
@@ -55,15 +61,12 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     if (prompt.id !== id) {
       throw new ValidationError('Prompt id mismatch', 'PROMPT_ID_MISMATCH');
     }
-    const current = await deps.getPrompts(req as ReqLike);
-    const idx = current.findIndex(p => p.id === id);
-    if (idx === -1) {
+    const current = await deps.getPrompt(req as ReqLike, id);
+    if (!current) {
       logger.warn('PUT /api/prompts/:id not found', { id });
       throw new NotFoundError('Prompt not found');
     }
-    const next = current.slice();
-    next[idx] = prompt;
-    await deps.setPrompts(req as ReqLike, next);
+    await deps.updatePrompt(req as ReqLike, prompt);
     logger.info('PUT /api/prompts/:id updated', { id });
     res.json({ success: true });
   }));
@@ -71,12 +74,11 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // DELETE /api/prompts/:id
   app.delete('/api/prompts/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const current = await deps.getPrompts(req as ReqLike);
-    const before = current.length;
-    const next = current.filter(p => p.id !== id);
-    await deps.setPrompts(req as ReqLike, next);
-    const after = next.length;
-    logger.info('DELETE /api/prompts/:id deleted', { id, deleted: before - after });
+    const removed = await deps.deletePrompt(req as ReqLike, id);
+    if (!removed) {
+      throw new NotFoundError('Prompt not found');
+    }
+    logger.info('DELETE /api/prompts/:id deleted', { id, deleted: 1 });
     res.json({ success: true });
   }));
 

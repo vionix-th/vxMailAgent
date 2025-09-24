@@ -23,13 +23,9 @@ import type { ReqLike } from './utils/repo-access';
 
 export interface LiveRepos {
   getPrompts(req?: ReqLike): Promise<Prompt[]>;
-  setPrompts(req: ReqLike, next: Prompt[]): Promise<void>;
   getAgents(req?: ReqLike): Promise<Agent[]>;
-  setAgents(req: ReqLike, next: Agent[]): Promise<void>;
   getDirectors(req?: ReqLike): Promise<Director[]>;
-  setDirectors(req: ReqLike, next: Director[]): Promise<void>;
   getFilters(req?: ReqLike): Promise<Filter[]>;
-  setFilters(req: ReqLike, next: Filter[]): Promise<void>;
   getImprints(req?: ReqLike): Promise<Imprint[]>;
   setImprints(req: ReqLike, next: Imprint[]): Promise<void>;
   getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]>;
@@ -72,9 +68,16 @@ export function createLiveRepos(): LiveRepos {
       throw new ValidationError(`${context}: lastActiveAt invalid for conversation ${id}`, 'CONVERSATION_LAST_ACTIVE_INVALID');
     }
   };
-  const get = <T>(fn: (req: ReqLike) => { getAll: () => Promise<T[]> }) => async (req?: ReqLike) => {
+  const get = <T>(fn: (req: ReqLike) => any) => async (req?: ReqLike): Promise<T[]> => {
     const repo = fn(requireReq(req));
-    return await repo.getAll();
+    if (typeof repo.list === 'function') {
+      const items = await repo.list();
+      return Array.isArray(items) ? items.slice() : Array.from(items);
+    }
+    if (typeof repo.getAll === 'function') {
+      return await repo.getAll();
+    }
+    throw new Error('LiveRepos: repository does not support list/getAll');
   };
   const set = <T>(fn: (req: ReqLike) => { setAll: (next: T[]) => Promise<void> }) => async (
     req: ReqLike,
@@ -100,13 +103,9 @@ export function createLiveRepos(): LiveRepos {
 
   return {
     getPrompts: get<Prompt>((req) => getPromptsRepo(req)),
-    setPrompts: set<Prompt>((req) => getPromptsRepo(req)),
     getAgents: get<Agent>((req) => getAgentsRepo(req)),
-    setAgents: set<Agent>((req) => getAgentsRepo(req)),
     getDirectors: get<Director>((req) => getDirectorsRepo(req)),
-    setDirectors: set<Director>((req) => getDirectorsRepo(req)),
     getFilters: get<Filter>((req) => getFiltersRepo(req)),
-    setFilters: set<Filter>((req) => getFiltersRepo(req)),
     getImprints: get<Imprint>((req) => getImprintsRepo(req)),
     setImprints: set<Imprint>((req) => getImprintsRepo(req)),
     getOrchestrationLog: get<OrchestrationEvent>((req) => getOrchestrationLogRepo(req)),
