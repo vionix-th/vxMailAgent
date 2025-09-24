@@ -49,6 +49,9 @@ export function appendMessagesToThread(
   const idx = conversations.findIndex((c) => c.id === threadId);
   if (idx === -1) return conversations;
   assertTimestampInvariant(conversations[idx], 'appendMessagesToThread');
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new ValidationError('appendMessagesToThread requires non-empty messages array', 'CONVERSATION_APPEND_EMPTY');
+  }
   const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
   const updated: ConversationThread = {
     ...conversations[idx],
@@ -95,6 +98,9 @@ export async function repoAppendMessages(
   threadId: string,
   messages: PromptMessage[] | any[],
 ): Promise<ConversationThread | null> {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new ValidationError('appendMessagesToConversation requires non-empty messages array', 'CONVERSATION_APPEND_EMPTY');
+  }
   return repos.appendMessagesToConversation(req, threadId, messages as any[]);
 }
 

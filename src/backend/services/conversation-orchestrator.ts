@@ -151,7 +151,9 @@ export class ConversationOrchestrator {
 
       // Update thread with new messages
       const newMessages = result.assistantMessage ? [result.assistantMessage] : [];
-      const updatedThread = (await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, newMessages)) || context.thread;
+      const updatedThread = newMessages.length > 0
+        ? (await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, newMessages)) || context.thread
+        : context.thread;
 
       // Process any director tool calls and determine continuation
       const shouldContinue = this.decideShouldContinue(result.toolCalls);

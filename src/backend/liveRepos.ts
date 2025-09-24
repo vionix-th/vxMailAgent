@@ -128,6 +128,9 @@ export function createLiveRepos(): LiveRepos {
       return appended;
     },
     appendMessagesToConversation: async (req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null> => {
+      if (!Array.isArray(messages) || messages.length === 0) {
+        throw new ValidationError('appendMessagesToConversation requires non-empty messages array', 'CONVERSATION_APPEND_EMPTY');
+      }
       const repo = requireConversationRepo(req);
       const next = await repo.mutate((cur) => {
         const idx = cur.findIndex((c) => c.id === threadId);
@@ -135,7 +138,7 @@ export function createLiveRepos(): LiveRepos {
         const now = new Date().toISOString();
         const current = cur[idx];
         ensureTimestamps(current, 'appendMessagesToConversation');
-        const updated: ConversationThread = { ...current, lastActiveAt: now, messages: [...current.messages, ...(messages || [])] } as ConversationThread;
+        const updated: ConversationThread = { ...current, lastActiveAt: now, messages: [...current.messages, ...messages] } as ConversationThread;
         const out = cur.slice();
         out[idx] = updated;
         return out;
