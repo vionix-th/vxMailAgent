@@ -1,27 +1,13 @@
-1. Audit `directors` and `agents` tables for missing/empty `enabledToolCalls`; document legacy rows requiring remediation before enforcing invariants. (Done 2025-09-23)
-   - Findings: No SQLite records present; legacy JSON under `data/legacy/` and `data/legacy/users/google_115075331003198785424/` contains 1 director (`ohwl7g6g`) and 2 agents (`kd8xzbqc`, `xz3r2xkr`) with `enabledToolCalls: []`.
-   - Required remediation: populate optional tool allowlists for those records before enforcing repo validation.
-2. Backfill `enabledToolCalls` for legacy directors/agents based on intended tool registry per record; block entries lacking authoritative config. (Skipped 2025-09-23 – `data/legacy` is archival only; no migrations per Caesar.)
-3. Enforce repo-level validation using `tool-config-service` so director/agent persistence rejects empty or invalid optional tool lists. (Done 2025-09-23)
-   - Route guard: `src/backend/routes/directors.ts` and `src/backend/routes/agents.ts` now require non-empty allowlists via `validateDirectorToolConfig`/`validateAgentToolConfig`.
-   - Persistence guard: `src/backend/storage/sqlite/repositories/directors.ts` and `.../agents.ts` validate before writing to SQLite.
-4. Replace raw descriptor assembly in `toolCalls.ts` with `tool-config-service` APIs, removing direct repository reads of `enabledToolCalls`. (Done 2025-09-23)
-   - Helpers: `src/backend/utils/tool-config-fetchers.ts` resolves director/agent descriptors via the shared service.
-   - Consumers: `src/backend/toolCalls.ts` now calls the helpers and no longer inspects `enabledToolCalls` directly.
-5. Audit conversation records for absent `lastActiveAt`/`startedAt` timestamps and prepare remediation script if gaps exist. (Done 2025-09-23)
-   - Checked legacy archives `data/legacy/users/google_115075331003198785424/conversations.json` and `.../google_105778401035214143955/conversations.json`; no active records missing timestamps (jq filter confirmed zero offenders).
-   - No SQLite conversation data present; enforcement work should target future repo writes once mutation guards are hardened.
-6. Harden conversation mutation helpers and route fetch path to throw when required timestamps are missing; drop fallback ordering. (Done 2025-09-23)
-   - Mutation guard: `src/backend/services/conversation-mutations.ts` and `src/backend/liveRepos.ts` now assert `startedAt`/`lastActiveAt` integrity before mutating threads.
-   - Routing guard: `src/backend/routes/conversations.ts` uses strict `lastActiveAt` timestamps (no `startedAt` fallback) and fails closed when data is invalid.
-7. Tighten accounts route request validation to fail closed on missing required properties instead of casting empty bodies. (Done 2025-09-23)
-   - POST guard: `src/backend/routes/accounts.ts` now rejects non-object bodies and missing `id`, `provider`, `email`, `signature`, or token fields before invoking `createAccount`.
-8. Update workspace tool handlers to guarantee non-null `result` payloads and remove `(result || {})` fallback in orchestrator once invariants hold. (Independent)
-9. Introduce strict validation for `payload.target.role` prior to helper usage; reject requests lacking role metadata. (Done 2025-09-23)
-   - Route guard: `src/backend/routes/prompts.ts` normalizes and validates `payload.target`/`payload.target.role`/`query.target` before invoking helpers.
-   - Helper cleanup: `src/backend/utils/prompt-helpers.ts` no longer defaults missing roles when computing `TargetSpec`.
-10. Define and enforce logger metadata/annotation schema so logging calls with incomplete data throw; update call sites accordingly. (Done 2025-09-23)
-    - Schema guard: `src/backend/services/logger.ts` validates meta objects and requires `traceId` when context is supplied.
-    - No call sites needed changes yet; existing usage already complies with object meta and optional context.
-11. Add Gmail part ingestion validation to reject fragments missing `mimeType`; ensure workspace persistence only receives validated parts. (Done 2025-09-23)
-    - Gmail provider: `src/backend/providers/mail/gmail.ts` now throws `gmail_part_missing_mime_type` when a Gmail part lacks a MIME type instead of defaulting to empty string.
+1. [Done 2025-09-24] Fix OAuth refresh persistence so `AccountManager.refreshTokenIfNeeded` fails closed when `refreshResult` omits `accessToken`, `refreshToken`, or `expiry`; then persist only validated tokens (Audit: Business Logic — OAuth refresh retains stale refreshToken). Dependency: none.
+2. Enforce agent handoff invariants by making `extractLastUserContent` and `ConversationOrchestrator.runAgentAssistant` reject threads without a user message instead of defaulting to `''` (Audit: Business Logic — Agent handoff loses user content). Dependency: task 1 for shared refresh regression tests.
+3. Harden `LiveRepos.appendMessagesToConversation` (and upstream orchestrator/tool handlers) to reject undefined/empty message batches so transcript producers must emit concrete tool replies (Audit: Architecture/Design — Conversation repo drops undefined message batches). Dependency: task 2 to avoid tripping on pre-existing empty agent payloads.
+4. Require workspace tool handlers to return non-null `result` objects and remove `(addResult.result || {})` fallbacks in the orchestrator before mutating workspace state (Audit: Business Logic — Workspace tool result fallback). Dependency: task 3 so message append now enforces strict payloads.
+5. Validate email context before director filtering by enforcing mandatory fields (`from`, `subject`, `date`, recipients, body snippets) and failing closed when missing (Audit: Business Logic — Filter evaluation masks missing context). Dependency: task 3 to ensure downstream transcript guards are active when ingestion aborts.
+6. Remove `startedAt` fallback in conversation routes and force timestamp integrity on every response, leveraging the existing mutation checks (Audit: Business Logic — Conversation timestamp fallback). Dependency: task 3 to share the stricter repository guarantees.
+7. Tighten `/api/accounts` update routes to operate on validated DTOs instead of `(req.body || {})` casts, preserving producer-only validation (Audit: Business Logic — Accounts route body default). Dependency: none; may run in parallel with tasks 1–3 once scoped.
+8. Require prompt helper callers to supply explicit roles and drop `String(... || '')` coercion (Audit: Business Logic — Prompt role coercion). Dependency: task 7 so shared validation patterns stay aligned.
+9. Route all tool descriptor resolution through `tool-config-service` so meta-tools stop duplicating repository lookups (Audit: Architecture/Design + Best Practices — Tool config resolution still replicated / boundary leaks). Dependency: tasks 1–8 to avoid refactoring during validation churn.
+10. Preserve `null` assistant content in the OpenAI adapter and `/api/test` helpers, treating tool-only turns explicitly (Audit: Best Practices — OpenAI provider coerces missing assistant text). Dependency: tasks 2–3 so conversation consumers already handle strict payloads.
+11. Enforce logger metadata validation instead of `(meta || {})`, requiring structured context at call sites (Audit: Best Practices — Logger metadata fallback). Dependency: tasks 1–10 to minimize concurrent behavioral changes.
+12. Stop mutating logger annotations by demanding complete payloads from producers before persistence (Audit: Best Practices — Logger annotation mutation). Dependency: task 11 for cohesive logging updates.
+13. Enforce Gmail MIME validation by rejecting parts without a non-empty `mimeType` (Audit: Deprecated/Unused — Gmail MIME default). Dependency: tasks 5 and 10 to ensure ingestion failures propagate cleanly.

@@ -51,14 +51,16 @@ export class AccountManager {
       const refreshResult = await provider.ensureValidAccessToken(account);
 
       if (refreshResult.updated) {
+        const validated = this.requireRefreshedTokens(account, refreshResult);
+
         // Mutate in-memory account tokens immediately so the current fetch cycle
         // uses the fresh access token without requiring a second run
         try {
           account.tokens = {
             ...account.tokens,
-            accessToken: refreshResult.accessToken,
-            expiry: refreshResult.expiry,
-            refreshToken: refreshResult.refreshToken || account.tokens.refreshToken,
+            accessToken: validated.accessToken,
+            expiry: validated.expiry,
+            refreshToken: validated.refreshToken,
           };
         } catch (e: any) {
           logger.warn('ACCOUNT_MANAGER failed to update in-memory tokens', {
@@ -68,7 +70,7 @@ export class AccountManager {
           });
         }
 
-        await this.persistTokenUpdate(account, refreshResult, userReq);
+        await this.persistTokenUpdate(account, validated, userReq);
         
         this.logFetch({
           id: newId(),
@@ -117,11 +119,37 @@ export class AccountManager {
   }
 
   /**
+   * Validate refreshed OAuth tokens and enforce non-empty invariants.
+   */
+  private requireRefreshedTokens(
+    _account: any,
+    refreshed: any
+  ): { accessToken: string; refreshToken: string; expiry: string } {
+    const accessToken = typeof refreshed?.accessToken === 'string' ? refreshed.accessToken : undefined;
+    if (!accessToken || accessToken.trim().length === 0) {
+      throw new Error('provider refresh returned invalid access token');
+    }
+    const refreshToken = typeof refreshed?.refreshToken === 'string' ? refreshed.refreshToken : undefined;
+    if (!refreshToken || refreshToken.trim().length === 0) {
+      throw new Error('provider refresh returned invalid refresh token');
+    }
+    const expiry = typeof refreshed?.expiry === 'string' ? refreshed.expiry : undefined;
+    if (!expiry || expiry.trim().length === 0) {
+      throw new Error('provider refresh returned invalid expiry timestamp');
+    }
+    const parsed = Date.parse(expiry);
+    if (Number.isNaN(parsed)) {
+      throw new Error('provider refresh returned unparsable expiry timestamp');
+    }
+    return { accessToken, refreshToken, expiry };
+  }
+
+  /**
    * Persist updated OAuth tokens to repository.
    */
   private async persistTokenUpdate(
     account: any,
-    refreshResult: any,
+    tokens: { accessToken: string; refreshToken: string; expiry: string },
     userReq: ReqLike
   ): Promise<void> {
     const accounts = await this.repos.getAccounts(userReq);
@@ -132,9 +160,9 @@ export class AccountManager {
         ...accounts[accountIndex],
         tokens: {
           ...accounts[accountIndex].tokens,
-          accessToken: refreshResult.accessToken,
-          expiry: refreshResult.expiry,
-          refreshToken: refreshResult.refreshToken || accounts[accountIndex].tokens.refreshToken
+          accessToken: tokens.accessToken,
+          expiry: tokens.expiry,
+          refreshToken: tokens.refreshToken
         }
       };
 
