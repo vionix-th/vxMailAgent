@@ -4,7 +4,7 @@ import type { LiveRepos } from '../liveRepos';
 import { ValidationError } from './error-handler';
 
 function assertTimestampInvariant(thread: ConversationThread, context: string): void {
-  const { id, startedAt, lastActiveAt } = thread as ConversationThread & { startedAt?: string | null; lastActiveAt?: string | null };
+  const { startedAt, lastActiveAt } = thread as ConversationThread & { startedAt?: string | null; lastActiveAt?: string | null };
   if (typeof startedAt !== 'string' || !startedAt.trim()) {
     throw new ValidationError(`${context}: startedAt missing`, 'CONVERSATION_STARTED_AT_MISSING');
   }

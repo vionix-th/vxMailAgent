@@ -235,13 +235,32 @@ export class ConversationOrchestrator {
       throw new Error('API config not found');
     }
 
+    if (thread.kind !== 'agent') {
+      throw new InvalidAgentConfigError(
+        `runAgentAssistant requires agent thread; received ${thread.kind}`,
+        'AGENT_THREAD_KIND_MISMATCH'
+      );
+    }
+
     // Equal tool exposure for agent, except spawning further agents (disabled)
     // Load agent allowlist and apply role + allowlist gating
     const agents = await userReq.repos.getAgents(userReq.reqLike);
     const agent = this.requireAgentById(thread.agentId, agents, `Agent ${thread.agentId} not found for thread ${thread.id}`);
     const gatedToolDescriptors = resolveAgentToolDescriptors(agent);
 
-    const userContent = extractLastUserContent(thread.messages as any);
+    let userContent: string;
+    try {
+      userContent = extractLastUserContent(thread.messages as any);
+    } catch (error: any) {
+      if (error instanceof ValidationError) {
+        throw new ValidationError(
+          `Agent thread ${thread.id}: ${error.message}`,
+          error.code,
+          error.statusCode
+        );
+      }
+      throw error;
+    }
 
     const rawHandleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)));
     const scopedHandleTool = (name: string, params: any) =>
@@ -725,6 +744,13 @@ export class ConversationOrchestrator {
       if (!apiConfig) {
         logger.warn('API config not found for agent conversation', { apiConfigId: parentThread.apiConfigId });
         return;
+      }
+
+      if (agentThread.kind !== 'agent') {
+        throw new InvalidAgentConfigError(
+          `executeAgentConversation requires agent thread; received ${agentThread.kind}`,
+          'AGENT_THREAD_KIND_MISMATCH'
+        );
       }
 
       // Equal tool exposure for agent, except spawning further agents (disabled)

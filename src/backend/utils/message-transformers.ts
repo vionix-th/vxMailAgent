@@ -1,5 +1,6 @@
 import { PromptMessage } from '../../shared/types';
 import { newId } from './id';
+import { ValidationError } from '../services/error-handler';
 
 /**
  * Transform conversation messages for engine consumption.
@@ -61,8 +62,20 @@ export function createToolResultMessage(toolCallId: string, result: any): Prompt
  * Extract the last user message content from a conversation.
  */
 export function extractLastUserContent(messages: any[]): string {
-  const lastUserMessage = messages.filter(m => m.role === 'user').pop();
-  return lastUserMessage?.content ?? '';
+  if (!Array.isArray(messages)) {
+    throw new ValidationError('agent conversation messages must be an array', 'AGENT_MESSAGES_INVALID');
+  }
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const candidate = messages[i];
+    if (candidate && candidate.role === 'user') {
+      const content = (candidate as any).content;
+      if (typeof content === 'string' && content.trim().length > 0) {
+        return content;
+      }
+      break;
+    }
+  }
+  throw new ValidationError('agent conversation missing user message content', 'AGENT_USER_MESSAGE_MISSING');
 }
 
 /**
