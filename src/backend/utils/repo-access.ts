@@ -2,23 +2,25 @@ import type { UserContext } from '../middleware/user-context';
 import type { ReqLike } from '../interfaces';
 import { RepoBundle } from '../repository/registry';
 import type {
-  AccountsRepository,
   SettingsRepository,
-  PromptsRepository,
-  AgentsRepository,
-  DirectorsRepository,
-  FiltersRepository,
-  TemplatesRepository,
-  ImprintsRepository,
-  WorkspaceItemsRepository,
-  ConversationsRepository,
-  MemoryRepository,
   EmailsRepository,
   FetcherLogRepository,
   ProviderEventsRepository,
   TracesRepository,
   OrchestrationLogRepository,
 } from '../storage/sqlite';
+import type {
+  AccountsRepoInstance,
+  AgentsRepoInstance,
+  ConversationsRepoInstance,
+  DirectorsRepoInstance,
+  FiltersRepoInstance,
+  ImprintsRepoInstance,
+  MemoryRepoInstance,
+  PromptsRepoInstance,
+  TemplatesRepoInstance,
+  WorkspaceItemsRepoInstance,
+} from '../repository/wrappers';
 
 export type { ReqLike } from '../interfaces';
 
@@ -43,7 +45,7 @@ export function requireRepos(req: ReqLike): RepoBundle {
   return requireReq(req).userContext.repos;
 }
 
-export function getAccountsRepo(req: ReqLike): AccountsRepository {
+export function getAccountsRepo(req: ReqLike): AccountsRepoInstance {
   return requireUserRepo(req, 'accounts');
 }
 
@@ -51,39 +53,39 @@ export function getSettingsRepo(req: ReqLike): SettingsRepository {
   return requireUserRepo(req, 'settings');
 }
 
-export function getPromptsRepo(req: ReqLike): PromptsRepository {
+export function getPromptsRepo(req: ReqLike): PromptsRepoInstance {
   return requireUserRepo(req, 'prompts');
 }
 
-export function getAgentsRepo(req: ReqLike): AgentsRepository {
+export function getAgentsRepo(req: ReqLike): AgentsRepoInstance {
   return requireUserRepo(req, 'agents');
 }
 
-export function getDirectorsRepo(req: ReqLike): DirectorsRepository {
+export function getDirectorsRepo(req: ReqLike): DirectorsRepoInstance {
   return requireUserRepo(req, 'directors');
 }
 
-export function getFiltersRepo(req: ReqLike): FiltersRepository {
+export function getFiltersRepo(req: ReqLike): FiltersRepoInstance {
   return requireUserRepo(req, 'filters');
 }
 
-export function getTemplatesRepo(req: ReqLike): TemplatesRepository {
+export function getTemplatesRepo(req: ReqLike): TemplatesRepoInstance {
   return requireUserRepo(req, 'templates');
 }
 
-export function getImprintsRepo(req: ReqLike): ImprintsRepository {
+export function getImprintsRepo(req: ReqLike): ImprintsRepoInstance {
   return requireUserRepo(req, 'imprints');
 }
 
-export function getWorkspaceItemsRepo(req: ReqLike): WorkspaceItemsRepository {
+export function getWorkspaceItemsRepo(req: ReqLike): WorkspaceItemsRepoInstance {
   return requireUserRepo(req, 'workspaceItems');
 }
 
-export function getConversationsRepo(req: ReqLike): ConversationsRepository {
+export function getConversationsRepo(req: ReqLike): ConversationsRepoInstance {
   return requireUserRepo(req, 'conversations');
 }
 
-export function getMemoryRepo(req: ReqLike): MemoryRepository {
+export function getMemoryRepo(req: ReqLike): MemoryRepoInstance {
   return requireUserRepo(req, 'memory');
 }
 

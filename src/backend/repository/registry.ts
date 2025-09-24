@@ -1,27 +1,49 @@
 import { userPaths, UserPaths } from '../utils/paths';
 import { USER_REGISTRY_TTL_MINUTES, USER_REGISTRY_MAX_ENTRIES } from '../config';
 import {
-  AccountsRepository,
-  AgentsRepository,
-  ConversationsRepository,
-  DirectorsRepository,
+  AccountsRepository as SqlAccountsRepository,
+  AgentsRepository as SqlAgentsRepository,
+  ConversationsRepository as SqlConversationsRepository,
+  DirectorsRepository as SqlDirectorsRepository,
   EmailsRepository,
   FetcherLogRepository,
-  FiltersRepository,
-  ImprintsRepository,
-  MemoryRepository,
+  FiltersRepository as SqlFiltersRepository,
+  ImprintsRepository as SqlImprintsRepository,
+  MemoryRepository as SqlMemoryRepository,
   OrchestrationLogRepository,
-  PromptsRepository,
+  PromptsRepository as SqlPromptsRepository,
   ProviderEventsRepository,
   SettingsRepository,
-  TemplatesRepository,
+  TemplatesRepository as SqlTemplatesRepository,
   TracesRepository,
-  WorkspaceItemsRepository,
+  WorkspaceItemsRepository as SqlWorkspaceItemsRepository,
   SystemUsersRepository,
 } from '../storage/sqlite/repositories';
 import { SqliteConnectionFactory, StorageHandle } from '../storage/sqlite';
 import logger from '../services/logger';
 import type { TemplateItem } from '../../shared/types';
+import {
+  augmentAccountsRepository,
+  augmentAgentsRepository,
+  augmentConversationsRepository,
+  augmentDirectorsRepository,
+  augmentFiltersRepository,
+  augmentImprintsRepository,
+  augmentMemoryRepository,
+  augmentPromptsRepository,
+  augmentTemplatesRepository,
+  augmentWorkspaceItemsRepository,
+  type AccountsRepoInstance,
+  type AgentsRepoInstance,
+  type ConversationsRepoInstance,
+  type DirectorsRepoInstance,
+  type FiltersRepoInstance,
+  type ImprintsRepoInstance,
+  type MemoryRepoInstance,
+  type PromptsRepoInstance,
+  type TemplatesRepoInstance,
+  type WorkspaceItemsRepoInstance,
+} from './wrappers';
 
 let sqliteFactory: SqliteConnectionFactory | null = null;
 
@@ -35,19 +57,19 @@ export interface RepoBundle {
   lastAccessed: number;
   handle: StorageHandle;
 
-  accounts: AccountsRepository;
+  accounts: AccountsRepoInstance;
   settings: SettingsRepository;
 
-  prompts: PromptsRepository;
-  agents: AgentsRepository;
-  directors: DirectorsRepository;
-  filters: FiltersRepository;
-  templates: TemplatesRepository;
-  imprints: ImprintsRepository;
-  workspaceItems: WorkspaceItemsRepository;
+  prompts: PromptsRepoInstance;
+  agents: AgentsRepoInstance;
+  directors: DirectorsRepoInstance;
+  filters: FiltersRepoInstance;
+  templates: TemplatesRepoInstance;
+  imprints: ImprintsRepoInstance;
+  workspaceItems: WorkspaceItemsRepoInstance;
 
-  conversations: ConversationsRepository;
-  memory: MemoryRepository;
+  conversations: ConversationsRepoInstance;
+  memory: MemoryRepoInstance;
   emails: EmailsRepository;
 
   fetcherLog: FetcherLogRepository;
@@ -125,17 +147,17 @@ export class RepoBundleRegistry {
       paths,
       handle,
       lastAccessed: Date.now(),
-      accounts: new AccountsRepository(handle),
+      accounts: augmentAccountsRepository(new SqlAccountsRepository(handle)),
       settings: new SettingsRepository(handle),
-      prompts: new PromptsRepository(handle),
-      agents: new AgentsRepository(handle),
-      directors: new DirectorsRepository(handle),
-      filters: new FiltersRepository(handle),
-      templates: new TemplatesRepository(handle),
-      imprints: new ImprintsRepository(handle),
-      workspaceItems: new WorkspaceItemsRepository(handle),
-      conversations: new ConversationsRepository(handle),
-      memory: new MemoryRepository(handle),
+      prompts: augmentPromptsRepository(new SqlPromptsRepository(handle)),
+      agents: augmentAgentsRepository(new SqlAgentsRepository(handle)),
+      directors: augmentDirectorsRepository(new SqlDirectorsRepository(handle)),
+      filters: augmentFiltersRepository(new SqlFiltersRepository(handle)),
+      templates: augmentTemplatesRepository(new SqlTemplatesRepository(handle)),
+      imprints: augmentImprintsRepository(new SqlImprintsRepository(handle)),
+      workspaceItems: augmentWorkspaceItemsRepository(new SqlWorkspaceItemsRepository(handle)),
+      conversations: augmentConversationsRepository(new SqlConversationsRepository(handle)),
+      memory: augmentMemoryRepository(new SqlMemoryRepository(handle)),
       emails: new EmailsRepository(handle),
       fetcherLog: new FetcherLogRepository(handle),
       providerEvents: new ProviderEventsRepository(handle),
