@@ -130,7 +130,11 @@ export class ConversationOrchestrator {
           agents: context.agents,
         }
       };
-      const engineInvoke = (input: any) => conversationEngine.run(input, { apiKey: apiCfg.apiKey });
+      const apiKey = typeof apiCfg.apiKey === 'string' ? apiCfg.apiKey.trim() : '';
+      if (!apiKey) {
+        throw new ValidationError(`API config ${apiCfg.id} is missing apiKey`, 'API_CONFIG_API_KEY_MISSING');
+      }
+      const engineInvoke = (input: any) => conversationEngine.run(input, { apiKey });
       const enginePromise = engineInvoke(engineInput as any);
       const engineTimeoutPromise = new Promise<never>((_, reject) => {
         engineTimeoutId = setTimeout(() => {

@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { Prompt } from '../../shared/types';
+import { validatePromptTemplate, PromptValidationError } from '../../shared/promptValidation';
 import { chatCompletion } from '../providers/openai';
 
 import { requireUserContext } from '../middleware/user-context';
@@ -19,6 +20,17 @@ export interface PromptsRoutesDeps {
   getDirectors: (req?: ReqLike) => Promise<Array<{ id: string; name: string; agentIds: string[]; promptId?: string; apiConfigId: string }>>;
 }
 
+function ensurePromptPayload(payload: unknown, context: string): Prompt {
+  try {
+    return validatePromptTemplate(payload, context);
+  } catch (error) {
+    if (error instanceof PromptValidationError) {
+      throw new ValidationError(error.message, 'PROMPT_INVALID');
+    }
+    throw error;
+  }
+}
+
 export default function registerPromptsRoutes(app: express.Express, deps: PromptsRoutesDeps) {
   // GET /api/prompts
   app.get('/api/prompts', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
@@ -28,7 +40,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
 
   // POST /api/prompts
   app.post('/api/prompts', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const prompt: Prompt = req.body;
+    const prompt = ensurePromptPayload(req.body, 'body');
     const current = await deps.getPrompts(req as ReqLike);
     const next = [...current, prompt];
     await deps.setPrompts(req as ReqLike, next);
@@ -39,6 +51,10 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // PUT /api/prompts/:id
   app.put('/api/prompts/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
+    const prompt = ensurePromptPayload(req.body, 'body');
+    if (prompt.id !== id) {
+      throw new ValidationError('Prompt id mismatch', 'PROMPT_ID_MISMATCH');
+    }
     const current = await deps.getPrompts(req as ReqLike);
     const idx = current.findIndex(p => p.id === id);
     if (idx === -1) {
@@ -46,7 +62,7 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
       throw new NotFoundError('Prompt not found');
     }
     const next = current.slice();
-    next[idx] = req.body;
+    next[idx] = prompt;
     await deps.setPrompts(req as ReqLike, next);
     logger.info('PUT /api/prompts/:id updated', { id });
     res.json({ success: true });

@@ -5,7 +5,7 @@ import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
 import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import type { ReqLike } from '../interfaces';
-import { InvalidAgentConfigError } from './error-handler';
+import { InvalidAgentConfigError, ValidationError } from './error-handler';
 import { appendMessageToThread, finalizeThreadStatus } from './conversation-mutations';
 import { ApiConfigView } from './apiConfigSerializer';
 
@@ -100,6 +100,10 @@ export async function runAgentConversation(
   let currentMessages: any[] = [...agentThread.messages];
   let updatedConversations = [...conversations];
   let lastAssistant: any = null;
+  const apiKey = typeof secrets.apiKey === 'string' ? secrets.apiKey.trim() : '';
+  if (!apiKey) {
+    throw new ValidationError('Agent conversation requires provider apiKey', 'API_CONFIG_API_KEY_MISSING');
+  }
     if (initialUserMessage) {
       const userMsg = { role: 'user', content: initialUserMessage };
       currentMessages.push(userMsg);
@@ -120,7 +124,7 @@ export async function runAgentConversation(
     toolRegistry,
     context: { conversationId: agentThread.id, traceId },
   };
-      const stepPromise = conversationEngine.run(engineInput as any, secrets);
+      const stepPromise = conversationEngine.run(engineInput as any, { apiKey });
       const stepTimeoutPromise = new Promise<never>((_, reject) => {
         stepTimeoutId = setTimeout(() => reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`)), Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
       });

@@ -1,12 +1,11 @@
 // Tool call handlers for calendar, todo, filesystem, memory
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
-import { ToolCallResult, MemoryEntry, MemoryScope, ApiConfig, ConversationThread, Director, Agent, ToolDescriptor } from '../shared/types';
+import { ToolCallResult, MemoryEntry, ApiConfig, ConversationThread, Director, Agent, ToolDescriptor } from '../shared/types';
 import { validateAgainstSchema, validateWorkspaceProvenance } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
 import { TOOL_EXEC_TIMEOUT_MS } from './config';
 import logger from './services/logger';
 import { WorkspaceService } from './services/workspace-service';
-import { Repository } from './repository/core';
 import { newId } from './utils/id';
 import type { RepoBundle } from './repository/registry';
 import { ensureAgentThread, runAgentConversation } from './services/orchestration-agent';
@@ -14,6 +13,8 @@ import { ValidationError, InvalidAgentConfigError } from './services/error-handl
 import { WorkspaceItemsRepository } from './storage/sqlite/repositories/workspaceItems';
 import { serializeApiConfig } from './services/apiConfigSerializer';
 import { resolveAgentToolDescriptors, resolveDirectorToolDescriptors, resolveMandatoryToolDescriptors } from './services/tool-config-service';
+import { MemoryRepository } from './storage/sqlite/repositories/memory';
+import { requireMemoryScope, optionalMemoryScope, requireMemoryOwner, requireContent, normalizeMemoryTags, normalizeOptionalString } from './utils/memory-validation';
 
 interface ToolCallExecutionContext {
   workspace?: {
@@ -237,15 +238,15 @@ export function createToolHandler(repos: RepoBundle) {
           return { ...r, kind: name };
         }
         case 'memory_search': {
-          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'search' }, repos.memory as unknown as Repository<MemoryEntry>));
+          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'search' }, repos.memory));
           return { ...r, kind: name };
         }
         case 'memory_add': {
-          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'add' }, repos.memory as unknown as Repository<MemoryEntry>));
+          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'add' }, repos.memory));
           return { ...r, kind: name };
         }
         case 'memory_edit': {
-          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'edit' }, repos.memory as unknown as Repository<MemoryEntry>));
+          const r = await withTimeout(handleMemoryToolCall({ ...params, action: 'edit' }, repos.memory));
           return { ...r, kind: name };
         }
         case 'workspace_add_item': {
@@ -298,100 +299,201 @@ async function handleFilesystemToolCall(payload: any): Promise<ToolCallResult> {
 
  
 
-export async function handleMemoryToolCall(payload: any, memoryRepo: Repository<MemoryEntry>): Promise<ToolCallResult> {
+export async function handleMemoryToolCall(payload: any, memoryRepo: MemoryRepository): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] memory', { payload });
   try {
-    if (payload.action === 'search') {
-      // Cascading fallback: local -> shared -> global
-      const scopes = ['local', 'shared', 'global'];
-      let found: MemoryEntry[] = [];
+    const action = typeof payload?.action === 'string' ? payload.action : '';
+    if (action === 'search') {
+      const scope = optionalMemoryScope(payload.scope, 'memory_search.scope');
+      const owner = normalizeOptionalString(payload.owner, 'memory_search.owner');
+      const tag = normalizeOptionalString(payload.tag, 'memory_search.tag');
+      const query = normalizeOptionalString(payload.query, 'memory_search.query');
 
-      const all = await memoryRepo.getAll() as MemoryEntry[];
-      for (const scope of (payload.scope ? [payload.scope, ...scopes.filter(s => s !== payload.scope)] : scopes)) {
-        let filtered = all.filter((e: MemoryEntry) => e.scope === scope);
-        if (payload.owner) filtered = filtered.filter((e: MemoryEntry) => e.owner === payload.owner);
-        if (payload.tag) filtered = filtered.filter((e: MemoryEntry) => e.tags && e.tags.includes(payload.tag));
-        if (payload.query) filtered = filtered.filter((e: MemoryEntry) => e.content.toLowerCase().includes(payload.query.toLowerCase()));
-        if (filtered.length > 0) {
-          found = filtered;
+      const all = await memoryRepo.getAll();
+      let filtered = scope ? all.filter((entry) => entry.scope === scope) : all;
+      if (owner) filtered = filtered.filter((entry) => entry.owner === owner);
+      if (tag) filtered = filtered.filter((entry) => Array.isArray(entry.tags) && entry.tags.includes(tag));
+      if (query) filtered = filtered.filter((entry) => entry.content.toLowerCase().includes(query.toLowerCase()));
 
-          break;
+      const resultWithProvenance = filtered.map((entry) => {
+        const provenance: Record<string, string> = { scope: entry.scope };
+        if (entry.owner) {
+          provenance.owner = entry.owner;
         }
-      }
-      // If nothing found, return empty
-      if (found.length === 0) {
-        return { kind: 'memory', success: true, result: [] };
-      }
-      // Attach provenance to each result without defaulting owner
-      const resultWithProvenance = found.map(e => {
-        const prov: any = { scope: e.scope };
-        if (typeof e.owner === 'string') prov.owner = e.owner;
-        return { ...e, provenance: prov };
+        return { ...entry, provenance };
       });
       return { kind: 'memory', success: true, result: resultWithProvenance };
-
-    } else if (payload.action === 'add') {
-      // Accept either an explicit entry object, or a shorthand with query/content
-      const now = new Date().toISOString();
-      const scope: MemoryScope = validScope(payload.scope) ? payload.scope : 'local';
-      let base: Partial<MemoryEntry> | undefined = undefined;
-      if (payload.entry && typeof payload.entry === 'object') {
-        base = payload.entry as Partial<MemoryEntry>;
-      } else if (typeof payload.content === 'string' || typeof payload.query === 'string') {
-        base = {
-          content: String(payload.content ?? payload.query),
-          scope,
-          tags: Array.isArray(payload.tags) ? payload.tags : (payload.tag ? [String(payload.tag)] : undefined),
-          owner: typeof payload.owner === 'string' ? payload.owner : undefined,
-        } as Partial<MemoryEntry>;
-      }
-      const errors: string[] = [];
-      if (!base) errors.push('Missing entry or content/query');
-      if (base && !base.content) errors.push('Missing content string');
-      if (base && typeof base.owner !== 'string') errors.push('Missing owner');
-      const entry: MemoryEntry | null = !errors.length && base ? {
-        id: (base as any)?.id || newId(),
-        scope: (base.scope as MemoryScope) || scope,
-        content: String(base.content),
-        created: now,
-        updated: now,
-        owner: base.owner as string,
-        ...(Array.isArray(base.tags) ? { tags: base.tags } : {}),
-        ...((base as any)?.relatedEmailId ? { relatedEmailId: (base as any).relatedEmailId } : {}),
-        ...(base.metadata ? { metadata: base.metadata } : {}),
-      } : null;
-      if (!entry) {
-        return { kind: 'memory', success: false, result: { ok: false, errors, received: sanitize(payload) }, error: 'Invalid memory add payload' };
-      }
-      const current = await memoryRepo.getAll();
-      const next = [...current, entry];
-      await memoryRepo.setAll(next);
-      return { kind: 'memory', success: true, result: { added: true, entry } };
-    } else if (payload.action === 'edit') {
-      // Require an entry with id; merge provided fields
-      const received = payload.entry;
-      if (!received || typeof received !== 'object' || !received.id) {
-        return { kind: 'memory', success: false, result: { ok: false, errors: ['Missing entry.id'], received: sanitize(payload) }, error: 'Invalid memory edit payload' };
-      }
-      const list = await memoryRepo.getAll();
-      const idx = list.findIndex((e: MemoryEntry) => e.id === received.id);
-      if (idx === -1) {
-        return { kind: 'memory', success: false, result: { ok: false, errors: ['Memory entry not found'], received: sanitize(payload) }, error: 'Memory entry not found' };
-      }
-      const updated = { ...list[idx], ...received, updated: new Date().toISOString() } as MemoryEntry;
-      const next = list.slice();
-      next[idx] = updated;
-      await memoryRepo.setAll(next);
-      return { kind: 'memory', success: true, result: { edited: true, entry: updated } };
     }
-    return { kind: 'memory', success: false, result: null, error: 'Invalid memory action' };
+
+    if (action === 'add') {
+      const entryPayload = payload.entry && typeof payload.entry === 'object' ? payload.entry as Record<string, unknown> : undefined;
+      const entryScope = entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'scope')
+        ? requireMemoryScope(entryPayload.scope, 'memory_add.entry.scope')
+        : undefined;
+      const requestScope = payload.scope !== undefined
+        ? requireMemoryScope(payload.scope, 'memory_add.scope')
+        : undefined;
+      if (entryScope && requestScope && entryScope !== requestScope) {
+        throw new ValidationError('memory_add.scope conflicts with entry.scope', 'MEMORY_SCOPE_CONFLICT');
+      }
+      const scope = entryScope ?? requestScope;
+      if (!scope) {
+        throw new ValidationError('scope is required', 'MEMORY_SCOPE_REQUIRED');
+      }
+
+      let owner: string | undefined;
+      if (entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'owner')) {
+        owner = requireMemoryOwner(entryPayload.owner, 'memory_add.entry.owner');
+      }
+      if (!owner && payload.owner !== undefined) {
+        owner = requireMemoryOwner(payload.owner, 'memory_add.owner');
+      }
+      if (!owner) {
+        throw new ValidationError('owner is required', 'MEMORY_OWNER_REQUIRED');
+      }
+
+      let contentSource: unknown;
+      if (entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'content')) {
+        contentSource = entryPayload.content;
+      } else if (payload.content !== undefined) {
+        contentSource = payload.content;
+      } else if (payload.query !== undefined) {
+        contentSource = payload.query;
+      }
+      const content = requireContent(contentSource, 'memory_add.content');
+
+      const now = new Date().toISOString();
+      let id = newId();
+      if (entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'id')) {
+        const rawId = entryPayload.id;
+        if (typeof rawId !== 'string' || !rawId.trim()) {
+          throw new ValidationError('memory_add.entry.id must be a non-empty string', 'MEMORY_ID_INVALID');
+        }
+        id = rawId.trim();
+      }
+
+      let created = now;
+      if (entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'created')) {
+        const rawCreated = entryPayload.created;
+        if (typeof rawCreated !== 'string' || !rawCreated.trim()) {
+          throw new ValidationError('memory_add.entry.created must be a non-empty string', 'MEMORY_CREATED_INVALID');
+        }
+        created = rawCreated;
+      }
+
+      const relatedEmailId = entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'relatedEmailId')
+        ? normalizeOptionalString(entryPayload.relatedEmailId, 'memory_add.entry.relatedEmailId')
+        : normalizeOptionalString(payload.relatedEmailId, 'memory_add.relatedEmailId');
+
+      const metadata = entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'metadata')
+        ? entryPayload.metadata
+        : payload.metadata;
+
+      const entryTags = entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'tags')
+        ? normalizeMemoryTags(entryPayload.tags)
+        : undefined;
+      const payloadTags = normalizeMemoryTags(payload.tags);
+      const singleTag = normalizeOptionalString(payload.tag, 'memory_add.tag');
+      const tags = mergeTags(entryTags, payloadTags, singleTag ? [singleTag] : undefined);
+
+      const entry: MemoryEntry = {
+        id,
+        scope,
+        content,
+        created,
+        updated: now,
+        owner,
+        ...(tags ? { tags } : {}),
+        ...(relatedEmailId ? { relatedEmailId } : {}),
+        ...(typeof metadata !== 'undefined' ? { metadata } : {}),
+      };
+
+      await memoryRepo.upsert(entry);
+      return { kind: 'memory', success: true, result: { added: true, entry } };
+    }
+
+    if (action === 'edit') {
+      const received = payload.entry;
+      if (!received || typeof received !== 'object') {
+        throw new ValidationError('memory_edit.entry is required', 'MEMORY_ENTRY_REQUIRED');
+      }
+      const entryObj = received as Record<string, unknown>;
+      const rawId = entryObj.id;
+      if (typeof rawId !== 'string' || !rawId.trim()) {
+        throw new ValidationError('memory_edit.entry.id is required', 'MEMORY_ID_REQUIRED');
+      }
+      const entryId = rawId.trim();
+      const now = new Date().toISOString();
+      const nextList = await memoryRepo.mutate((current) => {
+        const idx = current.findIndex((entry) => entry.id === entryId);
+        if (idx === -1) {
+          throw new ValidationError('Memory entry not found', 'MEMORY_ENTRY_NOT_FOUND');
+        }
+        const updated = { ...current[idx] } as MemoryEntry;
+        if (Object.prototype.hasOwnProperty.call(entryObj, 'content')) {
+          updated.content = requireContent(entryObj.content, 'memory_edit.entry.content');
+        }
+        if (Object.prototype.hasOwnProperty.call(entryObj, 'scope')) {
+          updated.scope = requireMemoryScope(entryObj.scope, 'memory_edit.entry.scope');
+        }
+        if (Object.prototype.hasOwnProperty.call(entryObj, 'owner')) {
+          updated.owner = requireMemoryOwner(entryObj.owner, 'memory_edit.entry.owner');
+        }
+        if (Object.prototype.hasOwnProperty.call(entryObj, 'tags')) {
+          const tags = normalizeMemoryTags(entryObj.tags);
+          if (tags) {
+            updated.tags = tags;
+          } else {
+            delete (updated as any).tags;
+          }
+        }
+        if (Object.prototype.hasOwnProperty.call(entryObj, 'relatedEmailId')) {
+          const related = normalizeOptionalString(entryObj.relatedEmailId, 'memory_edit.entry.relatedEmailId');
+          if (related) {
+            updated.relatedEmailId = related;
+          } else {
+            delete (updated as any).relatedEmailId;
+          }
+        }
+        if (Object.prototype.hasOwnProperty.call(entryObj, 'metadata')) {
+          if (typeof entryObj.metadata === 'undefined') {
+            delete (updated as any).metadata;
+          } else {
+            updated.metadata = entryObj.metadata as any;
+          }
+        }
+        updated.updated = now;
+        const next = current.slice();
+        next[idx] = updated;
+        return next;
+      });
+      const updatedEntry = nextList.find((entry) => entry.id === entryId);
+      if (!updatedEntry) {
+        throw new Error('Failed to update memory entry');
+      }
+      return { kind: 'memory', success: true, result: { edited: true, entry: updatedEntry } };
+    }
+
+    throw new ValidationError('Invalid memory action', 'MEMORY_ACTION_INVALID');
   } catch (err: any) {
+    if (err instanceof ValidationError) {
+      return { kind: 'memory', success: false, result: { ok: false, error: err.message, code: err.code, received: sanitize(payload) }, error: err.message };
+    }
     return { kind: 'memory', success: false, result: null, error: err?.message || String(err) };
   }
 }
 
-function validScope(s: any): s is MemoryScope {
-  return s === 'global' || s === 'shared' || s === 'local';
+function mergeTags(...sources: Array<string[] | undefined>): string[] | undefined {
+  const merged: string[] = [];
+  for (const source of sources) {
+    if (!source) continue;
+    for (const tag of source) {
+      if (!merged.includes(tag)) {
+        merged.push(tag);
+      }
+    }
+  }
+  return merged.length ? merged : undefined;
 }
 
 async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceItemsRepository, scopedConversationId?: string): Promise<ToolCallResult> {

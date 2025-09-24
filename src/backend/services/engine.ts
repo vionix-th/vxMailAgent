@@ -23,8 +23,8 @@ export const conversationEngine: ConversationEngine = {
       tool_choice: tools && tools.length ? 'auto' : 'none',
       ...(typeof apiConfig.maxCompletionTokens === 'number' ? { max_completion_tokens: apiConfig.maxCompletionTokens } : {}),
     };
-    const apiKey = secrets?.apiKey ?? '';
-    if (!apiKey || typeof apiKey !== 'string') {
+    const apiKey = typeof secrets.apiKey === 'string' ? secrets.apiKey.trim() : '';
+    if (!apiKey) {
       throw new Error('Missing API key for provider');
     }
     const result = await chatCompletion(apiKey, apiConfig.model, messages as any, completionOpts);
