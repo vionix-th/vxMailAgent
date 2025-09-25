@@ -13,12 +13,23 @@ test('fetcher-manager: creates fetcher and evicts idle by TTL', async () => {
   // Minimal repos to satisfy initFetcher
   const repos = {
     getFetcherLog: async () => [],
-    setFetcherLog: async () => {},
+    appendFetcherLog: async () => {},
+    replaceFetcherLog: async () => {},
+    clearFetcherLog: async () => {},
+    deleteFetcherLog: async () => false,
+    deleteFetcherLogs: async () => 0,
     getSettings: async () => ({ apiConfigs: [] }),
     getFilters: async () => [],
     getDirectors: async () => [],
     getAgents: async () => [],
     getAccounts: async () => [],
+    getPrompts: async () => [],
+    getEmails: async () => [],
+    upsertEmails: async () => {},
+    deleteEmail: async () => false,
+    clearEmails: async () => {},
+    getConversations: async () => [],
+    setConversations: async () => {},
   };
   const fm = new FetcherManager(repos);
   const req = { userContext: { uid: 'u1', repos: {} } };

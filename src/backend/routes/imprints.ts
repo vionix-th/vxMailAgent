@@ -12,27 +12,13 @@ export default function registerImprintsRoutes(app: express.Express, repos: Live
       return current.find((item) => item.id === id) ?? null;
     },
     create: async (req: ReqLike, item: Imprint) => {
-      const current = await repos.getImprints(req);
-      await repos.setImprints(req, [...current, item]);
+      await repos.insertImprint(req, item);
     },
     update: async (req: ReqLike, item: Imprint) => {
-      const current = await repos.getImprints(req);
-      const idx = current.findIndex((entry) => entry.id === item.id);
-      if (idx === -1) {
-        throw new Error('Imprint not found');
-      }
-      const next = current.slice();
-      next[idx] = item;
-      await repos.setImprints(req, next);
+      await repos.updateImprint(req, item);
     },
     delete: async (req: ReqLike, id: string) => {
-      const current = await repos.getImprints(req);
-      const next = current.filter((entry) => entry.id !== id);
-      if (next.length === current.length) {
-        return false;
-      }
-      await repos.setImprints(req, next);
-      return true;
+      return await repos.deleteImprint(req, id);
     },
   };
 

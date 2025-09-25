@@ -91,9 +91,19 @@ test('Orchestrator contract: director tool_calls -> agent run -> director follow
       userContext: {
         uid: 'u1',
         repos: {
-          providerEvents: { append: async (e) => { providerEvents.push(e); }, getAll: async () => providerEvents, setAll: async (n) => { providerEvents.splice(0, providerEvents.length, ...n); } },
-          orchestrationLog: { getAll: async () => [], setAll: async (_n) => {} },
-          traces: { append: async (_t) => {}, update: async (_id, _fn) => {}, getAll: async () => [] },
+          providerEvents: {
+            append: async (e) => { providerEvents.push(e); },
+            list: async () => providerEvents.slice(),
+            replace: async (n) => { providerEvents.splice(0, providerEvents.length, ...n); },
+            clear: async () => { providerEvents.splice(0, providerEvents.length); },
+          },
+          orchestrationLog: {
+            list: async () => [],
+            replace: async () => {},
+            append: async () => {},
+            clear: async () => {},
+          },
+          traces: { append: async (_t) => {}, update: async (_id, _fn) => {}, list: async () => [], replace: async () => {}, clear: async () => {} },
           workspaceItems: workspaceRepo,
         },
       },
@@ -105,7 +115,7 @@ test('Orchestrator contract: director tool_calls -> agent run -> director follow
       return req.userContext.repos.providerEvents.append(ev);
     };
     const logOrch = (_entry) => {
-      // no-op for now; could push into orchestrationLog.setAll
+      // no-op for now; could push into orchestrationLog.replace
     };
 
     // Seed minimal director + agent + prompts + apiConfig

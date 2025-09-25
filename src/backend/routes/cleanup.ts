@@ -41,7 +41,11 @@ export default function registerCleanupRoutes(
   app: express.Express,
   repos: LiveRepos,
   services: {
-    getFetcherManager: (req: ReqLike) => { getFetcherLog: () => Promise<any[]>; setFetcherLog: (next: any[]) => Promise<void> } | null;
+    getFetcherManager: (req: ReqLike) => {
+      getFetcherLog: () => Promise<any[]>;
+      setFetcherLog: (next: any[]) => Promise<void>;
+      clearFetcherLog: () => Promise<void>;
+    } | null;
   }
 ) {
 
@@ -62,8 +66,8 @@ export default function registerCleanupRoutes(
     ] = await Promise.all([
       repos.getConversations(ureq),
       repos.getOrchestrationLog(ureq),
-      getProviderEventsRepo(ureq).getAll(),
-      getTracesRepo(ureq).getAll(),
+      getProviderEventsRepo(ureq).list(),
+      getTracesRepo(ureq).list(),
       getWorkspaceItemsRepo(ureq).list(),
     ]);
     const stats = {
@@ -93,22 +97,22 @@ export default function registerCleanupRoutes(
     ] = await Promise.all([
       repos.getConversations(ureq),
       repos.getOrchestrationLog(ureq),
-      getProviderEventsRepo(ureq).getAll(),
-      getTracesRepo(ureq).getAll(),
+      getProviderEventsRepo(ureq).list(),
+      getTracesRepo(ureq).list(),
     ]);
     const workspaceRepo = getWorkspaceItemsRepo(ureq);
     const workspaceDeleted = await purgeWorkspaceItems(workspaceRepo);
     
     // Clear fetcher log through manager
     if (fetcherManager) {
-      await fetcherManager.setFetcherLog([]);
+      await fetcherManager.clearFetcherLog();
     }
     
     await Promise.all([
       repos.setConversations(ureq, []),
-      getOrchestrationLogRepo(ureq).setAll([]),
-      getProviderEventsRepo(ureq).setAll([]),
-      getTracesRepo(ureq).setAll([]),
+      getOrchestrationLogRepo(ureq).clear(),
+      getProviderEventsRepo(ureq).clear(),
+      getTracesRepo(ureq).clear(),
     ]);
     const deleted = {
       fetcherLogs: fetcherLog.length,
@@ -131,14 +135,14 @@ export default function registerCleanupRoutes(
     const fetcherManager = services.getFetcherManager(ureq);
     const prev = fetcherManager ? await fetcherManager.getFetcherLog() : [];
     if (fetcherManager) {
-      await fetcherManager.setFetcherLog([]);
+      await fetcherManager.clearFetcherLog();
     }
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} fetcher logs` });
   }));
   app.delete('/api/cleanup/orchestration-logs', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
     const prev = await repos.getOrchestrationLog(ureq);
-    await getOrchestrationLogRepo(ureq).setAll([]);
+    await getOrchestrationLogRepo(ureq).clear();
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} orchestration logs` });
   }));
   app.delete('/api/cleanup/conversations', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
@@ -156,15 +160,15 @@ export default function registerCleanupRoutes(
   app.delete('/api/cleanup/provider-events', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
     const repo = getProviderEventsRepo(ureq);
-    const prev = await repo.getAll();
-    await repo.setAll([]);
+    const prev = await repo.list();
+    await repo.clear();
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} provider events` });
   }));
   app.delete('/api/cleanup/traces', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
     const repo = getTracesRepo(ureq);
-    const prev = await repo.getAll();
-    await repo.setAll([]);
+    const prev = await repo.list();
+    await repo.clear();
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} traces` });
   }));
 }

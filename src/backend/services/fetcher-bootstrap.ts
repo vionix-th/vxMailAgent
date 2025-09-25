@@ -4,6 +4,7 @@ import { repoBundleRegistry } from '../repository/registry';
 import logger from './logger';
 import type { FetcherLogEntry } from '../../shared/types';
 import type { FetcherManager } from './fetcher-manager';
+import { newId } from '../utils/id';
 
 /**
  * Bootstraps per-user fetchers for users who enabled auto-start.
@@ -18,38 +19,37 @@ export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise
       const uid = (u as any).id as string;
       try {
         const bundle = await repoBundleRegistry.getBundle(uid);
-        const settingsArr = await bundle.settings.getAll();
-        if (!Array.isArray(settingsArr) || settingsArr.length === 0) {
+        const settings = await bundle.settings.load();
+        if (!settings) {
           logger.warn('Boot: settings not initialized for user; skipping autostart', { uid });
           return;
         }
-        const settings = settingsArr[0] as any;
         if (settings.fetcherAutoStart !== true) return;
 
         try {
           await fetcherManager.startForUid(uid);
           logger.info('Boot: started fetcher loop', { uid });
           // Log to per-user fetcher log as well (await async repo I/O)
-          const cur: FetcherLogEntry[] = await fetcherManager.getFetcherLogForUid(uid) as any;
           const entry: FetcherLogEntry = {
+            id: newId(),
             timestamp: new Date().toISOString(),
             level: 'info',
             event: 'boot_autostart',
             message: 'Fetcher loop auto-started on server boot'
           } as any;
-          await fetcherManager.setFetcherLogForUid(uid, [...cur, entry] as any);
+          await fetcherManager.appendFetcherLogForUid(uid, entry);
         } catch (e) {
           logger.error('Boot: failed to start fetcher loop', { uid, err: e });
           try {
-            const cur: FetcherLogEntry[] = await fetcherManager.getFetcherLogForUid(uid) as any;
             const entry: FetcherLogEntry = {
+              id: newId(),
               timestamp: new Date().toISOString(),
               level: 'error',
               event: 'boot_autostart_failed',
               message: 'Failed to auto-start fetcher loop on server boot',
               detail: String((e as any)?.message || e)
             } as any;
-            await fetcherManager.setFetcherLogForUid(uid, [...cur, entry] as any);
+            await fetcherManager.appendFetcherLogForUid(uid, entry);
           } catch (e2: any) {
             logger.warn('Boot: failed to write boot_autostart_failed entry to user fetcher log', { uid, error: e2?.message || String(e2) });
           }

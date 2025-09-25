@@ -32,11 +32,7 @@ export function initFetcher(
         throw new Error('FetcherLogEntry.id required');
       }
       const withId: FetcherLogEntry = entry;
-      const current = await repos.getFetcherLog(fetcherReq);
-      const updated = [...current, withId];
-      void repos.setFetcherLog(fetcherReq, updated).catch(e =>
-        logger.error('Failed to persist fetcherLog entry', { err: e })
-      );
+      await repos.appendFetcherLog(fetcherReq, withId);
     } catch (e) {
       logger.error('Failed to create fetcherLog entry', { err: e });
     }
@@ -106,7 +102,26 @@ export function initFetcher(
   }
 
   async function setFetcherLog(next: FetcherLogEntry[]): Promise<void> {
-    return repos.setFetcherLog(fetcherReq, next);
+    return repos.replaceFetcherLog(fetcherReq, Array.isArray(next) ? next : []);
+  }
+
+  async function deleteFetcherLog(id: string): Promise<boolean> {
+    return repos.deleteFetcherLog(fetcherReq, id);
+  }
+
+  async function deleteFetcherLogs(ids: readonly string[]): Promise<number> {
+    return repos.deleteFetcherLogs(fetcherReq, ids);
+  }
+
+  async function clearFetcherLog(): Promise<void> {
+    return repos.clearFetcherLog(fetcherReq);
+  }
+
+  async function appendFetcherLog(entry: FetcherLogEntry): Promise<void> {
+    const payload = typeof entry.id === 'string' && entry.id
+      ? entry
+      : { ...entry, id: newId() };
+    await repos.appendFetcherLog(fetcherReq, payload);
   }
 
   function getStatus() {
@@ -125,6 +140,10 @@ export function initFetcher(
     stopFetcherLoop,
     fetchEmails,
     getFetcherLog,
-    setFetcherLog
+    setFetcherLog,
+    appendFetcherLog,
+    deleteFetcherLog,
+    deleteFetcherLogs,
+    clearFetcherLog
   };
 }

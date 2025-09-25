@@ -1,14 +1,6 @@
+import type { SettingsRow } from '../../../repository/core';
 import type { StorageHandle } from '../types';
 import { SqliteRepository, stringify } from './base';
-
-export interface SettingsRow {
-  virtualRoot: string;
-  apiConfigs: any[];
-  signatures: Record<string, string>;
-  fetcherAutoStart: boolean;
-  sessionTimeoutMinutes: number;
-  payload?: Record<string, unknown>;
-}
 
 function assertArray(value: unknown, name: string): asserts value is any[] {
   if (!Array.isArray(value)) {
@@ -27,12 +19,12 @@ export class SettingsRepository extends SqliteRepository {
     super(handle);
   }
 
-  async getAll(): Promise<SettingsRow[]> {
+  async load(): Promise<SettingsRow | null> {
     return this.withConnection((db) => {
       const row = db.prepare(
         'SELECT virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes, payload_json FROM settings WHERE id = 1'
       ).get() as any;
-      if (!row) return [];
+      if (!row) return null;
 
       const apiConfigsRaw = JSON.parse(row.api_configs_json);
       assertArray(apiConfigsRaw, 'apiConfigs');
@@ -49,49 +41,50 @@ export class SettingsRepository extends SqliteRepository {
         }
       }
 
-      return [
-        {
-          virtualRoot: row.virtual_root,
-          apiConfigs: apiConfigsRaw,
-          signatures: signaturesRaw as Record<string, string>,
-          fetcherAutoStart: Boolean(row.fetcher_auto_start),
-          sessionTimeoutMinutes: Number(row.session_timeout_minutes),
-          ...(payload ? { payload } : {}),
-        },
-      ];
+      return {
+        virtualRoot: row.virtual_root,
+        apiConfigs: apiConfigsRaw,
+        signatures: signaturesRaw as Record<string, string>,
+        fetcherAutoStart: Boolean(row.fetcher_auto_start),
+        sessionTimeoutMinutes: Number(row.session_timeout_minutes),
+        ...(payload ? { payload } : {}),
+      } as SettingsRow;
     });
   }
 
-  async setAll(settings: SettingsRow[]): Promise<void> {
+  async save(settings: SettingsRow): Promise<void> {
+    assertArray(settings.apiConfigs, 'apiConfigs');
+    assertRecord(settings.signatures, 'signatures');
+    if (typeof settings.fetcherAutoStart !== 'boolean') {
+      throw new Error('SettingsRepository: fetcherAutoStart must be boolean');
+    }
+    if (typeof settings.sessionTimeoutMinutes !== 'number' || !Number.isFinite(settings.sessionTimeoutMinutes)) {
+      throw new Error('SettingsRepository: sessionTimeoutMinutes must be a finite number');
+    }
+    let payloadJson: string | null = null;
+    if (settings.payload !== undefined) {
+      assertRecord(settings.payload, 'payload');
+      payloadJson = stringify(settings.payload);
+    }
+
     await this.transaction((db) => {
-      if (!settings.length) {
-        db.prepare('DELETE FROM settings WHERE id = 1').run();
-        return;
-      }
-      const s = settings[0];
-      assertArray(s.apiConfigs, 'apiConfigs');
-      assertRecord(s.signatures, 'signatures');
-      if (typeof s.fetcherAutoStart !== 'boolean') {
-        throw new Error('SettingsRepository: fetcherAutoStart must be boolean');
-      }
-      if (typeof s.sessionTimeoutMinutes !== 'number' || !Number.isFinite(s.sessionTimeoutMinutes)) {
-        throw new Error('SettingsRepository: sessionTimeoutMinutes must be a number');
-      }
-      let payloadJson: string | null = null;
-      if (s.payload !== undefined) {
-        assertRecord(s.payload, 'payload');
-        payloadJson = stringify(s.payload);
-      }
       db.prepare(
         'REPLACE INTO settings (id, virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes, payload_json) VALUES (1, @virtual_root, @api_configs_json, @signatures_json, @fetcher_auto_start, @session_timeout_minutes, @payload_json)'
       ).run({
-        virtual_root: s.virtualRoot,
-        api_configs_json: stringify(s.apiConfigs),
-        signatures_json: stringify(s.signatures),
-        fetcher_auto_start: s.fetcherAutoStart ? 1 : 0,
-        session_timeout_minutes: s.sessionTimeoutMinutes,
+        virtual_root: settings.virtualRoot,
+        api_configs_json: stringify(settings.apiConfigs),
+        signatures_json: stringify(settings.signatures),
+        fetcher_auto_start: settings.fetcherAutoStart ? 1 : 0,
+        session_timeout_minutes: settings.sessionTimeoutMinutes,
         payload_json: payloadJson,
       });
+      return undefined;
+    });
+  }
+
+  async delete(): Promise<void> {
+    await this.transaction((db) => {
+      db.prepare('DELETE FROM settings WHERE id = 1').run();
       return undefined;
     });
   }

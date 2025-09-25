@@ -28,6 +28,7 @@ test('email-fetcher: processes one envelope via mock provider (no orchestration 
   try {
     // In-memory repos and req (with traces stub since beginTrace resolves repo regardless of TRACE_PERSIST)
     let conversations = [];
+    let emails = [];
     const repos = {
       getConversations: async () => conversations,
       setConversations: async (_req, next) => { conversations = next; },
@@ -35,8 +36,19 @@ test('email-fetcher: processes one envelope via mock provider (no orchestration 
       getDirectors: async () => [{ id: 'd1', name: 'Dir', promptId: 'pD', apiConfigId: 'cfg' }],
       getAgents: async () => [],
       getPrompts: async () => [{ id: 'pD', name: 'Director', messages: [{ role: 'system', content: 'You are director' }] }],
+      getEmails: async () => emails.slice(),
+      upsertEmails: async (_req, next) => {
+        for (const env of next) {
+          const idx = emails.findIndex((e) => e.id === env.id);
+          if (idx === -1) {
+            emails.push(env);
+          } else {
+            emails[idx] = env;
+          }
+        }
+      },
     };
-    const req = { userContext: { uid: 'u1', repos: { traces: { append: async () => {}, update: async () => {}, getAll: async () => [], setAll: async () => {} } } } };
+    const req = { userContext: { uid: 'u1', repos: { traces: { append: async () => {}, update: async () => {}, list: async () => [], replace: async () => {}, clear: async () => {} } } } };
     const log = [];
     const fetcher = new EmailFetcher(repos, (e) => log.push(e));
 

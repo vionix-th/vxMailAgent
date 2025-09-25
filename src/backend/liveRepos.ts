@@ -1,4 +1,4 @@
-import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, PromptMessage, EmailEnvelope, ProviderEvent, WorkspaceItem } from '../shared/types';
+import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, PromptMessage, EmailEnvelope, ProviderEvent, WorkspaceItem, FetcherLogEntry } from '../shared/types';
 import { createAccount } from '../shared/constructors';
 import {
   requireReq,
@@ -27,7 +27,9 @@ export interface LiveRepos {
   getDirectors(req?: ReqLike): Promise<Director[]>;
   getFilters(req?: ReqLike): Promise<Filter[]>;
   getImprints(req?: ReqLike): Promise<Imprint[]>;
-  setImprints(req: ReqLike, next: Imprint[]): Promise<void>;
+  insertImprint(req: ReqLike, imprint: Imprint): Promise<void>;
+  updateImprint(req: ReqLike, imprint: Imprint): Promise<void>;
+  deleteImprint(req: ReqLike, id: string): Promise<boolean>;
   getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]>;
   getConversations(req?: ReqLike): Promise<ConversationThread[]>;
   setConversations(req: ReqLike, next: ConversationThread[]): Promise<void>;
@@ -37,7 +39,9 @@ export interface LiveRepos {
   /** Finalize a thread's status atomically. */
   finalizeThreadStatusAtomic(req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null>;
   getEmails(req?: ReqLike): Promise<EmailEnvelope[]>;
-  setEmails(req: ReqLike, next: EmailEnvelope[]): Promise<void>;
+  upsertEmails(req: ReqLike, next: EmailEnvelope[]): Promise<void>;
+  deleteEmail(req: ReqLike, id: string): Promise<boolean>;
+  clearEmails(req: ReqLike): Promise<void>;
   getProviderEvents(req?: ReqLike): Promise<ProviderEvent[]>;
   getProviderEventsByConversation(req: ReqLike, conversationId: string): Promise<ProviderEvent[]>;
   getConversationById(req: ReqLike, id: string): Promise<ConversationThread | null>;
@@ -49,7 +53,11 @@ export interface LiveRepos {
   getAccounts(req?: ReqLike): Promise<any[]>;
   setAccounts(req: ReqLike, next: any[]): Promise<void>;
   getFetcherLog(req?: ReqLike): Promise<any[]>;
-  setFetcherLog(req: ReqLike, next: any[]): Promise<void>;
+  appendFetcherLog(req: ReqLike, entry: FetcherLogEntry): Promise<void>;
+  replaceFetcherLog(req: ReqLike, next: FetcherLogEntry[]): Promise<void>;
+  clearFetcherLog(req: ReqLike): Promise<void>;
+  deleteFetcherLog(req: ReqLike, id: string): Promise<boolean>;
+  deleteFetcherLogs(req: ReqLike, ids: readonly string[]): Promise<number>;
 }
 
 export function createLiveRepos(): LiveRepos {
@@ -79,13 +87,6 @@ export function createLiveRepos(): LiveRepos {
     }
     throw new Error('LiveRepos: repository does not support list/getAll');
   };
-  const set = <T>(fn: (req: ReqLike) => { setAll: (next: T[]) => Promise<void> }) => async (
-    req: ReqLike,
-    next: T[]
-  ) => {
-    const repo = fn(requireReq(req));
-    await repo.setAll(next);
-  };
   const requireConversationRepo = (req: ReqLike) => {
     const r = requireReq(req);
     const bundle = requireRepos(r);
@@ -111,7 +112,18 @@ export function createLiveRepos(): LiveRepos {
     getDirectors: get<Director>((req) => getDirectorsRepo(req)),
     getFilters: get<Filter>((req) => getFiltersRepo(req)),
     getImprints: get<Imprint>((req) => getImprintsRepo(req)),
-    setImprints: set<Imprint>((req) => getImprintsRepo(req)),
+    insertImprint: async (req: ReqLike, imprint: Imprint) => {
+      const repo = getImprintsRepo(requireReq(req));
+      await repo.insert(imprint);
+    },
+    updateImprint: async (req: ReqLike, imprint: Imprint) => {
+      const repo = getImprintsRepo(requireReq(req));
+      await repo.update(imprint);
+    },
+    deleteImprint: async (req: ReqLike, id: string) => {
+      const repo = getImprintsRepo(requireReq(req));
+      return await repo.delete(id);
+    },
     getOrchestrationLog: get<OrchestrationEvent>((req) => getOrchestrationLogRepo(req)),
     getConversations: get<ConversationThread>((req) => getConversationsRepo(req)),
     setConversations: async (req: ReqLike, next: ConversationThread[]) => {
@@ -191,17 +203,44 @@ export function createLiveRepos(): LiveRepos {
     },
     getFetcherLog: async (req?: ReqLike) => {
       const repo = getFetcherLogRepo(requireReq(req));
-      return await repo.getAll();
+      return await repo.list();
     },
-    setFetcherLog: async (req: ReqLike, next: any[]) => {
+    appendFetcherLog: async (req: ReqLike, entry: FetcherLogEntry) => {
       const repo = getFetcherLogRepo(requireReq(req));
-      await repo.setAll(next);
+      await repo.append(entry);
+    },
+    replaceFetcherLog: async (req: ReqLike, next: FetcherLogEntry[]) => {
+      const repo = getFetcherLogRepo(requireReq(req));
+      await repo.replace(Array.isArray(next) ? next : []);
+    },
+    clearFetcherLog: async (req: ReqLike) => {
+      const repo = getFetcherLogRepo(requireReq(req));
+      await repo.clear();
+    },
+    deleteFetcherLog: async (req: ReqLike, id: string) => {
+      const repo = getFetcherLogRepo(requireReq(req));
+      return await repo.delete(id);
+    },
+    deleteFetcherLogs: async (req: ReqLike, ids: readonly string[]) => {
+      const repo = getFetcherLogRepo(requireReq(req));
+      return await repo.deleteMany(ids);
     },
     getEmails: get<EmailEnvelope>((req) => getEmailsRepo(req)),
-    setEmails: set<EmailEnvelope>((req) => getEmailsRepo(req)),
+    upsertEmails: async (req: ReqLike, next: EmailEnvelope[]) => {
+      const repo = getEmailsRepo(requireReq(req));
+      await repo.upsertMany(Array.isArray(next) ? next : []);
+    },
+    deleteEmail: async (req: ReqLike, id: string) => {
+      const repo = getEmailsRepo(requireReq(req));
+      return await repo.delete(id);
+    },
+    clearEmails: async (req: ReqLike) => {
+      const repo = getEmailsRepo(requireReq(req));
+      await repo.clear();
+    },
     getProviderEvents: async (req?: ReqLike) => {
       const repo = getProviderEventsRepo(requireReq(req));
-      return await repo.getAll();
+      return await repo.list();
     },
     getProviderEventsByConversation: async (req: ReqLike, conversationId: string) => {
       const repo = getProviderEventsRepo(requireReq(req));

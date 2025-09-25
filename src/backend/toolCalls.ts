@@ -51,7 +51,7 @@ async function getDirectorWithDescriptors(
   repos: RepoBundle,
   directorId: string
 ): Promise<{ director: Director; descriptors: ToolDescriptor[] }> {
-  const directors = await repos.directors.getAll();
+  const directors = await repos.directors.list();
   const director = (directors as Director[]).find((d) => d.id === directorId);
   if (!director) {
     throw new ValidationError('Director not found', 'DIRECTOR_NOT_FOUND');
@@ -63,7 +63,7 @@ async function getAgentWithDescriptors(
   repos: RepoBundle,
   agentId: string
 ): Promise<{ agent: Agent; descriptors: ToolDescriptor[] }> {
-  const agents = await repos.agents.getAll();
+  const agents = await repos.agents.list();
   const agent = (agents as Agent[]).find((a) => a.id === agentId);
   if (!agent) {
     throw new InvalidAgentConfigError('Agent not found', 'AGENT_NOT_FOUND');
@@ -170,10 +170,10 @@ export function createToolHandler(repos: RepoBundle) {
           } catch (error: any) {
             return { kind: name, success: false, result: null, error: error?.message || 'invalid_agent_tool_config' };
           }
-          const prompts = await repos.prompts.getAll();
-          const settingsArr = await repos.settings.getAll();
-          const apiConfigs = (Array.isArray(settingsArr) && settingsArr.length > 0 && Array.isArray((settingsArr[0] as any)?.apiConfigs))
-            ? (settingsArr[0] as any).apiConfigs as ApiConfig[]
+          const prompts = Array.from(await repos.prompts.list());
+          const settings = await repos.settings.load();
+          const apiConfigs = Array.isArray(settings?.apiConfigs)
+            ? settings.apiConfigs as ApiConfig[]
             : null;
           if (!apiConfigs) {
             return { kind: name, success: false, result: null, error: 'settings_not_initialized' };
@@ -230,11 +230,11 @@ export function createToolHandler(repos: RepoBundle) {
           }
         }
         case 'list_agents': {
-          const allAgents = await repos.agents.getAll();
+          const allAgents = await repos.agents.list();
           const directorId = typeof params?.directorId === 'string' ? params.directorId : undefined;
           let result = allAgents;
           if (directorId) {
-            const directors = await repos.directors.getAll();
+            const directors = await repos.directors.list();
             const dir = directors.find((d: any) => d.id === directorId);
             if (!dir) return { kind: name, success: false, result: null, error: 'Director not found' };
             const set = new Set<string>(Array.isArray(dir.agentIds) ? dir.agentIds : []);

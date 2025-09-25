@@ -44,7 +44,7 @@ export class FetcherLogRepository extends SqliteRepository {
     super(handle);
   }
 
-  async getAll(): Promise<FetcherLogEntry[]> {
+  async list(): Promise<FetcherLogEntry[]> {
     return this.withConnection((db) => {
       const rows = db.prepare(
         'SELECT id, timestamp, level, provider, account_id, event, email_id, count, detail_json FROM fetcher_logs ORDER BY timestamp'
@@ -70,7 +70,7 @@ export class FetcherLogRepository extends SqliteRepository {
     });
   }
 
-  async setAll(entries: FetcherLogEntry[]): Promise<void> {
+  async replace(entries: FetcherLogEntry[]): Promise<void> {
     await this.transaction((db) => {
       db.prepare('DELETE FROM fetcher_logs').run();
       const insert = db.prepare(
@@ -114,6 +114,34 @@ export class FetcherLogRepository extends SqliteRepository {
         detail_json: entry.detail ? stringify(entry.detail) : null,
       });
       pruneFetcherLogs(db);
+      return undefined;
+    });
+  }
+
+  async delete(id: string): Promise<boolean> {
+    ensureLogString(id, 'id', id);
+    return this.transaction((db) => {
+      const result = db.prepare('DELETE FROM fetcher_logs WHERE id = ?').run(id);
+      return result.changes > 0;
+    });
+  }
+
+  async deleteMany(ids: readonly string[]): Promise<number> {
+    const trimmed = ids
+      .map((id) => (typeof id === 'string' ? id.trim() : ''))
+      .filter((id) => id.length > 0);
+    if (!trimmed.length) return 0;
+    trimmed.forEach((id) => ensureLogString(id, 'id', id));
+    return this.transaction((db) => {
+      const placeholders = trimmed.map(() => '?').join(',');
+      const result = db.prepare(`DELETE FROM fetcher_logs WHERE id IN (${placeholders})`).run(...trimmed);
+      return result.changes ?? 0;
+    });
+  }
+
+  async clear(): Promise<void> {
+    await this.transaction((db) => {
+      db.prepare('DELETE FROM fetcher_logs').run();
       return undefined;
     });
   }

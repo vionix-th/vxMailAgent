@@ -19,8 +19,9 @@ test('logging trace: begin/end trace and spans update fields', async () => {
               if (res) traces[idx] = res;
             }
           },
-          getAll: async () => traces.slice(),
-          setAll: async (n) => { traces.splice(0, traces.length, ...n); },
+          list: async () => traces.slice(),
+          replace: async (n) => { traces.splice(0, traces.length, ...n); },
+          clear: async () => { traces.splice(0, traces.length); },
         }
       }
     }
@@ -35,7 +36,7 @@ test('logging trace: begin/end trace and spans update fields', async () => {
   logging.endTrace(id, 'ok', undefined, req);
   // Wait for queued async writes to complete
   if (typeof logging.flushLogQueue === 'function') { await logging.flushLogQueue(); }
-  const all = await req.userContext.repos.traces.getAll();
+  const all = await req.userContext.repos.traces.list();
   assert.strictEqual(all.length, 1);
   const t = all[0];
   assert.ok(t.endedAt);

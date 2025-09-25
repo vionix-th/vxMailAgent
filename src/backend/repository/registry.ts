@@ -205,9 +205,9 @@ export class RepoBundleRegistry {
   }
 
   private async applyDefaults(bundle: RepoBundle): Promise<void> {
-    const settings = await bundle.settings.getAll();
-    if (!settings.length) {
-      await bundle.settings.setAll([defaultSettings()]);
+    const settings = await bundle.settings.load();
+    if (!settings) {
+      await bundle.settings.save(defaultSettings());
     }
 
     const templates = await bundle.templates.list();

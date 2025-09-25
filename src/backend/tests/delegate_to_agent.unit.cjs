@@ -18,18 +18,38 @@ test('toolCalls: delegate_to_agent creates/uses agent thread and returns content
   const conversations = [
     { id: 'tD', kind: 'director', parentId: null, directorId: 'd1', agentId: null, status: 'ongoing', endedAt: null, email, promptId: 'pD', apiConfigId: 'cfg', startedAt: now, lastActiveAt: now, messages: [] },
   ];
-  const repo = (items=[]) => ({ getAll: async () => items.slice(), setAll: async (n) => { items.splice(0, items.length, ...n); } });
+  const makeListRepo = (items=[]) => ({ list: async () => items.slice() });
+  const conversationRepo = {
+    list: async () => conversations.slice(),
+    getById: async (id) => conversations.find((c) => c.id === id) ?? null,
+    insert: async (item) => { conversations.push(item); },
+    update: async (item) => {
+      const idx = conversations.findIndex((c) => c.id === item.id);
+      if (idx === -1) throw new Error('Conversation not found');
+      conversations[idx] = item;
+    },
+    delete: async (id) => {
+      const idx = conversations.findIndex((c) => c.id === id);
+      if (idx === -1) return false;
+      conversations.splice(idx, 1);
+      return true;
+    },
+  };
   const repos = {
-    conversations: repo(conversations),
-    directors: repo([director]),
-    agents: repo([agent]),
-    prompts: repo([
+    conversations: conversationRepo,
+    directors: makeListRepo([director]),
+    agents: makeListRepo([agent]),
+    prompts: makeListRepo([
       { id: 'pD', name: 'Director', messages: [{ role: 'system', content: 'You are a director' }] },
       { id: 'pA', name: 'Agent', messages: [{ role: 'system', content: 'You are an agent' }] },
     ]),
-    settings: repo([{ apiConfigs: [{ id: 'cfg', name: 'Mock', apiKey: 'mock', model: 'mock' }] }]),
-    workspaceItems: repo([]),
-    memory: repo([]),
+    settings: {
+      load: async () => ({ apiConfigs: [{ id: 'cfg', name: 'Mock', apiKey: 'mock', model: 'mock' }] }),
+      save: async () => {},
+      delete: async () => {},
+    },
+    workspaceItems: { list: async () => [], listByConversation: async () => [] },
+    memory: { list: async () => [] },
   };
 
   const handle = mod.createToolHandler(repos);
@@ -37,4 +57,3 @@ test('toolCalls: delegate_to_agent creates/uses agent thread and returns content
   assert.ok(res.success, res.error || 'delegate_to_agent failed');
   assert.ok(res.result && 'content' in res.result, 'delegate_to_agent missing content');
 });
-

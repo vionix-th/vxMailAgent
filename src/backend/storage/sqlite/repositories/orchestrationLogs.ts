@@ -44,7 +44,7 @@ export class OrchestrationLogRepository extends SqliteRepository {
     });
   }
 
-  async getAll(): Promise<OrchestrationEvent[]> {
+  async list(): Promise<OrchestrationEvent[]> {
     return this.withConnection((db) => {
       const rows = db.prepare(
         'SELECT id, conversation_id, timestamp, phase, outcome_json, context_json FROM orchestration_logs ORDER BY timestamp'
@@ -59,7 +59,7 @@ export class OrchestrationLogRepository extends SqliteRepository {
     });
   }
 
-  async setAll(events: OrchestrationEvent[]): Promise<void> {
+  async replace(events: OrchestrationEvent[]): Promise<void> {
     await this.transaction((db) => {
       db.prepare('DELETE FROM orchestration_logs').run();
       const insert = db.prepare(
@@ -93,6 +93,13 @@ export class OrchestrationLogRepository extends SqliteRepository {
         context_json: stringify(event.context),
       });
       pruneOrchestration(db);
+      return undefined;
+    });
+  }
+
+  async clear(): Promise<void> {
+    await this.transaction((db) => {
+      db.prepare('DELETE FROM orchestration_logs').run();
       return undefined;
     });
   }

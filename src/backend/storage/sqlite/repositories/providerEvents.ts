@@ -39,7 +39,7 @@ export class ProviderEventsRepository extends SqliteRepository {
     });
   }
 
-  async getAll(): Promise<ProviderEvent[]> {
+  async list(): Promise<ProviderEvent[]> {
     return this.withConnection((db) => {
       const rows = db.prepare(
         'SELECT id, conversation_id, provider, type, timestamp, latency_ms, usage_json, payload_json, error FROM provider_events ORDER BY timestamp'
@@ -48,7 +48,7 @@ export class ProviderEventsRepository extends SqliteRepository {
     });
   }
 
-  async setAll(events: ProviderEvent[]): Promise<void> {
+  async replace(events: ProviderEvent[]): Promise<void> {
     await this.transaction((db) => {
       db.prepare('DELETE FROM provider_events').run();
       const insert = db.prepare(
@@ -68,6 +68,13 @@ export class ProviderEventsRepository extends SqliteRepository {
         'INSERT INTO provider_events (id, conversation_id, provider, type, timestamp, latency_ms, usage_json, payload_json, error) VALUES (@id, @conversation_id, @provider, @type, @timestamp, @latency_ms, @usage_json, @payload_json, @error)'
       ).run(this.prepareInsert(event));
       pruneProviderEvents(db);
+      return undefined;
+    });
+  }
+
+  async clear(): Promise<void> {
+    await this.transaction((db) => {
+      db.prepare('DELETE FROM provider_events').run();
       return undefined;
     });
   }

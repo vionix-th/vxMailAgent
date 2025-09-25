@@ -19,11 +19,10 @@ export interface Settings {
 export async function loadSettings(req?: ReqLike): Promise<Settings> {
   const ureq = requireReq(req);
   const repo = getSettingsRepo(ureq);
-  const all = await repo.getAll();
-  if (!Array.isArray(all) || all.length === 0) {
+  const settings = await repo.load();
+  if (!settings) {
     throw new RepositoryError('Settings not initialized');
   }
-  const settings = all[0];
   // Validate required shape — fail closed instead of synthesizing
   if (!settings || typeof settings !== 'object') {
     throw new RepositoryError('Invalid settings payload');
@@ -59,7 +58,7 @@ export async function saveSettings(settings: Settings, req: ReqLike): Promise<vo
         throw new RepositoryError('Cannot persist apiConfig without apiKey');
       }
     });
-    await repo.setAll([settings]);
+    await repo.save(settings);
     logger.debug('Saved settings', { uid: requireUid(ureq) });
   } catch (e) {
     logger.error('Failed to save settings', { err: e });

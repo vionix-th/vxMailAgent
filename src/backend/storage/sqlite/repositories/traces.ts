@@ -92,25 +92,13 @@ export class TracesRepository extends SqliteRepository {
     super(handle);
   }
 
-  async getAll(): Promise<Trace[]> {
+  async list(): Promise<Trace[]> {
     return this.withConnection((db) => {
       const traces = db.prepare(
         'SELECT id, email_id, account_id, provider, created_at, ended_at, status, error FROM traces ORDER BY created_at DESC'
       ).all();
       const spans = loadSpans(db);
       return traces.map((row: any) => rowToTrace(row, spans));
-    });
-  }
-
-  async setAll(traces: Trace[]): Promise<void> {
-    await this.transaction((db) => {
-      db.prepare('DELETE FROM trace_spans').run();
-      db.prepare('DELETE FROM traces').run();
-      for (const trace of traces) {
-        this.insertTrace(db, trace);
-      }
-      pruneTraces(db);
-      return undefined;
     });
   }
 
@@ -137,6 +125,26 @@ export class TracesRepository extends SqliteRepository {
       db.prepare('DELETE FROM traces WHERE id = ?').run(id);
       this.insertTrace(db, next);
       pruneTraces(db);
+      return undefined;
+    });
+  }
+
+  async replace(traces: Trace[]): Promise<void> {
+    await this.transaction((db) => {
+      db.prepare('DELETE FROM trace_spans').run();
+      db.prepare('DELETE FROM traces').run();
+      for (const trace of traces) {
+        this.insertTrace(db, trace);
+      }
+      pruneTraces(db);
+      return undefined;
+    });
+  }
+
+  async clear(): Promise<void> {
+    await this.transaction((db) => {
+      db.prepare('DELETE FROM trace_spans').run();
+      db.prepare('DELETE FROM traces').run();
       return undefined;
     });
   }

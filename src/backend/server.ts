@@ -40,8 +40,8 @@ export function createServer() {
   registerRoutes(app, repos, fetcherManager, {
     setOrchestrationLog: async (next: any[], req?: ReqLike) => { await svcSetOrchestrationLog(next, req); },
     getTraces: async (req?: ReqLike) => await getTraces(req),
-    setTraces: async (req: ReqLike, next: any[]) => { await repos.getTracesRepo(req).setAll(next); },
-    getProviderEvents: async (req?: ReqLike) => await repos.getProviderRepo(req).getAll(),
+    setTraces: async (req: ReqLike, next: any[]) => { await repos.getTracesRepo(req).replace(next); },
+    getProviderEvents: async (req?: ReqLike) => await repos.getProviderRepo(req).list(),
   });
 
   // Centralized 404 handler (must be after routes)
@@ -75,4 +75,3 @@ export function createServer() {
 
   return { app, fetcherManager } as const;
 }
-

@@ -139,9 +139,23 @@ test('FetcherManager real require and instantiation', async () => {
 
     const mockRepos = {
       getAccounts: async () => [],
-      getSettings: async () => ({ fetcherAutoStart: false }),
+      getSettings: async () => ({ fetcherAutoStart: false, apiConfigs: [] }),
       getFetcherLog: async () => [],
-      setFetcherLog: async () => {}
+      appendFetcherLog: async () => {},
+      replaceFetcherLog: async () => {},
+      clearFetcherLog: async () => {},
+      deleteFetcherLog: async () => false,
+      deleteFetcherLogs: async () => 0,
+      getFilters: async () => [],
+      getDirectors: async () => [],
+      getAgents: async () => [],
+      getPrompts: async () => [],
+      getEmails: async () => [],
+      upsertEmails: async () => {},
+      deleteEmail: async () => false,
+      clearEmails: async () => {},
+      getConversations: async () => [],
+      setConversations: async () => {},
     };
 
     const fetcherManager = new FetcherManager(mockRepos);

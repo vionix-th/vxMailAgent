@@ -24,13 +24,15 @@ test('Logging: orchestration and provider append semantics', async () => {
       repos: {
         orchestrationLog: {
           append: async (e) => { orchestration.push(e); },
-          getAll: async () => orchestration.slice(),
-          setAll: async (n) => { orchestration.splice(0, orchestration.length, ...n); },
+          list: async () => orchestration.slice(),
+          replace: async (n) => { orchestration.splice(0, orchestration.length, ...n); },
+          clear: async () => { orchestration.splice(0, orchestration.length); },
         },
         providerEvents: {
           append: async (e) => { providerEvents.push(e); },
-          getAll: async () => providerEvents.slice(),
-          setAll: async (n) => { providerEvents.splice(0, providerEvents.length, ...n); },
+          list: async () => providerEvents.slice(),
+          replace: async (n) => { providerEvents.splice(0, providerEvents.length, ...n); },
+          clear: async () => { providerEvents.splice(0, providerEvents.length); },
         },
       },
     },
@@ -41,7 +43,7 @@ test('Logging: orchestration and provider append semantics', async () => {
   await Promise.all(Array.from({ length: N }, (_, i) => {
     return Promise.resolve().then(() => handlers.logOrchestrationStart(`d-${i}`, `email-${i}`, req));
   }));
-  const orchList = await req.userContext.repos.orchestrationLog.getAll();
+  const orchList = await req.userContext.repos.orchestrationLog.list();
   assert.strictEqual(orchList.length, N, 'orchestration log should have N entries');
   assert.ok(orchList.every(e => e.phase === 'director'), 'orchestration entries must be director phase');
 
@@ -49,7 +51,7 @@ test('Logging: orchestration and provider append semantics', async () => {
   const pel = new handlers.ProviderEventLogger(req);
   pel.logRequest('c-1', { foo: 'bar' });
   pel.logResponse('c-1', 123, { ok: true }, { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 });
-  const provList = await req.userContext.repos.providerEvents.getAll();
+  const provList = await req.userContext.repos.providerEvents.list();
   assert.strictEqual(provList.length, 2, 'provider events should have 2 entries');
   assert.strictEqual(provList[0].type, 'request');
   assert.strictEqual(provList[1].type, 'response');

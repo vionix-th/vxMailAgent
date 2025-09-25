@@ -50,21 +50,14 @@ export default function registerFetcherRoutes(app: express.Express, fetcherManag
 
   app.delete('/api/fetcher/logs/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const cur = await fetcherManager.getFetcherLog(req as any as ReqLike);
-    const next = cur.filter((e) => e.id !== id);
-    const deleted = cur.length - next.length;
-    await fetcherManager.setFetcherLog(req as any as ReqLike, next);
+    const deleted = await fetcherManager.deleteFetcherLog(req as any as ReqLike, id) ? 1 : 0;
     return res.json({ success: true, deleted, message: `Deleted ${deleted} fetcher logs` });
   }));
 
   app.delete('/api/fetcher/logs', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ids = Array.isArray(req.body.ids) ? (req.body.ids as string[]) : [];
     if (!ids.length) throw new ValidationError('No ids provided');
-    const cur = await fetcherManager.getFetcherLog(req as any as ReqLike);
-    const idSet = new Set(ids);
-    const next = cur.filter((e: any) => !e.id || !idSet.has(e.id));
-    const deleted = cur.length - next.length;
-    await fetcherManager.setFetcherLog(req as any as ReqLike, next);
+    const deleted = await fetcherManager.deleteFetcherLogs(req as any as ReqLike, ids);
     return res.json({ success: true, deleted, message: `Deleted ${deleted} fetcher logs` });
   }));
 }

@@ -157,19 +157,22 @@ export class EmailFetcher {
     if (!Array.isArray(envelopes) || envelopes.length === 0) return;
     const existing = await this.repos.getEmails(userReq);
     const byId = new Map<string, EmailEnvelope>(existing.map(e => [e.id, e] as const));
+    const toPersist: EmailEnvelope[] = [];
     let added = 0, updated = 0;
     for (const env of envelopes) {
       const prev = byId.get(env.id);
       if (!prev) {
         byId.set(env.id, env);
+        toPersist.push(env);
         added++;
       } else {
         const merged = mergeEmailEnvelope(prev, env);
         byId.set(env.id, merged);
+        toPersist.push(merged);
         updated++;
       }
     }
-    await this.repos.setEmails(userReq, Array.from(byId.values()));
+    await this.repos.upsertEmails(userReq, toPersist);
     this.logFetch({
       id: newId(),
       timestamp: new Date().toISOString(),

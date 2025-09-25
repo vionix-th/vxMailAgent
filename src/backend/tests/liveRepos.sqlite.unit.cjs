@@ -138,10 +138,10 @@ test('Provider events remain isolated per user', async () => {
     await bundleA.providerEvents.append(eventA1);
     await bundleA.providerEvents.append(eventA2);
 
-    const storedA = await bundleA.providerEvents.getAll();
+    const storedA = await bundleA.providerEvents.list();
     assert.strictEqual(storedA.length, 2, 'user A events stored');
 
-    const storedB = await bundleB.providerEvents.getAll();
+    const storedB = await bundleB.providerEvents.list();
     assert.strictEqual(storedB.length, 0, 'user B remains isolated');
 
     repoBundleRegistry.removeBundle(uidA);

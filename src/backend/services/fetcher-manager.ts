@@ -108,6 +108,26 @@ export class FetcherManager {
     await fetcher.setFetcherLog(next);
   }
 
+  async appendFetcherLog(req: ReqLike, entry: FetcherLogEntry): Promise<void> {
+    const fetcher = this.getFetcher(req);
+    await fetcher.appendFetcherLog(entry);
+  }
+
+  async deleteFetcherLog(req: ReqLike, id: string): Promise<boolean> {
+    const fetcher = this.getFetcher(req);
+    return await fetcher.deleteFetcherLog(id);
+  }
+
+  async deleteFetcherLogs(req: ReqLike, ids: readonly string[]): Promise<number> {
+    const fetcher = this.getFetcher(req);
+    return await fetcher.deleteFetcherLogs(ids);
+  }
+
+  async clearFetcherLog(req: ReqLike): Promise<void> {
+    const fetcher = this.getFetcher(req);
+    await fetcher.clearFetcherLog();
+  }
+
   /**
    * Convenience helpers to get/set fetcher log by uid without constructing ReqLike externally.
    */
@@ -123,6 +143,34 @@ export class FetcherManager {
     const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
     const fetcher = this.getFetcher(req);
     await fetcher.setFetcherLog(next);
+  }
+
+  async appendFetcherLogForUid(uid: string, entry: FetcherLogEntry): Promise<void> {
+    const repos = await getUserRepoBundle(uid);
+    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const fetcher = this.getFetcher(req);
+    await fetcher.appendFetcherLog(entry);
+  }
+
+  async deleteFetcherLogForUid(uid: string, id: string): Promise<boolean> {
+    const repos = await getUserRepoBundle(uid);
+    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const fetcher = this.getFetcher(req);
+    return await fetcher.deleteFetcherLog(id);
+  }
+
+  async deleteFetcherLogsForUid(uid: string, ids: readonly string[]): Promise<number> {
+    const repos = await getUserRepoBundle(uid);
+    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const fetcher = this.getFetcher(req);
+    return await fetcher.deleteFetcherLogs(ids);
+  }
+
+  async clearFetcherLogForUid(uid: string): Promise<void> {
+    const repos = await getUserRepoBundle(uid);
+    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const fetcher = this.getFetcher(req);
+    await fetcher.clearFetcherLog();
   }
 
   /**

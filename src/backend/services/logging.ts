@@ -49,13 +49,13 @@ export async function logProviderEventAsync(e: ProviderEvent, req?: ReqLike): Pr
 /** Retrieve all orchestration events. */
 export function getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]> {
   const repo = getOrchRepo(req);
-  return repo.getAll();
+  return repo.list();
 }
 
 /** Replace the orchestration event log with the provided list. */
 export function setOrchestrationLog(next: OrchestrationEvent[], req?: ReqLike): void {
   const repo = getOrchRepo(req);
-  void repo.setAll(next);
+  void repo.replace(next);
 }
 
 // ---------- Structured tracing ----------
@@ -191,7 +191,7 @@ export function annotateSpan(traceId: string, spanId: string, annotations: Recor
 /** Retrieve all traces available to the request. */
 export function getTraces(req?: ReqLike): Trace[] | Promise<Trace[]> {
   const repo = getTracesRepo(req);
-  return repo ? repo.getAll() : [];
+  return repo ? repo.list() : [];
 }
 
 // ---------- Wrapper classes (folded here for a single logging entry point) ----------
@@ -377,9 +377,8 @@ export class ProviderEventLogger {
   logFetcher(entry: Omit<FetcherLogEntry, 'id'>, req?: ReqLike): void {
     const fullEntry: FetcherLogEntry = { ...entry, id: newId() } as FetcherLogEntry;
     if (req) {
-      void requireUserRepo(req as ReqLike, 'fetcherLog').getAll().then((logs: any[]) => {
-        return requireUserRepo(req as ReqLike, 'fetcherLog').setAll([...(Array.isArray(logs) ? logs : []), fullEntry]);
-      }).catch(() => {
+      const repo = requireUserRepo(req as ReqLike, 'fetcherLog');
+      void repo.append(fullEntry).catch(() => {
         // Swallow to avoid throwing from background log; caller can log via logger if needed.
       });
     }

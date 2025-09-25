@@ -13,6 +13,21 @@ import type {
   User,
 } from '../../shared/types';
 
+export interface SettingsRow {
+  virtualRoot: string;
+  apiConfigs: any[];
+  signatures: Record<string, string>;
+  fetcherAutoStart: boolean;
+  sessionTimeoutMinutes: number;
+  payload?: Record<string, unknown>;
+}
+
+export interface SettingsRepository {
+  load(): Promise<SettingsRow | null>;
+  save(settings: SettingsRow): Promise<void>;
+  delete(): Promise<void>;
+}
+
 export interface SystemUsersRepository {
   list(): Promise<readonly User[]>;
   findById(id: string): Promise<User | null>;

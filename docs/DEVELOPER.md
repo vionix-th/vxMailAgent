@@ -424,7 +424,7 @@ Location: `src/backend/routes/helpers.ts`
 - `createCrudRoutes<T>(app, basePath, repoFns, options?, callbacks?)`
   - Purpose: Eliminate duplicate CRUD route code by centralizing list/get/create/update/delete logic.
   - Endpoints: `GET /`, `POST /`, `GET /:id`, `PUT /:id`, `DELETE /:id` under `basePath`. Optional `PUT /reorder`.
-  - `repoFns`: `{ getAll, setAll }` interface for repository access
+  - `repoFns`: typed contract exposing `{ list, getById, create, update, delete, reorder? }`
   - `options`:
     - `enableReorder?: boolean` — adds `PUT /reorder` for ordered resources.
   - `callbacks` (all optional):

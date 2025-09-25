@@ -40,7 +40,7 @@ test('settings validation enforces apiKey and serialization strips secret', asyn
 
     const settings = await liveRepos.getSettings(req);
     settings.apiConfigs = [{ id: 'cfg-1', name: 'Mock', model: 'gpt-4o-mini', apiKey: 'secret-key', maxCompletionTokens: 512 }];
-    await bundle.settings.setAll([settings]);
+    await bundle.settings.save(settings);
 
     const routeModule = require(path.join(distBackend, 'routes', 'settings.js'));
     const serialized = serializeApiConfig(settings.apiConfigs[0]);
