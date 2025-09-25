@@ -17,22 +17,16 @@ function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDep
   if (!conversationId) {
     throw new ValidationError('workspace id (conversation scope) is required');
   }
-  const base = {
+  return new WorkspaceService({
+    repo,
     conversationId,
-    getItems: async () => await repo.getByConversation(conversationId),
-    setItems: async (next: WorkspaceItem[]) => await repo.replaceForConversation(conversationId, next),
-  } as const;
-
-  if (!deps) {
-    return new WorkspaceService(base as any);
-  }
-
-  const opt = {
-    getConversations: async () => await deps.getConversations(ureq),
-    setConversations: async (next: ConversationThread[]) => await deps.setConversations(ureq, next),
-  };
-
-  return new WorkspaceService({ ...(base as any), ...opt });
+    ...(deps
+      ? {
+          getConversations: async () => await deps.getConversations(ureq),
+          setConversations: async (next: ConversationThread[]) => await deps.setConversations(ureq, next),
+        }
+      : {}),
+  });
 }
 
 export default function registerWorkspacesRoutes(app: express.Express, deps: WorkspacesRoutesDeps) {

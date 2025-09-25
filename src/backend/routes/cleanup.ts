@@ -9,7 +9,33 @@ import {
 } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler } from '../services/error-handler';
-import { WorkspaceService } from '../services/workspace-service';
+import type { WorkspaceItemsRepoInstance } from '../repository/wrappers';
+import type { WorkspaceItem } from '../../shared/types';
+
+async function purgeWorkspaceItems(repo: WorkspaceItemsRepoInstance): Promise<number> {
+  const items = await repo.list();
+  const list: WorkspaceItem[] = Array.isArray(items) ? items.slice() : Array.from(items);
+  let deleted = 0;
+  const conversationIds = new Set<string>();
+
+  for (const item of list) {
+    const cidRaw = item.provenance?.conversationId;
+    const cid = typeof cidRaw === 'string' && cidRaw.trim().length > 0 ? cidRaw.trim() : null;
+    if (cid) {
+      conversationIds.add(cid);
+    } else {
+      if (await repo.delete(item.id)) {
+        deleted += 1;
+      }
+    }
+  }
+
+  for (const cid of conversationIds) {
+    deleted += await repo.deleteByConversation(cid);
+  }
+
+  return deleted;
+}
 
 export default function registerCleanupRoutes(
   app: express.Express,
@@ -38,7 +64,7 @@ export default function registerCleanupRoutes(
       repos.getOrchestrationLog(ureq),
       getProviderEventsRepo(ureq).getAll(),
       getTracesRepo(ureq).getAll(),
-      getWorkspaceItemsRepo(ureq).getAll(),
+      getWorkspaceItemsRepo(ureq).list(),
     ]);
     const stats = {
       fetcherLogs: fetcherLog.length,
@@ -64,19 +90,14 @@ export default function registerCleanupRoutes(
       orchestrationLog,
       providerEvents,
       traces,
-      workspaceItems,
     ] = await Promise.all([
       repos.getConversations(ureq),
       repos.getOrchestrationLog(ureq),
       getProviderEventsRepo(ureq).getAll(),
       getTracesRepo(ureq).getAll(),
-      getWorkspaceItemsRepo(ureq).getAll(),
     ]);
     const workspaceRepo = getWorkspaceItemsRepo(ureq);
-    const wsService = new WorkspaceService({
-      getItems: async () => await workspaceRepo.getAll(),
-      setItems: async (next) => await workspaceRepo.setAll(next),
-    });
+    const workspaceDeleted = await purgeWorkspaceItems(workspaceRepo);
     
     // Clear fetcher log through manager
     if (fetcherManager) {
@@ -88,13 +109,12 @@ export default function registerCleanupRoutes(
       getOrchestrationLogRepo(ureq).setAll([]),
       getProviderEventsRepo(ureq).setAll([]),
       getTracesRepo(ureq).setAll([]),
-      wsService.purgeAll(),
     ]);
     const deleted = {
       fetcherLogs: fetcherLog.length,
       orchestrationLogs: orchestrationLog.length,
       conversations: conversations.length,
-      workspaceItems: workspaceItems.length,
+      workspaceItems: workspaceDeleted,
       providerEvents: providerEvents.length,
       traces: traces.length,
     };
@@ -130,11 +150,7 @@ export default function registerCleanupRoutes(
   app.delete('/api/cleanup/workspace-items', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
     const workspaceRepo = getWorkspaceItemsRepo(ureq);
-    const service = new WorkspaceService({
-      getItems: async () => await workspaceRepo.getAll(),
-      setItems: async (next) => await workspaceRepo.setAll(next),
-    });
-    const deleted = await service.purgeAll();
+    const deleted = await purgeWorkspaceItems(workspaceRepo);
     res.json({ success: true, deleted, message: `Deleted ${deleted} workspace items` });
   }));
   app.delete('/api/cleanup/provider-events', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {

@@ -1,5 +1,5 @@
 import type { AgentThread, ConversationThread, DirectorThread, PromptMessage } from '../../../../shared/types';
-import type { StorageHandle } from '../types';
+import type { StorageHandle, BetterSqliteDatabase } from '../types';
 import { SqliteRepository, stringify } from './base';
 
 function ensureString(value: unknown, field: string, context: string): string {
@@ -90,10 +90,90 @@ export class ConversationsRepository extends SqliteRepository {
     super(handle);
   }
 
-  private loadAll(db: any): ConversationThread[] {
+  async list(): Promise<readonly ConversationThread[]> {
+    return this.withConnection((db) => this.loadAll(db));
+  }
+
+  async getById(id: string): Promise<ConversationThread | null> {
+    this.assertId(id);
+    return this.withConnection((db) => this.loadOne(db, id));
+  }
+
+  async insert(thread: ConversationThread): Promise<void> {
+    this.assertThread(thread);
+    await this.transaction((db) => {
+      const exists = db.prepare('SELECT 1 FROM conversation_threads WHERE id = ?').get(thread.id);
+      if (exists) {
+        throw new Error(`ConversationsRepository: thread '${thread.id}' already exists`);
+      }
+      this.writeThread(db, thread, true);
+      return undefined;
+    });
+  }
+
+  async update(thread: ConversationThread): Promise<void> {
+    this.assertThread(thread);
+    await this.transaction((db) => {
+      const exists = db.prepare('SELECT 1 FROM conversation_threads WHERE id = ?').get(thread.id);
+      if (!exists) {
+        throw new Error(`ConversationsRepository: thread '${thread.id}' not found`);
+      }
+      this.writeThread(db, thread, true);
+      return undefined;
+    });
+  }
+
+  async appendMessages(threadId: string, messages: readonly PromptMessage[]): Promise<ConversationThread | null> {
+    this.assertId(threadId);
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new Error('ConversationsRepository: messages array required');
+    }
+    return this.transaction((db) => {
+      const current = this.loadOne(db, threadId);
+      if (!current) return null;
+      const now = new Date().toISOString();
+      const next: ConversationThread = {
+        ...current,
+        lastActiveAt: now,
+        messages: [...current.messages, ...messages],
+      } as ConversationThread;
+      this.writeThread(db, next, false, current.messages.length);
+      return next;
+    });
+  }
+
+  async finalizeStatus(threadId: string, status: 'completed' | 'failed', timestamp: string): Promise<ConversationThread | null> {
+    this.assertId(threadId);
+    if (typeof timestamp !== 'string' || !timestamp.trim()) {
+      throw new Error('ConversationsRepository: timestamp required');
+    }
+    return this.transaction((db) => {
+      const current = this.loadOne(db, threadId);
+      if (!current) return null;
+      const next: ConversationThread = {
+        ...current,
+        status,
+        endedAt: timestamp,
+        lastActiveAt: timestamp,
+      } as ConversationThread;
+      this.writeThread(db, next, false, current.messages.length);
+      return next;
+    });
+  }
+
+  async delete(id: string): Promise<boolean> {
+    this.assertId(id);
+    return this.transaction((db) => {
+      db.prepare('DELETE FROM conversation_messages WHERE thread_id = ?').run(id);
+      const result = db.prepare('DELETE FROM conversation_threads WHERE id = ?').run(id);
+      return result.changes > 0;
+    });
+  }
+
+  private loadAll(db: BetterSqliteDatabase): ConversationThread[] {
     const messageRows = db.prepare(
       'SELECT thread_id, message_json FROM conversation_messages ORDER BY thread_id, seq'
-    ).all();
+    ).all() as any[];
     const messageMap = new Map<string, PromptMessage[]>();
     for (const row of messageRows) {
       const list = messageMap.get(row.thread_id) ?? [];
@@ -102,96 +182,127 @@ export class ConversationsRepository extends SqliteRepository {
     }
     const threads = db.prepare(
       'SELECT id, kind, parent_id, director_id, agent_id, account_id, email_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json FROM conversation_threads'
-    ).all();
+    ).all() as any[];
     return threads.map((row: any) => mapThread(row, messageMap));
   }
 
-  private rewrite(db: any, threads: ConversationThread[]): void {
-    db.prepare('DELETE FROM conversation_messages').run();
-    db.prepare('DELETE FROM conversation_threads').run();
+  private loadOne(db: BetterSqliteDatabase, id: string): ConversationThread | null {
+    const messageRows = db
+      .prepare('SELECT thread_id, message_json FROM conversation_messages WHERE thread_id = ? ORDER BY seq')
+      .all(id) as any[];
+    const messageMap = new Map<string, PromptMessage[]>([
+      [id, messageRows.map((row) => JSON.parse(row.message_json) as PromptMessage)],
+    ]);
+    const row = db
+      .prepare(
+        'SELECT id, kind, parent_id, director_id, agent_id, account_id, email_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json FROM conversation_threads WHERE id = ?'
+      )
+      .get(id) as any;
+    if (!row) return null;
+    return mapThread(row, messageMap);
+  }
 
-    const insertThread = db.prepare(
-      'INSERT INTO conversation_threads (id, kind, parent_id, director_id, agent_id, account_id, email_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json) VALUES (@id, @kind, @parent_id, @director_id, @agent_id, @account_id, @email_id, @email_json, @prompt_id, @api_config_id, @status, @started_at, @last_active_at, @ended_at, @result_json, @errors_json)'
-    );
-    const insertMessage = db.prepare(
-      'INSERT INTO conversation_messages (thread_id, seq, message_json) VALUES (@thread_id, @seq, @message_json)'
-    );
+  private writeThread(
+    db: BetterSqliteDatabase,
+    thread: ConversationThread,
+    rewriteMessages: boolean = true,
+    existingMessageCount: number = 0
+  ): void {
+    const endedAt = assertThreadEndedAt(thread);
+    let directorId: string;
+    let parentId: string | null = null;
+    let agentId: string | null = null;
 
-    for (const thread of threads) {
-      if (!Array.isArray(thread.messages)) {
-        throw new Error(`messages missing for thread ${thread.id}`);
-      }
-      const endedAt = assertThreadEndedAt(thread);
-      let directorId: string;
-      let parentId: string | null = null;
-      let agentId: string | null = null;
+    if (thread.kind === 'director') {
+      const directorThread: DirectorThread = thread;
+      ensureNull(directorThread.parentId, 'parentId', `thread ${directorThread.id}`);
+      ensureNull(directorThread.agentId, 'agentId', `thread ${directorThread.id}`);
+      directorId = ensureString(directorThread.directorId, 'directorId', `thread ${directorThread.id}`);
+    } else {
+      const agentThread: AgentThread = thread;
+      parentId = ensureString(agentThread.parentId, 'parentId', `thread ${agentThread.id}`);
+      agentId = ensureString(agentThread.agentId, 'agentId', `thread ${agentThread.id}`);
+      directorId = ensureString(agentThread.directorId, 'directorId', `thread ${agentThread.id}`);
+    }
 
-      if (thread.kind === 'director') {
-        const directorThread: DirectorThread = thread;
-        if (directorThread.parentId !== null) {
-          throw new Error(`parentId must be null for director thread ${directorThread.id}`);
-        }
-        if (directorThread.agentId !== null) {
-          throw new Error(`agentId must be null for director thread ${directorThread.id}`);
-        }
-        directorId = ensureString(directorThread.directorId, 'directorId', `thread ${directorThread.id}`);
-      } else if (thread.kind === 'agent') {
-        const agentThread: AgentThread = thread;
-        parentId = ensureString(agentThread.parentId, 'parentId', `thread ${agentThread.id}`);
-        agentId = ensureString(agentThread.agentId, 'agentId', `thread ${agentThread.id}`);
-        directorId = ensureString(agentThread.directorId, 'directorId', `thread ${agentThread.id}`);
-      } else {
-        const unexpected: never = thread;
-        throw new Error(`Unknown conversation kind: ${(unexpected as { kind: unknown }).kind}`);
-      }
+    const emailId = typeof thread.email?.id === 'string' && thread.email.id.length > 0 ? thread.email.id : null;
 
-      const emailId = typeof thread.email?.id === 'string' && thread.email.id.length > 0 ? thread.email.id : null;
+    db.prepare(
+      `INSERT INTO conversation_threads (id, kind, parent_id, director_id, agent_id, account_id, email_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json)
+       VALUES (@id, @kind, @parent_id, @director_id, @agent_id, @account_id, @email_id, @email_json, @prompt_id, @api_config_id, @status, @started_at, @last_active_at, @ended_at, @result_json, @errors_json)
+       ON CONFLICT(id) DO UPDATE SET
+         kind = excluded.kind,
+         parent_id = excluded.parent_id,
+         director_id = excluded.director_id,
+         agent_id = excluded.agent_id,
+         account_id = excluded.account_id,
+         email_id = excluded.email_id,
+         email_json = excluded.email_json,
+         prompt_id = excluded.prompt_id,
+         api_config_id = excluded.api_config_id,
+         status = excluded.status,
+         started_at = excluded.started_at,
+         last_active_at = excluded.last_active_at,
+         ended_at = excluded.ended_at,
+         result_json = excluded.result_json,
+         errors_json = excluded.errors_json`
+    ).run({
+      id: thread.id,
+      kind: thread.kind,
+      parent_id: parentId,
+      director_id: directorId,
+      agent_id: agentId,
+      account_id: thread.accountId,
+      email_id: emailId,
+      email_json: stringify(thread.email),
+      prompt_id: thread.promptId,
+      api_config_id: thread.apiConfigId,
+      status: thread.status,
+      started_at: thread.startedAt,
+      last_active_at: thread.lastActiveAt,
+      ended_at: endedAt,
+      result_json: thread.result ? stringify(thread.result) : null,
+      errors_json: thread.errors ? stringify(thread.errors) : null,
+    });
 
-      insertThread.run({
-        id: thread.id,
-        kind: thread.kind,
-        parent_id: parentId,
-        director_id: directorId,
-        agent_id: agentId,
-        account_id: thread.accountId,
-        email_id: emailId,
-        email_json: stringify(thread.email),
-        prompt_id: thread.promptId,
-        api_config_id: thread.apiConfigId,
-        status: thread.status,
-        started_at: thread.startedAt,
-        last_active_at: thread.lastActiveAt,
-        ended_at: endedAt,
-        result_json: thread.result ? stringify(thread.result) : null,
-        errors_json: thread.errors ? stringify(thread.errors) : null,
-      });
-      thread.messages.forEach((msg, index) => {
+    const messages = Array.isArray(thread.messages) ? thread.messages : [];
+
+    if (rewriteMessages) {
+      db.prepare('DELETE FROM conversation_messages WHERE thread_id = ?').run(thread.id);
+      existingMessageCount = 0;
+    }
+
+    if (messages.length) {
+      const insertMessage = db.prepare(
+        'INSERT INTO conversation_messages (thread_id, seq, message_json) VALUES (@thread_id, @seq, @message_json)'
+      );
+      const start = rewriteMessages ? 0 : Math.min(existingMessageCount, messages.length);
+      for (let index = start; index < messages.length; index += 1) {
         insertMessage.run({
           thread_id: thread.id,
           seq: index,
-          message_json: stringify(msg),
+          message_json: stringify(messages[index]),
         });
-      });
+      }
     }
   }
 
-  async getAll(): Promise<ConversationThread[]> {
-    return this.withConnection((db) => this.loadAll(db));
+  private assertId(value: unknown): asserts value is string {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error('ConversationsRepository: id is required');
+    }
   }
 
-  async setAll(threads: ConversationThread[]): Promise<void> {
-    await this.transaction((db) => {
-      this.rewrite(db, threads);
-      return undefined;
-    });
-  }
-
-  async mutate(updater: (current: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]): Promise<ConversationThread[]> {
-    return this.transaction(async (db) => {
-      const current = this.loadAll(db);
-      const next = await Promise.resolve(updater([...current]));
-      this.rewrite(db, next);
-      return next;
-    });
+  private assertThread(thread: ConversationThread): void {
+    if (!thread || typeof thread !== 'object') {
+      throw new Error('ConversationsRepository: thread payload required');
+    }
+    this.assertId(thread.id);
+    if (typeof thread.startedAt !== 'string' || !thread.startedAt.trim()) {
+      throw new Error(`ConversationsRepository: startedAt required for '${thread.id}'`);
+    }
+    if (typeof thread.lastActiveAt !== 'string' || !thread.lastActiveAt.trim()) {
+      throw new Error(`ConversationsRepository: lastActiveAt required for '${thread.id}'`);
+    }
   }
 }

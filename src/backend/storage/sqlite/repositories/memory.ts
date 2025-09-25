@@ -7,83 +7,69 @@ export class MemoryRepository extends SqliteRepository {
     super(handle);
   }
 
-  async getAll(): Promise<MemoryEntry[]> {
+  async list(): Promise<readonly MemoryEntry[]> {
     return this.withConnection((db) => this.readAll(db));
   }
 
-  async setAll(entries: MemoryEntry[]): Promise<void> {
+  async findById(id: string): Promise<MemoryEntry | null> {
+    this.assertId(id);
+    return this.withConnection((db) => this.readOne(db, id));
+  }
+
+  async insert(entry: MemoryEntry): Promise<void> {
+    this.assertEntry(entry);
     await this.transaction((db) => {
-      db.prepare('DELETE FROM memory_entry_tags').run();
-      db.prepare('DELETE FROM memory_entries').run();
-      const insertEntry = db.prepare(
-        'INSERT INTO memory_entries (id, scope, content, created_at, updated_at, owner, related_email_id, metadata_json) VALUES (@id, @scope, @content, @created_at, @updated_at, @owner, @related_email_id, @metadata_json)'
-      );
-      const insertTag = db.prepare('INSERT INTO memory_entry_tags (entry_id, tag) VALUES (@entry_id, @tag)');
-      for (const entry of entries) {
-        insertEntry.run({
-          id: entry.id,
-          scope: entry.scope,
-          content: entry.content,
-          created_at: entry.created,
-          updated_at: entry.updated,
-          owner: entry.owner,
-          related_email_id: typeof entry.relatedEmailId === 'string' ? entry.relatedEmailId : null,
-          metadata_json: typeof entry.metadata !== 'undefined' ? stringify(entry.metadata) : null,
-        });
-        const tags = Array.isArray(entry.tags) ? entry.tags : [];
-        for (const tag of tags) {
-          insertTag.run({ entry_id: entry.id, tag });
-        }
+      const exists = db.prepare('SELECT 1 FROM memory_entries WHERE id = ?').get(entry.id);
+      if (exists) {
+        throw new Error(`MemoryRepository: entry '${entry.id}' already exists`);
       }
+      this.writeEntry(db, entry);
       return undefined;
     });
   }
 
-  async upsert(entry: MemoryEntry): Promise<MemoryEntry> {
-    return this.transaction((db) => {
-      this.upsertUnsafe(db, entry);
-      return entry;
+  async update(entry: MemoryEntry): Promise<void> {
+    this.assertEntry(entry);
+    await this.transaction((db) => {
+      const exists = db.prepare('SELECT 1 FROM memory_entries WHERE id = ?').get(entry.id);
+      if (!exists) {
+        throw new Error(`MemoryRepository: entry '${entry.id}' not found`);
+      }
+      this.writeEntry(db, entry);
+      return undefined;
     });
   }
 
-  async deleteById(id: string): Promise<boolean> {
+  async delete(id: string): Promise<boolean> {
+    this.assertId(id);
     return this.transaction((db) => {
+      db.prepare('DELETE FROM memory_entry_tags WHERE entry_id = ?').run(id);
       const result = db.prepare('DELETE FROM memory_entries WHERE id = ?').run(id);
       return result.changes > 0;
     });
   }
 
-  async mutate(updater: (current: MemoryEntry[]) => Promise<MemoryEntry[]> | MemoryEntry[]): Promise<MemoryEntry[]> {
-    return this.transaction(async (db) => {
-      const current = this.readAll(db);
-      const nextRaw = await updater([...current]);
-      if (!Array.isArray(nextRaw)) {
-        throw new Error('MemoryRepository.mutate updater must return MemoryEntry[]');
-      }
-      const next: MemoryEntry[] = [];
-      const seen = new Set<string>();
-      for (const entry of nextRaw) {
-        if (!entry || typeof entry !== 'object' || typeof (entry as any).id !== 'string') {
-          throw new Error('MemoryRepository.mutate received invalid MemoryEntry');
-        }
-        if (seen.has((entry as any).id)) {
-          throw new Error(`MemoryRepository.mutate received duplicate id: ${(entry as any).id}`);
-        }
-        seen.add((entry as any).id);
-        next.push(entry as MemoryEntry);
-      }
-      const currentIds = new Set(current.map((entry) => entry.id));
-      const nextIds = new Set(next.map((entry) => entry.id));
-      for (const id of currentIds) {
-        if (!nextIds.has(id)) {
-          db.prepare('DELETE FROM memory_entries WHERE id = ?').run(id);
-        }
-      }
-      for (const entry of next) {
-        this.upsertUnsafe(db, entry);
-      }
-      return this.readAll(db);
+  async deleteMany(ids: readonly string[]): Promise<number> {
+    if (!Array.isArray(ids) || ids.length === 0) return 0;
+    const trimmed = ids.map((value) => {
+      this.assertId(value);
+      return value.trim();
     });
+    return this.transaction((db) => {
+      const placeholders = trimmed.map(() => '?').join(',');
+      db.prepare(`DELETE FROM memory_entry_tags WHERE entry_id IN (${placeholders})`).run(trimmed);
+      const result = db.prepare(`DELETE FROM memory_entries WHERE id IN (${placeholders})`).run(trimmed);
+      return result.changes ?? 0;
+    });
+  }
+
+  async upsert(entry: MemoryEntry): Promise<MemoryEntry> {
+    this.assertEntry(entry);
+    await this.transaction((db) => {
+      this.writeEntry(db, entry);
+      return undefined;
+    });
+    return entry;
   }
 
   private readAll(db: BetterSqliteDatabase): MemoryEntry[] {
@@ -101,7 +87,7 @@ export class MemoryRepository extends SqliteRepository {
       if (!row.owner) {
         throw new Error(`memory entry missing owner (id=${row.id})`);
       }
-      const tags = tagMap.get(row.id);
+      const entryTags = tagMap.get(row.id);
       return {
         id: row.id,
         scope: row.scope,
@@ -111,12 +97,33 @@ export class MemoryRepository extends SqliteRepository {
         owner: row.owner,
         relatedEmailId: typeof row.related_email_id === 'string' ? row.related_email_id : undefined,
         metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined,
-        ...(tags ? { tags } : {}),
+        ...(entryTags ? { tags: entryTags } : {}),
       } as MemoryEntry;
     });
   }
 
-  private upsertUnsafe(db: BetterSqliteDatabase, entry: MemoryEntry): void {
+  private readOne(db: BetterSqliteDatabase, id: string): MemoryEntry | null {
+    const row = db
+      .prepare(
+        'SELECT id, scope, content, created_at, updated_at, owner, related_email_id, metadata_json FROM memory_entries WHERE id = ?'
+      )
+      .get(id) as any;
+    if (!row) return null;
+    const tags = db.prepare('SELECT tag FROM memory_entry_tags WHERE entry_id = ?').all(id) as any[];
+    return {
+      id: row.id,
+      scope: row.scope,
+      content: row.content,
+      created: row.created_at,
+      updated: row.updated_at,
+      owner: row.owner,
+      relatedEmailId: typeof row.related_email_id === 'string' ? row.related_email_id : undefined,
+      metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined,
+      ...(tags.length ? { tags: tags.map((t) => t.tag) } : {}),
+    } as MemoryEntry;
+  }
+
+  private writeEntry(db: BetterSqliteDatabase, entry: MemoryEntry): void {
     const payload = {
       id: entry.id,
       scope: entry.scope,
@@ -148,6 +155,34 @@ export class MemoryRepository extends SqliteRepository {
       for (const tag of tags) {
         insertTag.run({ entry_id: entry.id, tag });
       }
+    }
+  }
+
+  private assertId(value: unknown): asserts value is string {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error('MemoryRepository: id is required');
+    }
+  }
+
+  private assertEntry(entry: MemoryEntry): void {
+    if (!entry || typeof entry !== 'object') {
+      throw new Error('MemoryRepository: entry payload required');
+    }
+    this.assertId(entry.id);
+    if (typeof entry.scope !== 'string' || !entry.scope.trim()) {
+      throw new Error(`MemoryRepository: scope required for '${entry.id}'`);
+    }
+    if (typeof entry.content !== 'string' || !entry.content.trim()) {
+      throw new Error(`MemoryRepository: content required for '${entry.id}'`);
+    }
+    if (typeof entry.created !== 'string' || !entry.created.trim()) {
+      throw new Error(`MemoryRepository: created timestamp required for '${entry.id}'`);
+    }
+    if (typeof entry.updated !== 'string' || !entry.updated.trim()) {
+      throw new Error(`MemoryRepository: updated timestamp required for '${entry.id}'`);
+    }
+    if (typeof entry.owner !== 'string' || !entry.owner.trim()) {
+      throw new Error(`MemoryRepository: owner required for '${entry.id}'`);
     }
   }
 }

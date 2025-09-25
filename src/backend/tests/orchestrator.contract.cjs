@@ -59,6 +59,34 @@ test('Orchestrator contract: director tool_calls -> agent run -> director follow
     // Mock RepoBundle for req-aware repositories
     const providerEvents = [];
     const workspaceItems = [];
+    const workspaceRepo = {
+      async list() {
+        return workspaceItems.slice();
+      },
+      async listByConversation(conversationId) {
+        return workspaceItems.filter((item) => item.provenance?.conversationId === conversationId);
+      },
+      async insert(item) {
+        workspaceItems.push(item);
+      },
+      async update(item) {
+        const idx = workspaceItems.findIndex((existing) => existing.id === item.id);
+        if (idx === -1) throw new Error('workspace item not found');
+        workspaceItems[idx] = item;
+      },
+      async delete(id) {
+        const initial = workspaceItems.length;
+        const next = workspaceItems.filter((item) => item.id !== id);
+        workspaceItems.splice(0, workspaceItems.length, ...next);
+        return next.length !== initial;
+      },
+      async deleteByConversation(conversationId) {
+        const matches = workspaceItems.filter((item) => item.provenance?.conversationId === conversationId);
+        const keep = workspaceItems.filter((item) => item.provenance?.conversationId !== conversationId);
+        workspaceItems.splice(0, workspaceItems.length, ...keep);
+        return matches.length;
+      },
+    };
     const req = {
       userContext: {
         uid: 'u1',
@@ -66,7 +94,7 @@ test('Orchestrator contract: director tool_calls -> agent run -> director follow
           providerEvents: { append: async (e) => { providerEvents.push(e); }, getAll: async () => providerEvents, setAll: async (n) => { providerEvents.splice(0, providerEvents.length, ...n); } },
           orchestrationLog: { getAll: async () => [], setAll: async (_n) => {} },
           traces: { append: async (_t) => {}, update: async (_id, _fn) => {}, getAll: async () => [] },
-          workspaceItems: { getAll: async () => workspaceItems.slice(), setAll: async (n) => { workspaceItems.splice(0, workspaceItems.length, ...n); } },
+          workspaceItems: workspaceRepo,
         },
       },
     };

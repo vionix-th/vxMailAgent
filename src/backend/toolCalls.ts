@@ -10,7 +10,8 @@ import { newId } from './utils/id';
 import type { RepoBundle } from './repository/registry';
 import { ensureAgentThread, runAgentConversation } from './services/orchestration-agent';
 import { ValidationError, InvalidAgentConfigError } from './services/error-handler';
-import { WorkspaceItemsRepository } from './storage/sqlite/repositories/workspaceItems';
+import type { WorkspaceItemsRepoInstance } from './repository/wrappers';
+import type { ConversationsRepoInstance } from './repository/wrappers';
 import { serializeApiConfig } from './services/apiConfigSerializer';
 import { resolveAgentToolDescriptors, resolveDirectorToolDescriptors, resolveMandatoryToolDescriptors } from './services/tool-config-service';
 import { MemoryRepository } from './storage/sqlite/repositories/memory';
@@ -20,6 +21,30 @@ interface ToolCallExecutionContext {
   workspace?: {
     conversationId: string;
   };
+}
+
+async function replaceConversations(
+  repo: ConversationsRepoInstance,
+  next: ConversationThread[]
+): Promise<void> {
+  const existing = await repo.list();
+  const existingById = new Map(existing.map((thread) => [thread.id, thread] as const));
+  const nextIds = new Set<string>();
+
+  for (const thread of next) {
+    nextIds.add(thread.id);
+    if (existingById.has(thread.id)) {
+      await repo.update(thread);
+    } else {
+      await repo.insert(thread);
+    }
+  }
+
+  for (const thread of existing) {
+    if (!nextIds.has(thread.id)) {
+      await repo.delete(thread.id);
+    }
+  }
 }
 
 async function getDirectorWithDescriptors(
@@ -127,7 +152,7 @@ export function createToolHandler(repos: RepoBundle) {
           if (!agentId || !input || !parentId || !directorId) {
             return { kind: name, success: false, result: null, error: 'Missing agentId, input, conversationId, or directorId' };
           }
-          const conversations = await repos.conversations.getAll();
+          const conversations = [...await repos.conversations.list()];
           const parent = conversations.find((c: any) => c.id === parentId);
           if (!parent) return { kind: name, success: false, result: null, error: 'Parent conversation not found' };
           let dirObj: Director;
@@ -171,13 +196,15 @@ export function createToolHandler(repos: RepoBundle) {
           } catch (e: any) {
             return { kind: name, success: false, result: null, error: e?.message || String(e) };
           }
-          await repos.conversations.setAll(ensured.conversations);
+          await replaceConversations(repos.conversations, ensured.conversations);
 
           const agentThread = ensured.agentThread;
           const apiCfg = apiConfigs.find((c: ApiConfig) => c.id === agentThread.apiConfigId);
           if (!apiCfg) return { kind: name, success: false, result: null, error: 'API config not found for agent' };
           const gatedToolDescriptors = agentToolDescriptors;
-          const setConversations = async (next: ConversationThread[]) => { await repos.conversations.setAll(next); };
+          const setConversations = async (next: ConversationThread[]) => {
+            await replaceConversations(repos.conversations, next);
+          };
           const rawHandleTool = createToolHandler(repos);
           const handleTool = (toolName: string, toolParams: any) =>
             rawHandleTool(
@@ -309,7 +336,8 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: MemoryRepos
       const tag = normalizeOptionalString(payload.tag, 'memory_search.tag');
       const query = normalizeOptionalString(payload.query, 'memory_search.query');
 
-      const all = await memoryRepo.getAll();
+      const list = await memoryRepo.list();
+      const all = Array.isArray(list) ? list.slice() : Array.from(list);
       let filtered = scope ? all.filter((entry) => entry.scope === scope) : all;
       if (owner) filtered = filtered.filter((entry) => entry.owner === owner);
       if (tag) filtered = filtered.filter((entry) => Array.isArray(entry.tags) && entry.tags.includes(tag));
@@ -424,50 +452,45 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: MemoryRepos
       }
       const entryId = rawId.trim();
       const now = new Date().toISOString();
-      const nextList = await memoryRepo.mutate((current) => {
-        const idx = current.findIndex((entry) => entry.id === entryId);
-        if (idx === -1) {
-          throw new ValidationError('Memory entry not found', 'MEMORY_ENTRY_NOT_FOUND');
+      const current = await memoryRepo.findById(entryId);
+      if (!current) {
+        throw new ValidationError('Memory entry not found', 'MEMORY_ENTRY_NOT_FOUND');
+      }
+      const updatedEntry: MemoryEntry = { ...current };
+      if (Object.prototype.hasOwnProperty.call(entryObj, 'content')) {
+        updatedEntry.content = requireContent(entryObj.content, 'memory_edit.entry.content');
+      }
+      if (Object.prototype.hasOwnProperty.call(entryObj, 'scope')) {
+        updatedEntry.scope = requireMemoryScope(entryObj.scope, 'memory_edit.entry.scope');
+      }
+      if (Object.prototype.hasOwnProperty.call(entryObj, 'owner')) {
+        updatedEntry.owner = requireMemoryOwner(entryObj.owner, 'memory_edit.entry.owner');
+      }
+      if (Object.prototype.hasOwnProperty.call(entryObj, 'tags')) {
+        const tags = normalizeMemoryTags(entryObj.tags);
+        if (tags) {
+          updatedEntry.tags = tags;
+        } else {
+          delete (updatedEntry as any).tags;
         }
-        const updated = { ...current[idx] } as MemoryEntry;
-        if (Object.prototype.hasOwnProperty.call(entryObj, 'content')) {
-          updated.content = requireContent(entryObj.content, 'memory_edit.entry.content');
+      }
+      if (Object.prototype.hasOwnProperty.call(entryObj, 'relatedEmailId')) {
+        const related = normalizeOptionalString(entryObj.relatedEmailId, 'memory_edit.entry.relatedEmailId');
+        if (related) {
+          updatedEntry.relatedEmailId = related;
+        } else {
+          delete (updatedEntry as any).relatedEmailId;
         }
-        if (Object.prototype.hasOwnProperty.call(entryObj, 'scope')) {
-          updated.scope = requireMemoryScope(entryObj.scope, 'memory_edit.entry.scope');
+      }
+      if (Object.prototype.hasOwnProperty.call(entryObj, 'metadata')) {
+        if (typeof entryObj.metadata === 'undefined') {
+          delete (updatedEntry as any).metadata;
+        } else {
+          updatedEntry.metadata = entryObj.metadata as any;
         }
-        if (Object.prototype.hasOwnProperty.call(entryObj, 'owner')) {
-          updated.owner = requireMemoryOwner(entryObj.owner, 'memory_edit.entry.owner');
-        }
-        if (Object.prototype.hasOwnProperty.call(entryObj, 'tags')) {
-          const tags = normalizeMemoryTags(entryObj.tags);
-          if (tags) {
-            updated.tags = tags;
-          } else {
-            delete (updated as any).tags;
-          }
-        }
-        if (Object.prototype.hasOwnProperty.call(entryObj, 'relatedEmailId')) {
-          const related = normalizeOptionalString(entryObj.relatedEmailId, 'memory_edit.entry.relatedEmailId');
-          if (related) {
-            updated.relatedEmailId = related;
-          } else {
-            delete (updated as any).relatedEmailId;
-          }
-        }
-        if (Object.prototype.hasOwnProperty.call(entryObj, 'metadata')) {
-          if (typeof entryObj.metadata === 'undefined') {
-            delete (updated as any).metadata;
-          } else {
-            updated.metadata = entryObj.metadata as any;
-          }
-        }
-        updated.updated = now;
-        const next = current.slice();
-        next[idx] = updated;
-        return next;
-      });
-      const updatedEntry = nextList.find((entry) => entry.id === entryId);
+      }
+      updatedEntry.updated = now;
+      await memoryRepo.update(updatedEntry);
       if (!updatedEntry) {
         throw new Error('Failed to update memory entry');
       }
@@ -496,7 +519,7 @@ function mergeTags(...sources: Array<string[] | undefined>): string[] | undefine
   return merged.length ? merged : undefined;
 }
 
-async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceItemsRepository, scopedConversationId?: string): Promise<ToolCallResult> {
+async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceItemsRepoInstance, scopedConversationId?: string): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] workspace', { payload });
   try {
     const conversationId = typeof scopedConversationId === 'string' && scopedConversationId.trim().length > 0
@@ -510,9 +533,8 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceIte
     }
 
     const service = new WorkspaceService({
+      repo: workspaceRepo,
       conversationId,
-      getItems: () => workspaceRepo.getByConversation(conversationId),
-      setItems: (next) => workspaceRepo.replaceForConversation(conversationId, next),
     });
     if (payload.action === 'add') {
       const prov = payload?.provenance || {};

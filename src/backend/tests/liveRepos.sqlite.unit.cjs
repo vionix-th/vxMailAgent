@@ -121,8 +121,8 @@ test('Provider events remain isolated per user', async () => {
       messages: [],
     };
 
-    await bundleA.conversations.setAll([baseConversation]);
-    await bundleB.conversations.setAll([{ ...baseConversation, id: 'conv-b' }]);
+    await bundleA.conversations.insert(baseConversation);
+    await bundleB.conversations.insert({ ...baseConversation, id: 'conv-b' });
 
     const eventA1 = {
       id: 'ev-a-1',

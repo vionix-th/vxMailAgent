@@ -1,15 +1,11 @@
 import type {
   Account,
   Agent,
-  ConversationThread,
   Director,
   Filter,
   Imprint,
-  MemoryEntry,
   Prompt,
-  PromptMessage,
   TemplateItem,
-  WorkspaceItem,
 } from '../../shared/types';
 import type {
   AccountsRepository as SqlAccountsRepository,
@@ -42,12 +38,6 @@ function ensureId(entityName: string, id: unknown): asserts id is string {
   }
 }
 
-function ensureArray<T>(entityName: string, field: string, value: T[]): asserts value is T[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${entityName}: ${field} must be an array`);
-  }
-}
-
 async function listAll<T>(repo: { getAll(): Promise<T[]> }): Promise<readonly T[]> {
   const items = await repo.getAll();
   return items.slice();
@@ -57,8 +47,6 @@ type LegacyListRepo<T> = {
   getAll(): Promise<T[]>;
   setAll(next: T[]): Promise<void>;
 };
-
-type LegacyReplaceRepo<T> = LegacyListRepo<T>;
 
 type BasicCrud<T> = {
   list(): Promise<readonly T[]>;
@@ -250,224 +238,63 @@ export function augmentFiltersRepository(repo: SqlFiltersRepository): FiltersRep
 
 export type MemoryRepoInstance = SqlMemoryRepository & MemoryContract;
 
+function assertMemoryRepositoryContract(repo: SqlMemoryRepository): asserts repo is MemoryRepoInstance {
+  const missing = [] as string[];
+  if (typeof repo.list !== 'function') missing.push('list');
+  if (typeof repo.findById !== 'function') missing.push('findById');
+  if (typeof repo.insert !== 'function') missing.push('insert');
+  if (typeof repo.update !== 'function') missing.push('update');
+  if (typeof repo.delete !== 'function') missing.push('delete');
+  if (typeof repo.deleteMany !== 'function') missing.push('deleteMany');
+  if (missing.length) {
+    throw new Error(`MemoryRepository: missing contract methods (${missing.join(', ')})`);
+  }
+}
+
 export function augmentMemoryRepository(repo: SqlMemoryRepository): MemoryRepoInstance {
-  return Object.assign(repo, {
-    list: async () => listAll(repo),
-    findById: async (id: string) => {
-      ensureId('Memory', id);
-      const all = await repo.getAll();
-      return all.find((entry) => entry.id === id) ?? null;
-    },
-    insert: async (entry: MemoryEntry) => {
-      ensureId('Memory', entry?.id);
-      await repo.mutate((current) => {
-        if (current.some((existing) => existing.id === entry.id)) {
-          throw new Error(`Memory: duplicate id '${entry.id}'`);
-        }
-        return [...current, entry];
-      });
-    },
-    update: async (entry: MemoryEntry) => {
-      ensureId('Memory', entry?.id);
-      await repo.mutate((current) => {
-        const idx = current.findIndex((existing) => existing.id === entry.id);
-        if (idx === -1) {
-          throw new Error(`Memory: id '${entry.id}' not found`);
-        }
-        const next = current.slice();
-        next[idx] = entry;
-        return next;
-      });
-    },
-    delete: async (id: string) => {
-      ensureId('Memory', id);
-      return await repo.deleteById(id);
-    },
-    deleteMany: async (ids: readonly string[]) => {
-      ids.forEach((id) => ensureId('Memory', id));
-      let removed = 0;
-      await repo.mutate((current) => {
-        const next = current.filter((entry) => {
-          if (ids.includes(entry.id)) {
-            removed += 1;
-            return false;
-          }
-          return true;
-        });
-        return next;
-      });
-      return removed;
-    },
-  }) as MemoryRepoInstance;
-}
-
-function ensureThreadTimestamps(thread: ConversationThread, context: string): void {
-  const { startedAt, lastActiveAt } = thread;
-  if (typeof startedAt !== 'string' || !startedAt.trim()) {
-    throw new Error(`${context}: startedAt missing for conversation ${thread.id}`);
-  }
-  if (typeof lastActiveAt !== 'string' || !lastActiveAt.trim()) {
-    throw new Error(`${context}: lastActiveAt missing for conversation ${thread.id}`);
-  }
-  if (Number.isNaN(Date.parse(startedAt))) {
-    throw new Error(`${context}: startedAt invalid for conversation ${thread.id}`);
-  }
-  if (Number.isNaN(Date.parse(lastActiveAt))) {
-    throw new Error(`${context}: lastActiveAt invalid for conversation ${thread.id}`);
-  }
-}
-
-function cloneThread(thread: ConversationThread): ConversationThread {
-  return JSON.parse(JSON.stringify(thread)) as ConversationThread;
+  assertMemoryRepositoryContract(repo);
+  return repo;
 }
 
 export type ConversationsRepoInstance = SqlConversationsRepository & ConversationsContract;
 
-export function augmentConversationsRepository(repo: SqlConversationsRepository): ConversationsRepoInstance {
-  return Object.assign(repo, {
-    list: async () => listAll(repo),
-    getById: async (id: string) => {
-      ensureId('Conversation', id);
-      const all = await repo.getAll();
-      return all.find((thread) => thread.id === id) ?? null;
-    },
-    insert: async (thread: ConversationThread) => {
-      ensureId('Conversation', thread?.id);
-      ensureThreadTimestamps(thread, 'insert');
-      await repo.mutate((current) => {
-        if (current.some((existing) => existing.id === thread.id)) {
-          throw new Error(`Conversation: duplicate id '${thread.id}'`);
-        }
-        return [...current, cloneThread(thread)];
-      });
-    },
-    update: async (thread: ConversationThread) => {
-      ensureId('Conversation', thread?.id);
-      ensureThreadTimestamps(thread, 'update');
-      await repo.mutate((current) => {
-        const idx = current.findIndex((existing) => existing.id === thread.id);
-        if (idx === -1) {
-          throw new Error(`Conversation: id '${thread.id}' not found`);
-        }
-        const next = current.slice();
-        next[idx] = cloneThread(thread);
-        return next;
-      });
-    },
-    appendMessages: async (threadId: string, messages: readonly PromptMessage[]) => {
-      ensureId('Conversation', threadId);
-      ensureArray<PromptMessage>('Conversation', 'messages', messages as PromptMessage[]);
-      if (messages.length === 0) {
-        throw new Error('Conversation: appendMessages requires non-empty messages array');
-      }
-      let updated: ConversationThread | null = null;
-      await repo.mutate((current) => {
-        const idx = current.findIndex((existing) => existing.id === threadId);
-        if (idx === -1) {
-          return current;
-        }
-        const now = new Date().toISOString();
-        const base = cloneThread(current[idx]);
-        ensureThreadTimestamps(base, 'appendMessages');
-        const nextThread: ConversationThread = {
-          ...base,
-          lastActiveAt: now,
-          messages: [...base.messages, ...messages],
-        } as ConversationThread;
-        const next = current.slice();
-        next[idx] = nextThread;
-        updated = nextThread;
-        return next;
-      });
-      return updated;
-    },
-    finalizeStatus: async (threadId: string, status: 'completed' | 'failed', timestamp: string) => {
-      ensureId('Conversation', threadId);
-      if (typeof timestamp !== 'string' || !timestamp.trim()) {
-        throw new Error('Conversation: finalizeStatus requires timestamp');
-      }
-      let updated: ConversationThread | null = null;
-      await repo.mutate((current) => {
-        const idx = current.findIndex((existing) => existing.id === threadId);
-        if (idx === -1) {
-          return current;
-        }
-        const base = cloneThread(current[idx]);
-        ensureThreadTimestamps(base, 'finalizeStatus');
-        const nextThread: ConversationThread = {
-          ...base,
-          status,
-          endedAt: timestamp,
-          lastActiveAt: timestamp,
-        } as ConversationThread;
-        const next = current.slice();
-        next[idx] = nextThread;
-        updated = nextThread;
-        return next;
-      });
-      return updated;
-    },
-    delete: async (id: string) => {
-      ensureId('Conversation', id);
-      let removed = false;
-      await repo.mutate((current) => {
-        const next = current.filter((thread) => {
-          if (thread.id === id) {
-            removed = true;
-            return false;
-          }
-          return true;
-        });
-        return next;
-      });
-      return removed;
-    },
-  }) as ConversationsRepoInstance;
+function assertConversationsRepositoryContract(repo: SqlConversationsRepository): asserts repo is ConversationsRepoInstance {
+  const missing = [] as string[];
+  if (typeof repo.list !== 'function') missing.push('list');
+  if (typeof repo.getById !== 'function') missing.push('getById');
+  if (typeof repo.insert !== 'function') missing.push('insert');
+  if (typeof repo.update !== 'function') missing.push('update');
+  if (typeof repo.appendMessages !== 'function') missing.push('appendMessages');
+  if (typeof repo.finalizeStatus !== 'function') missing.push('finalizeStatus');
+  if (typeof repo.delete !== 'function') missing.push('delete');
+  if (missing.length) {
+    throw new Error(`ConversationsRepository: missing contract methods (${missing.join(', ')})`);
+  }
 }
 
-export type WorkspaceItemsRepoInstance = SqlWorkspaceItemsRepository & WorkspaceItemsContract & LegacyReplaceRepo<WorkspaceItem>;
+export function augmentConversationsRepository(repo: SqlConversationsRepository): ConversationsRepoInstance {
+  assertConversationsRepositoryContract(repo);
+  return repo;
+}
+
+export type WorkspaceItemsRepoInstance = SqlWorkspaceItemsRepository & WorkspaceItemsContract;
+
+function assertWorkspaceItemsRepositoryContract(
+  repo: SqlWorkspaceItemsRepository
+): asserts repo is WorkspaceItemsRepoInstance {
+  const missing = [] as string[];
+  if (typeof repo.list !== 'function') missing.push('list');
+  if (typeof repo.listByConversation !== 'function') missing.push('listByConversation');
+  if (typeof repo.insert !== 'function') missing.push('insert');
+  if (typeof repo.update !== 'function') missing.push('update');
+  if (typeof repo.delete !== 'function') missing.push('delete');
+  if (typeof repo.deleteByConversation !== 'function') missing.push('deleteByConversation');
+  if (missing.length) {
+    throw new Error(`WorkspaceItemsRepository: missing contract methods (${missing.join(', ')})`);
+  }
+}
 
 export function augmentWorkspaceItemsRepository(repo: SqlWorkspaceItemsRepository): WorkspaceItemsRepoInstance {
-  return Object.assign(repo, {
-    list: async () => listAll(repo),
-    listByConversation: async (conversationId: string) => {
-      ensureId('WorkspaceItem', conversationId);
-      return await repo.getByConversation(conversationId);
-    },
-    insert: async (item: WorkspaceItem) => {
-      ensureId('WorkspaceItem', item?.id);
-      const all = await repo.getAll();
-      if (all.some((existing) => existing.id === item.id)) {
-        throw new Error(`WorkspaceItem: duplicate id '${item.id}'`);
-      }
-      await repo.setAll([...all, item]);
-    },
-    update: async (item: WorkspaceItem) => {
-      ensureId('WorkspaceItem', item?.id);
-      const all = await repo.getAll();
-      const idx = all.findIndex((existing) => existing.id === item.id);
-      if (idx === -1) {
-        throw new Error(`WorkspaceItem: id '${item.id}' not found`);
-      }
-      const next = all.slice();
-      next[idx] = item;
-      await repo.setAll(next);
-    },
-    delete: async (id: string) => {
-      ensureId('WorkspaceItem', id);
-      const all = await repo.getAll();
-      const next = all.filter((existing) => existing.id !== id);
-      if (next.length === all.length) {
-        return false;
-      }
-      await repo.setAll(next);
-      return true;
-    },
-    deleteByConversation: async (conversationId: string) => {
-      ensureId('WorkspaceItem', conversationId);
-      const existing = await repo.getByConversation(conversationId);
-      await repo.replaceForConversation(conversationId, []);
-      return existing.length;
-    },
-  }) as WorkspaceItemsRepoInstance;
+  assertWorkspaceItemsRepositoryContract(repo);
+  return repo;
 }

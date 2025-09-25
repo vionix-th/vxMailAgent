@@ -1,4 +1,4 @@
-import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, EmailEnvelope, ProviderEvent, WorkspaceItem } from '../shared/types';
+import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, PromptMessage, EmailEnvelope, ProviderEvent, WorkspaceItem } from '../shared/types';
 import { createAccount } from '../shared/constructors';
 import {
   requireReq,
@@ -86,17 +86,21 @@ export function createLiveRepos(): LiveRepos {
     const repo = fn(requireReq(req));
     await repo.setAll(next);
   };
-  type ConversationRepoWithMutate = {
-    mutate: (
-      fn: (cur: ConversationThread[]) => Promise<ConversationThread[]> | ConversationThread[]
-    ) => Promise<ConversationThread[]>;
-  };
-  const requireConversationRepo = (req: ReqLike): ConversationRepoWithMutate => {
+  const requireConversationRepo = (req: ReqLike) => {
     const r = requireReq(req);
     const bundle = requireRepos(r);
-    const repo = bundle.conversations as unknown as ConversationRepoWithMutate | undefined;
-    if (!repo || typeof repo.mutate !== 'function') {
-      throw new Error('Conversations repository must support atomic mutate');
+    const repo = bundle.conversations;
+    if (
+      !repo ||
+      typeof repo.list !== 'function' ||
+      typeof repo.getById !== 'function' ||
+      typeof repo.insert !== 'function' ||
+      typeof repo.update !== 'function' ||
+      typeof repo.appendMessages !== 'function' ||
+      typeof repo.finalizeStatus !== 'function' ||
+      typeof repo.delete !== 'function'
+    ) {
+      throw new Error('Conversations repository must implement typed contract');
     }
     return repo;
   };
@@ -110,18 +114,33 @@ export function createLiveRepos(): LiveRepos {
     setImprints: set<Imprint>((req) => getImprintsRepo(req)),
     getOrchestrationLog: get<OrchestrationEvent>((req) => getOrchestrationLogRepo(req)),
     getConversations: get<ConversationThread>((req) => getConversationsRepo(req)),
-    setConversations: set<ConversationThread>((req) => getConversationsRepo(req)),
+    setConversations: async (req: ReqLike, next: ConversationThread[]) => {
+      const repo = requireConversationRepo(req);
+      const existing = await repo.list();
+      const existingById = new Map(existing.map((thread) => [thread.id, thread] as const));
+      const nextIds = new Set<string>();
+
+      for (const thread of next) {
+        ensureTimestamps(thread, 'setConversations');
+        nextIds.add(thread.id);
+        if (existingById.has(thread.id)) {
+          await repo.update(thread);
+        } else {
+          await repo.insert(thread);
+        }
+      }
+
+      for (const thread of existing) {
+        if (!nextIds.has(thread.id)) {
+          await repo.delete(thread.id);
+        }
+      }
+    },
     appendConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
       ensureTimestamps(thread, 'appendConversation');
       const repo = requireConversationRepo(req);
-      const next = await repo.mutate((cur) => {
-        const snapshot = Array.isArray(cur) ? cur : [];
-        if (snapshot.some((c) => c.id === thread.id)) {
-          throw new Error(`Conversation thread already exists: ${thread.id}`);
-        }
-        return [...snapshot, thread];
-      });
-      const appended = next.find((c) => c.id === thread.id);
+      await repo.insert(thread);
+      const appended = await repo.getById(thread.id);
       if (!appended) {
         throw new Error(`Failed to append conversation thread: ${thread.id}`);
       }
@@ -132,33 +151,12 @@ export function createLiveRepos(): LiveRepos {
         throw new ValidationError('appendMessagesToConversation requires non-empty messages array', 'CONVERSATION_APPEND_EMPTY');
       }
       const repo = requireConversationRepo(req);
-      const next = await repo.mutate((cur) => {
-        const idx = cur.findIndex((c) => c.id === threadId);
-        if (idx === -1) return cur;
-        const now = new Date().toISOString();
-        const current = cur[idx];
-        ensureTimestamps(current, 'appendMessagesToConversation');
-        const updated: ConversationThread = { ...current, lastActiveAt: now, messages: [...current.messages, ...messages] } as ConversationThread;
-        const out = cur.slice();
-        out[idx] = updated;
-        return out;
-      });
-      return next.find((c) => c.id === threadId) || null;
+      const updated = await repo.appendMessages(threadId, messages as PromptMessage[]);
+      return updated;
     },
     finalizeThreadStatusAtomic: async (req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null> => {
       const repo = requireConversationRepo(req);
-      const next = await repo.mutate((cur) => {
-        const idx = cur.findIndex((c) => c.id === threadId);
-        if (idx === -1) return cur;
-        const now = new Date().toISOString();
-        const current = cur[idx];
-        ensureTimestamps(current, 'finalizeThreadStatusAtomic');
-        const updated: ConversationThread = { ...current, status, endedAt: now, lastActiveAt: now } as ConversationThread;
-        const out = cur.slice();
-        out[idx] = updated;
-        return out;
-      });
-      return next.find((c) => c.id === threadId) || null;
+      return await repo.finalizeStatus(threadId, status, new Date().toISOString());
     },
     getSettings: async (req?: ReqLike) => {
       const r = requireReq(req);
@@ -211,8 +209,7 @@ export function createLiveRepos(): LiveRepos {
     },
     getConversationById: async (req: ReqLike, id: string) => {
       const repo = getConversationsRepo(requireReq(req));
-      const conversations = await repo.getAll();
-      return conversations.find((c: ConversationThread) => c.id === id) || null;
+      return await repo.getById(id);
     },
     getOrchestrationLogByConversation: async (req: ReqLike, conversationId: string) => {
       const repo = getOrchestrationLogRepo(requireReq(req));
@@ -220,7 +217,8 @@ export function createLiveRepos(): LiveRepos {
     },
     getWorkspaceItemsByConversation: async (req: ReqLike, conversationId: string) => {
       const repo = getWorkspaceItemsRepo(requireReq(req));
-      return await repo.getByConversation(conversationId);
+      const items = await repo.listByConversation(conversationId);
+      return Array.isArray(items) ? items.slice() : Array.from(items);
     },
   };
 }

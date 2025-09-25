@@ -38,11 +38,7 @@ test('workspace service enforces conversation invariant', async () => {
     const bundle = await getUserRepoBundle(uid);
     const conversationId = 'conv-1';
     const repo = bundle.workspaceItems;
-    const service = new WorkspaceService({
-      conversationId,
-      getItems: () => repo.getByConversation(conversationId),
-      setItems: (next) => repo.replaceForConversation(conversationId, next),
-    });
+    const service = new WorkspaceService({ repo, conversationId });
 
     const item = await service.addItem({
       content: { mimeType: 'text/plain', encoding: 'utf8', data: 'hello' },
@@ -64,4 +60,3 @@ test('workspace service enforces conversation invariant', async () => {
     repoBundleRegistry.removeBundle(uid);
   });
 });
-

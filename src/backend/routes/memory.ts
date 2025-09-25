@@ -19,7 +19,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
 
     const ureq = requireReq(req as ReqLike);
     const repo = getMemoryRepo(ureq);
-    let result = await repo.getAll();
+    let result = Array.from(await repo.list());
     if (scope) result = result.filter((entry: MemoryEntry) => entry.scope === scope);
     if (owner) result = result.filter((entry: MemoryEntry) => entry.owner === owner);
     if (tag) result = result.filter((entry: MemoryEntry) => Array.isArray(entry.tags) && entry.tags.includes(tag));
@@ -78,14 +78,11 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const ureq = requireReq(req as ReqLike);
     const repo = getMemoryRepo(ureq);
     const now = new Date().toISOString();
-    let updatedEntry: MemoryEntry | undefined;
-    await repo.mutate(async (current) => {
-      const idx = current.findIndex((entry) => entry.id === id);
-      if (idx === -1) {
-        throw new NotFoundError('Memory entry not found');
-      }
-      const next = current.slice();
-      const entry = { ...next[idx] } as MemoryEntry;
+    const current = await repo.findById(id);
+    if (!current) {
+      throw new NotFoundError('Memory entry not found');
+    }
+    const entry: MemoryEntry = { ...current };
       if (Object.prototype.hasOwnProperty.call(patch, 'content')) {
         entry.content = requireContent(patch.content, 'body.content');
       }
@@ -118,13 +115,10 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
           entry.metadata = patch.metadata as any;
         }
       }
-      entry.updated = now;
-      next[idx] = entry;
-      updatedEntry = entry;
-      return next;
-    });
+    entry.updated = now;
+    await repo.update(entry);
     logger.info('PUT /api/memory/:id updated', { id });
-    res.json({ success: true, entry: updatedEntry });
+    res.json({ success: true, entry });
   }));
 
   // DELETE /api/memory/:id
@@ -132,7 +126,7 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const id = req.params.id;
     const ureq = requireReq(req as ReqLike);
     const repo = getMemoryRepo(ureq);
-    const deleted = await repo.deleteById(id);
+    const deleted = await repo.delete(id);
     if (!deleted) {
       throw new NotFoundError('Memory entry not found');
     }
@@ -147,19 +141,9 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
       throw new ValidationError('ids must be a non-empty array of strings', 'MEMORY_IDS_INVALID');
     }
     const unique = new Set<string>(ids.map((v: string) => v.trim()));
-    let removed = 0;
     const ureq = requireReq(req as ReqLike);
     const repo = getMemoryRepo(ureq);
-    await repo.mutate((current) => {
-      const next = current.filter((entry) => {
-        if (unique.has(entry.id)) {
-          removed++;
-          return false;
-        }
-        return true;
-      });
-      return next;
-    });
+    const removed = await repo.deleteMany(Array.from(unique));
     logger.info('DELETE /api/memory batch deleted', { deleted: removed });
     res.json({ success: true, deleted: removed });
   }));
