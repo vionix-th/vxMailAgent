@@ -72,6 +72,27 @@ export class AccountsRepository extends SqliteRepository {
     });
   }
 
+  async updateTokens(id: string, tokens: Account['tokens']): Promise<Account> {
+    this.assertId(id);
+    this.assertTokens(tokens);
+    return this.transaction((db) => {
+      const updatedAt = new Date().toISOString();
+      const result = db
+        .prepare('UPDATE accounts SET tokens_json = @tokens_json, updated_at = @updated_at WHERE id = @id')
+        .run({ id, tokens_json: stringify(tokens), updated_at: updatedAt });
+      if (result.changes === 0) {
+        throw new Error(`AccountsRepository: account '${id}' not found`);
+      }
+      const row = db
+        .prepare('SELECT id, provider, email, signature, tokens_json FROM accounts WHERE id = ?')
+        .get(id);
+      if (!row) {
+        throw new Error(`AccountsRepository: account '${id}' missing after token update`);
+      }
+      return this.mapRow(row);
+    });
+  }
+
   async delete(id: string): Promise<boolean> {
     this.assertId(id);
     return this.transaction((db) => {
@@ -112,5 +133,21 @@ export class AccountsRepository extends SqliteRepository {
       signature: account.signature,
       tokens: account.tokens,
     });
+  }
+
+  private assertTokens(tokens: Account['tokens']): void {
+    if (!tokens || typeof tokens !== 'object') {
+      throw new Error('AccountsRepository: tokens payload required');
+    }
+    const { accessToken, refreshToken, expiry } = tokens as any;
+    if (typeof accessToken !== 'string' || !accessToken.trim()) {
+      throw new Error('AccountsRepository: accessToken required');
+    }
+    if (typeof refreshToken !== 'string' || !refreshToken.trim()) {
+      throw new Error('AccountsRepository: refreshToken required');
+    }
+    if (typeof expiry !== 'string' || !expiry.trim()) {
+      throw new Error('AccountsRepository: expiry required');
+    }
   }
 }

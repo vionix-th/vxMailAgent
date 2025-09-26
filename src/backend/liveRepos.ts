@@ -1,5 +1,4 @@
-import { Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, PromptMessage, EmailEnvelope, ProviderEvent, WorkspaceItem, FetcherLogEntry } from '../shared/types';
-import { createAccount } from '../shared/constructors';
+import { Account, Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, PromptMessage, EmailEnvelope, ProviderEvent, WorkspaceItem, FetcherLogEntry } from '../shared/types';
 import {
   requireReq,
   requireRepos,
@@ -32,8 +31,9 @@ export interface LiveRepos {
   deleteImprint(req: ReqLike, id: string): Promise<boolean>;
   getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]>;
   getConversations(req?: ReqLike): Promise<ConversationThread[]>;
-  setConversations(req: ReqLike, next: ConversationThread[]): Promise<void>;
   appendConversation(req: ReqLike, thread: ConversationThread): Promise<ConversationThread>;
+  updateConversation(req: ReqLike, thread: ConversationThread): Promise<ConversationThread>;
+  deleteConversation(req: ReqLike, id: string): Promise<boolean>;
   /** Append one or more messages to a thread atomically. */
   appendMessagesToConversation(req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null>;
   /** Finalize a thread's status atomically. */
@@ -51,7 +51,7 @@ export interface LiveRepos {
   getProviderRepo(req?: ReqLike): any;
   getTracesRepo(req?: ReqLike): any;
   getAccounts(req?: ReqLike): Promise<any[]>;
-  setAccounts(req: ReqLike, next: any[]): Promise<void>;
+  updateAccountTokens(req: ReqLike, id: string, tokens: Account['tokens']): Promise<Account>;
   getFetcherLog(req?: ReqLike): Promise<any[]>;
   appendFetcherLog(req: ReqLike, entry: FetcherLogEntry): Promise<void>;
   replaceFetcherLog(req: ReqLike, next: FetcherLogEntry[]): Promise<void>;
@@ -126,28 +126,6 @@ export function createLiveRepos(): LiveRepos {
     },
     getOrchestrationLog: get<OrchestrationEvent>((req) => getOrchestrationLogRepo(req)),
     getConversations: get<ConversationThread>((req) => getConversationsRepo(req)),
-    setConversations: async (req: ReqLike, next: ConversationThread[]) => {
-      const repo = requireConversationRepo(req);
-      const existing = await repo.list();
-      const existingById = new Map(existing.map((thread) => [thread.id, thread] as const));
-      const nextIds = new Set<string>();
-
-      for (const thread of next) {
-        ensureTimestamps(thread, 'setConversations');
-        nextIds.add(thread.id);
-        if (existingById.has(thread.id)) {
-          await repo.update(thread);
-        } else {
-          await repo.insert(thread);
-        }
-      }
-
-      for (const thread of existing) {
-        if (!nextIds.has(thread.id)) {
-          await repo.delete(thread.id);
-        }
-      }
-    },
     appendConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
       ensureTimestamps(thread, 'appendConversation');
       const repo = requireConversationRepo(req);
@@ -157,6 +135,20 @@ export function createLiveRepos(): LiveRepos {
         throw new Error(`Failed to append conversation thread: ${thread.id}`);
       }
       return appended;
+    },
+    updateConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
+      ensureTimestamps(thread, 'updateConversation');
+      const repo = requireConversationRepo(req);
+      await repo.update(thread);
+      const updated = await repo.getById(thread.id);
+      if (!updated) {
+        throw new Error(`Failed to reload updated conversation thread: ${thread.id}`);
+      }
+      return updated;
+    },
+    deleteConversation: async (req: ReqLike, id: string): Promise<boolean> => {
+      const repo = requireConversationRepo(req);
+      return await repo.delete(id);
     },
     appendMessagesToConversation: async (req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null> => {
       if (!Array.isArray(messages) || messages.length === 0) {
@@ -181,25 +173,9 @@ export function createLiveRepos(): LiveRepos {
       const rows = await repo.list();
       return [...rows];
     },
-    setAccounts: async (req: ReqLike, next: any[]) => {
+    updateAccountTokens: async (req: ReqLike, id: string, tokens: Account['tokens']) => {
       const repo = getAccountsRepo(requireReq(req));
-      const incoming = Array.isArray(next) ? next : [];
-      const existing = await repo.list();
-      const existingIds = new Set(existing.map((acc) => acc.id));
-
-      for (const raw of incoming) {
-        const account = createAccount(raw as any);
-        if (existingIds.has(account.id)) {
-          await repo.update(account);
-          existingIds.delete(account.id);
-        } else {
-          await repo.insert(account);
-        }
-      }
-
-      for (const leftover of existingIds) {
-        await repo.delete(leftover);
-      }
+      return await repo.updateTokens(id, tokens);
     },
     getFetcherLog: async (req?: ReqLike) => {
       const repo = getFetcherLogRepo(requireReq(req));

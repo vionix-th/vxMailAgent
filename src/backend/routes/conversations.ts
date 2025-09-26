@@ -250,12 +250,9 @@ export default function registerConversationsRoutes(
   app.delete('/api/conversations/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const ureq = requireReq(req as any as ReqLike);
-    const list = await repos.getConversations(ureq);
-    const next = list.filter((c) => c.id !== id);
-    const deleted = list.length - next.length;
-    if (deleted === 0) throw new NotFoundError('Conversation not found');
-    await repos.setConversations(ureq, next);
-    return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
+    const removed = await repos.deleteConversation(ureq, id);
+    if (!removed) throw new NotFoundError('Conversation not found');
+    return res.json({ success: true, deleted: 1, message: 'Deleted 1 conversations' });
   }));
 
   // BULK DELETE conversations by ids array
@@ -263,16 +260,14 @@ export default function registerConversationsRoutes(
     const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];
     if (!ids.length) throw new ValidationError('No ids provided');
     const ureq = requireReq(req as any as ReqLike);
-    const list = await repos.getConversations(ureq);
-    const set = new Set(ids);
-    const next = list.filter((c) => {
-      if (!c.id) {
+    let deleted = 0;
+    for (const conversationId of ids) {
+      if (typeof conversationId !== 'string' || !conversationId.trim()) {
         throw new ValidationError('Conversation id missing during bulk delete', 'CONVERSATION_ID_MISSING');
       }
-      return !set.has(c.id);
-    });
-    const deleted = list.length - next.length;
-    await repos.setConversations(ureq, next);
+      const removed = await repos.deleteConversation(ureq, conversationId);
+      if (removed) deleted += 1;
+    }
     return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
   }));
 }

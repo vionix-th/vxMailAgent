@@ -1,5 +1,5 @@
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfig } from '../../shared/types';
-import { runAgentConversation, ensureAgentThread } from './orchestration-agent';
+import { runAgentConversation, ensureAgentThread, AgentConversationPersistence } from './orchestration-agent';
 import { createToolHandler } from '../toolCalls';
 import { requireReq, requireRepos } from '../utils/repo-access';
 import logger from './logger';
@@ -272,13 +272,33 @@ export class ConversationOrchestrator {
     const scopedHandleTool = (name: string, params: any) =>
       rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: thread.id } } : undefined);
 
+    let activeThread = thread;
+    const persistence: AgentConversationPersistence = {
+      appendMessages: async (messages: PromptMessage[]): Promise<ConversationThread> => {
+        const updated = await repoAppendMessages(userReq.repos, userReq.reqLike, activeThread.id, messages as any[]);
+        if (!updated) {
+          throw new Error(`Agent thread ${activeThread.id} missing during append`);
+        }
+        activeThread = updated;
+        return updated;
+      },
+      finalize: async (status: 'completed' | 'failed'): Promise<ConversationThread> => {
+        await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, activeThread.id, status);
+        const reloaded = await repoGetThreadById(userReq.repos, userReq.reqLike, activeThread.id);
+        if (!reloaded) {
+          throw new Error(`Agent thread ${activeThread.id} missing after finalize`);
+        }
+        activeThread = reloaded;
+        return reloaded;
+      },
+    };
+
     const agentResult = await runAgentConversation(
-      thread,
+      activeThread,
       userContent,
-      await userReq.repos.getConversations(userReq.reqLike),
+      persistence,
       serializeApiConfig(apiConfig),
       gatedToolDescriptors,
-      async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
       scopedHandleTool,
       userReq.traceId,
       { apiKey: apiConfig.apiKey },
@@ -529,13 +549,12 @@ export class ConversationOrchestrator {
       return true;
     }
 
-    // Fetch current conversations snapshot
-    let conversations = await userReq.repos.getConversations(userReq.reqLike);
+    const conversationSnapshot = await userReq.repos.getConversations(userReq.reqLike);
     const nowIso = new Date().toISOString();
     let agentThread: ConversationThread;
     try {
       const ensure = ensureAgentThread(
-        conversations,
+        conversationSnapshot,
         context.thread.id,
         director,
         agent,
@@ -548,9 +567,13 @@ export class ConversationOrchestrator {
         userReq.traceId,
         userReq.reqLike
       );
-      conversations = ensure.conversations;
-      agentThread = ensure.agentThread;
-      await userReq.repos.setConversations(userReq.reqLike, conversations);
+
+      if (ensure.isNew) {
+        agentThread = await userReq.repos.appendConversation(userReq.reqLike, ensure.agentThread);
+      } else {
+        const persisted = await userReq.repos.getConversationById(userReq.reqLike, ensure.agentThread.id);
+        agentThread = persisted ?? ensure.agentThread;
+      }
     } catch (e: any) {
       const toolErrorMsg = {
         role: 'tool',
@@ -782,13 +805,32 @@ export class ConversationOrchestrator {
         throw new ValidationError('apiConfig.apiKey missing for agent conversation');
       }
 
+      let delegatedThread = agentThread;
+      const delegatedPersistence: AgentConversationPersistence = {
+        appendMessages: async (messages: PromptMessage[]): Promise<ConversationThread> => {
+          const updated = await repoAppendMessages(userReq.repos, userReq.reqLike, delegatedThread.id, messages as any[]);
+          if (!updated) {
+            throw new Error(`Agent thread ${delegatedThread.id} missing during delegated append`);
+          }
+          delegatedThread = updated;
+          return updated;
+        },
+        finalize: async (status: 'completed' | 'failed'): Promise<ConversationThread> => {
+          await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, delegatedThread.id, status);
+          const reloaded = await repoGetThreadById(userReq.repos, userReq.reqLike, delegatedThread.id);
+          if (!reloaded) {
+            throw new Error(`Agent thread ${delegatedThread.id} missing after delegated finalize`);
+          }
+          delegatedThread = reloaded;
+          return reloaded;
+        },
+      };
+
       const agentResult = await runAgentConversation(
-        agentThread,
+        delegatedThread,
         args.content || args.title || 'New task assigned',
-        await userReq.repos.getConversations(userReq.reqLike),
         { id: apiConfig.id, name: apiConfig.name, model: apiConfig.model, ...(typeof apiConfig.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiConfig.maxCompletionTokens } : {}) } as any,
         gatedToolDescriptors,
-        async (next: ConversationThread[]) => { await userReq.repos.setConversations(userReq.reqLike, next); },
         scopedHandleTool,
         userReq.traceId,
         { apiKey: apiConfig.apiKey },
@@ -796,36 +838,36 @@ export class ConversationOrchestrator {
           try {
             const t = (ev as any).type;
             if (t === 'request') {
-              await this.providerLogger.logRequest(agentThread.id, (ev as any).payload);
+              await this.providerLogger.logRequest(delegatedThread.id, (ev as any).payload);
             } else if (t === 'response') {
               await this.providerLogger.logResponse(
-                agentThread.id,
+                delegatedThread.id,
                 (ev as any).latencyMs,
                 (ev as any).payload,
                 (ev as any).usage
               );
             } else if (t === 'error') {
               await this.providerLogger.logError(
-                agentThread.id,
+                delegatedThread.id,
                 String((ev as any).error),
                 (ev as any).latencyMs
               );
             } else {
-              logger.warn('Unknown provider event type', { type: t, conversationId: agentThread.id });
+              logger.warn('Unknown provider event type', { type: t, conversationId: delegatedThread.id });
             }
           } catch (e: any) {
             logger.warn('Provider event logging failed', {
               error: e?.message || String(e),
-              conversationId: agentThread.id,
+              conversationId: delegatedThread.id,
             });
           }
         }
       );
 
       if (agentResult.success) {
-        logger.info('Agent conversation completed successfully', { 
-          agentId: agentThread.agentId, 
-          conversationId: agentThread.id,
+        logger.info('Agent conversation completed successfully', {
+          agentId: delegatedThread.agentId,
+          conversationId: delegatedThread.id,
           messageLength: agentResult.finalAssistantMessage?.content?.length || 0
         });
       } else {

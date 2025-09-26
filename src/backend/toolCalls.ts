@@ -1,6 +1,6 @@
 // Tool call handlers for calendar, todo, filesystem, memory
 // Switch to name-based dispatch; validation uses shared TOOL_REGISTRY schemas.
-import { ToolCallResult, MemoryEntry, ApiConfig, ConversationThread, Director, Agent, ToolDescriptor } from '../shared/types';
+import { ToolCallResult, MemoryEntry, ApiConfig, ConversationThread, Director, Agent, ToolDescriptor, PromptMessage } from '../shared/types';
 import { validateAgainstSchema, validateWorkspaceProvenance } from './validation';
 import { TOOL_REGISTRY } from '../shared/tools';
 import { TOOL_EXEC_TIMEOUT_MS } from './config';
@@ -8,10 +8,9 @@ import logger from './services/logger';
 import { WorkspaceService } from './services/workspace-service';
 import { newId } from './utils/id';
 import type { RepoBundle } from './repository/registry';
-import { ensureAgentThread, runAgentConversation } from './services/orchestration-agent';
+import { ensureAgentThread, runAgentConversation, AgentConversationPersistence } from './services/orchestration-agent';
 import { ValidationError, InvalidAgentConfigError } from './services/error-handler';
 import type { WorkspaceItemsRepoInstance } from './repository/wrappers';
-import type { ConversationsRepoInstance } from './repository/wrappers';
 import { serializeApiConfig } from './services/apiConfigSerializer';
 import { resolveAgentToolDescriptors, resolveDirectorToolDescriptors, resolveMandatoryToolDescriptors } from './services/tool-config-service';
 import { MemoryRepository } from './storage/sqlite/repositories/memory';
@@ -21,30 +20,6 @@ interface ToolCallExecutionContext {
   workspace?: {
     conversationId: string;
   };
-}
-
-async function replaceConversations(
-  repo: ConversationsRepoInstance,
-  next: ConversationThread[]
-): Promise<void> {
-  const existing = await repo.list();
-  const existingById = new Map(existing.map((thread) => [thread.id, thread] as const));
-  const nextIds = new Set<string>();
-
-  for (const thread of next) {
-    nextIds.add(thread.id);
-    if (existingById.has(thread.id)) {
-      await repo.update(thread);
-    } else {
-      await repo.insert(thread);
-    }
-  }
-
-  for (const thread of existing) {
-    if (!nextIds.has(thread.id)) {
-      await repo.delete(thread.id);
-    }
-  }
 }
 
 async function getDirectorWithDescriptors(
@@ -69,6 +44,121 @@ async function getAgentWithDescriptors(
     throw new InvalidAgentConfigError('Agent not found', 'AGENT_NOT_FOUND');
   }
   return { agent, descriptors: resolveAgentToolDescriptors(agent) };
+}
+
+async function executeDelegateToAgent(
+  repos: RepoBundle,
+  params: any
+): Promise<ToolCallResult> {
+  const agentId = typeof params?.agentId === 'string' ? params.agentId : '';
+  const input = typeof params?.input === 'string' ? params.input : '';
+  const parentId = typeof params?.conversationId === 'string' ? params.conversationId : '';
+  const directorId = typeof params?.directorId === 'string' ? params.directorId : '';
+  if (!agentId || !input || !parentId || !directorId) {
+    return { kind: 'delegate_to_agent', success: false, result: null, error: 'Missing agentId, input, conversationId, or directorId' };
+  }
+
+  const conversations = [...await repos.conversations.list()];
+  const parent = conversations.find((c: any) => c.id === parentId);
+  if (!parent) return { kind: 'delegate_to_agent', success: false, result: null, error: 'Parent conversation not found' };
+
+  let dirObj: Director;
+  try {
+    ({ director: dirObj } = await getDirectorWithDescriptors(repos, directorId));
+  } catch (error: any) {
+    return { kind: 'delegate_to_agent', success: false, result: null, error: error?.message || 'Director not found' };
+  }
+
+  let agentObj: Agent;
+  let agentToolDescriptors: ToolDescriptor[];
+  try {
+    const agentResult = await getAgentWithDescriptors(repos, agentId);
+    agentObj = agentResult.agent;
+    agentToolDescriptors = agentResult.descriptors;
+  } catch (error: any) {
+    return { kind: 'delegate_to_agent', success: false, result: null, error: error?.message || 'invalid_agent_tool_config' };
+  }
+
+  const prompts = Array.from(await repos.prompts.list());
+  const settings = await repos.settings.load();
+  const apiConfigs = Array.isArray(settings?.apiConfigs)
+    ? settings.apiConfigs as ApiConfig[]
+    : null;
+  if (!apiConfigs) {
+    return { kind: 'delegate_to_agent', success: false, result: null, error: 'settings_not_initialized' };
+  }
+
+  const nowIso = new Date().toISOString();
+  let ensured;
+  try {
+    ensured = ensureAgentThread(
+      conversations,
+      parent.id,
+      dirObj,
+      agentObj,
+      parent.email,
+      prompts,
+      apiConfigs,
+      nowIso,
+      newId,
+      parent.accountId
+    );
+  } catch (e: any) {
+    return { kind: 'delegate_to_agent', success: false, result: null, error: e?.message || String(e) };
+  }
+
+  let agentThread: ConversationThread = ensured.agentThread;
+  if (ensured.isNew) {
+    await repos.conversations.insert(agentThread);
+  } else {
+    const persisted = await repos.conversations.getById(agentThread.id);
+    if (persisted) agentThread = persisted;
+  }
+
+  const apiCfg = apiConfigs.find((c: ApiConfig) => c.id === agentThread.apiConfigId);
+  if (!apiCfg) return { kind: 'delegate_to_agent', success: false, result: null, error: 'API config not found for agent' };
+  if (typeof apiCfg.apiKey !== 'string' || !apiCfg.apiKey.trim()) {
+    return { kind: 'delegate_to_agent', success: false, result: null, error: 'api_key_missing_for_agent' };
+  }
+
+  const rawHandleTool = createToolHandler(repos);
+  const handleTool = (toolName: string, toolParams: any) =>
+    rawHandleTool(
+      toolName,
+      toolParams,
+      toolName.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined,
+    );
+
+  const persistence: AgentConversationPersistence = {
+    appendMessages: async (messages: PromptMessage[]): Promise<ConversationThread> => {
+      const updated = await repos.conversations.appendMessages(agentThread.id, messages);
+      if (!updated) throw new Error(`Agent thread ${agentThread.id} missing during snapshot-free append`);
+      agentThread = updated;
+      return updated;
+    },
+    finalize: async (status: 'completed' | 'failed'): Promise<ConversationThread> => {
+      const updated = await repos.conversations.finalizeStatus(agentThread.id, status, new Date().toISOString());
+      if (!updated) throw new Error(`Agent thread ${agentThread.id} missing after finalize`);
+      agentThread = updated;
+      return updated;
+    },
+  };
+
+  const agentResult = await runAgentConversation(
+    agentThread,
+    input,
+    persistence,
+    serializeApiConfig(apiCfg),
+    agentToolDescriptors,
+    handleTool,
+    undefined,
+    { apiKey: apiCfg.apiKey },
+  );
+
+  if (agentResult.success) {
+    return { kind: 'delegate_to_agent', success: true, result: { content: agentResult.finalAssistantMessage?.content ?? null } };
+  }
+  return { kind: 'delegate_to_agent', success: false, result: null, error: agentResult.error || 'Agent conversation failed' };
 }
 
 export function createToolHandler(repos: RepoBundle) {
@@ -145,89 +235,7 @@ export function createToolHandler(repos: RepoBundle) {
           return { kind: name, success: true, result: { query, matches: snippets } };
         }
         case 'delegate_to_agent': {
-          const agentId = typeof params?.agentId === 'string' ? params.agentId : '';
-          const input = typeof params?.input === 'string' ? params.input : '';
-          const parentId = typeof params?.conversationId === 'string' ? params.conversationId : '';
-          const directorId = typeof params?.directorId === 'string' ? params.directorId : '';
-          if (!agentId || !input || !parentId || !directorId) {
-            return { kind: name, success: false, result: null, error: 'Missing agentId, input, conversationId, or directorId' };
-          }
-          const conversations = [...await repos.conversations.list()];
-          const parent = conversations.find((c: any) => c.id === parentId);
-          if (!parent) return { kind: name, success: false, result: null, error: 'Parent conversation not found' };
-          let dirObj: Director;
-          try {
-            ({ director: dirObj } = await getDirectorWithDescriptors(repos, directorId));
-          } catch (error: any) {
-            return { kind: name, success: false, result: null, error: error?.message || 'Director not found' };
-          }
-          let agentObj: Agent;
-          let agentToolDescriptors: ToolDescriptor[];
-          try {
-            const agentResult = await getAgentWithDescriptors(repos, agentId);
-            agentObj = agentResult.agent;
-            agentToolDescriptors = agentResult.descriptors;
-          } catch (error: any) {
-            return { kind: name, success: false, result: null, error: error?.message || 'invalid_agent_tool_config' };
-          }
-          const prompts = Array.from(await repos.prompts.list());
-          const settings = await repos.settings.load();
-          const apiConfigs = Array.isArray(settings?.apiConfigs)
-            ? settings.apiConfigs as ApiConfig[]
-            : null;
-          if (!apiConfigs) {
-            return { kind: name, success: false, result: null, error: 'settings_not_initialized' };
-          }
-          const nowIso = new Date().toISOString();
-          let ensured: any;
-          try {
-            ensured = ensureAgentThread(
-              conversations,
-              parent.id,
-              dirObj,
-              agentObj,
-              parent.email,
-              prompts,
-              apiConfigs,
-              nowIso,
-              newId,
-              parent.accountId
-            );
-          } catch (e: any) {
-            return { kind: name, success: false, result: null, error: e?.message || String(e) };
-          }
-          await replaceConversations(repos.conversations, ensured.conversations);
-
-          const agentThread = ensured.agentThread;
-          const apiCfg = apiConfigs.find((c: ApiConfig) => c.id === agentThread.apiConfigId);
-          if (!apiCfg) return { kind: name, success: false, result: null, error: 'API config not found for agent' };
-          const gatedToolDescriptors = agentToolDescriptors;
-          const setConversations = async (next: ConversationThread[]) => {
-            await replaceConversations(repos.conversations, next);
-          };
-          const rawHandleTool = createToolHandler(repos);
-          const handleTool = (toolName: string, toolParams: any) =>
-            rawHandleTool(
-              toolName,
-              toolParams,
-              toolName.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined,
-            );
-          const agentResult = await runAgentConversation(
-            agentThread,
-            input,
-            ensured.conversations,
-            serializeApiConfig(apiCfg),
-            gatedToolDescriptors,
-            setConversations as any,
-            handleTool,
-            undefined,
-            { apiKey: apiCfg.apiKey },
-          );
-          if (agentResult.success) {
-            return { kind: name, success: true, result: { content: agentResult.finalAssistantMessage?.content ?? null } };
-          } else {
-            return { kind: name, success: false, result: null, error: agentResult.error || 'Agent conversation failed' };
-          }
+          return await executeDelegateToAgent(repos, params);
         }
         case 'list_agents': {
           const allAgents = await repos.agents.list();

@@ -7,7 +7,6 @@ import { WorkspaceService } from '../services/workspace-service';
 
 export interface WorkspacesRoutesDeps {
   getConversations: (req?: ReqLike) => Promise<ConversationThread[]>;
-  setConversations: (req: ReqLike, next: ConversationThread[]) => Promise<void>;
 }
 
 function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDeps): WorkspaceService {
@@ -23,7 +22,6 @@ function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDep
     ...(deps
       ? {
           getConversations: async () => await deps.getConversations(ureq),
-          setConversations: async (next: ConversationThread[]) => await deps.setConversations(ureq, next),
         }
       : {}),
   });

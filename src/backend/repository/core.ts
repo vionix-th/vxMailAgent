@@ -41,6 +41,7 @@ export interface AccountsRepository {
   getById(id: string): Promise<Account | null>;
   insert(account: Account): Promise<void>;
   update(account: Account): Promise<void>;
+  updateTokens(id: string, tokens: Account['tokens']): Promise<Account>;
   delete(id: string): Promise<boolean>;
 }
 

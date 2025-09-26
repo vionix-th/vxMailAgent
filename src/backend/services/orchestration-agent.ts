@@ -1,4 +1,4 @@
-import { ConversationThread, Agent, Director, Prompt, ApiConfig } from '../../shared/types';
+import { ConversationThread, Agent, Director, Prompt, ApiConfig, PromptMessage } from '../../shared/types';
 import { beginSpan, endSpan } from './logging';
 import logger from './logger';
 import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
@@ -6,15 +6,19 @@ import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import type { ReqLike } from '../interfaces';
 import { InvalidAgentConfigError, ValidationError } from './error-handler';
-import { appendMessageToThread, finalizeThreadStatus } from './conversation-mutations';
 import { ApiConfigView } from './apiConfigSerializer';
 
 export interface AgentConversationResult {
   finalMessages: any[];
   finalAssistantMessage: any;
-  conversations: ConversationThread[];
+  updatedThread: ConversationThread;
   success: boolean;
   error?: string;
+}
+
+export interface AgentConversationPersistence {
+  appendMessages(messages: PromptMessage[]): Promise<ConversationThread>;
+  finalize(status: 'completed' | 'failed'): Promise<ConversationThread>;
 }
 
 /**
@@ -86,10 +90,9 @@ export function ensureAgentThread(
 export async function runAgentConversation(
   agentThread: ConversationThread,
   initialUserMessage: string,
-  conversations: ConversationThread[],
+  persistence: AgentConversationPersistence,
   apiConfig: ApiConfigView,
   toolRegistry: any[],
-  setConversations: (next: ConversationThread[]) => void,
   handleTool: (name: string, params: any) => Promise<any>,
   traceId: string | undefined,
   secrets: { apiKey: string },
@@ -97,19 +100,27 @@ export async function runAgentConversation(
 ): Promise<AgentConversationResult> {
   const LOOP_MAX = 6;
   let stepCount = 0;
-  let currentMessages: any[] = [...agentThread.messages];
-  let updatedConversations = [...conversations];
-  let lastAssistant: any = null;
+  let currentMessages: PromptMessage[] = [...agentThread.messages];
+  let currentThread: ConversationThread = agentThread;
+  let lastAssistant: PromptMessage | null = null;
   const apiKey = typeof secrets.apiKey === 'string' ? secrets.apiKey.trim() : '';
   if (!apiKey) {
     throw new ValidationError('Agent conversation requires provider apiKey', 'API_CONFIG_API_KEY_MISSING');
   }
-    if (initialUserMessage) {
-      const userMsg = { role: 'user', content: initialUserMessage };
-      currentMessages.push(userMsg);
-      updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, userMsg);
-      setConversations(updatedConversations);
-    }
+
+  const appendAndPersist = async (message: PromptMessage): Promise<void> => {
+    currentMessages.push(message);
+    currentThread = await persistence.appendMessages([message]);
+  };
+
+  const finalizeThread = async (status: 'completed' | 'failed'): Promise<void> => {
+    currentThread = await persistence.finalize(status);
+  };
+
+  if (initialUserMessage) {
+    const userMsg: PromptMessage = { id: newId(), role: 'user', content: initialUserMessage };
+    await appendAndPersist(userMsg);
+  }
 
   try {
     while (stepCount < LOOP_MAX) {
@@ -117,13 +128,13 @@ export async function runAgentConversation(
 
       const t0 = Date.now();
       let stepTimeoutId: any;
-  const engineInput = {
-    messages: currentMessages,
-    apiConfig,
-    role: 'agent',
-    toolRegistry,
-    context: { conversationId: agentThread.id, traceId },
-  };
+      const engineInput = {
+        messages: currentMessages,
+        apiConfig,
+        role: 'agent',
+        toolRegistry,
+        context: { conversationId: currentThread.id, traceId },
+      };
       const stepPromise = conversationEngine.run(engineInput as any, { apiKey });
       const stepTimeoutPromise = new Promise<never>((_, reject) => {
         stepTimeoutId = setTimeout(() => reject(new Error(`conversation_step_timeout_${CONVERSATION_STEP_TIMEOUT_MS}ms`)), Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
@@ -138,7 +149,7 @@ export async function runAgentConversation(
         if (result.request) {
           await logProviderEvent({
             id: newId(),
-            conversationId: agentThread.id,
+            conversationId: currentThread.id,
             provider: 'openai',
             type: 'request',
             timestamp: now,
@@ -148,7 +159,7 @@ export async function runAgentConversation(
         const usage = (result.response && (result.response as any).usage) || undefined;
         await logProviderEvent({
           id: newId(),
-          conversationId: agentThread.id,
+          conversationId: currentThread.id,
           provider: 'openai',
           type: 'response',
           timestamp: now,
@@ -162,47 +173,47 @@ export async function runAgentConversation(
         });
       }
 
-      const assistant = result.assistantMessage;
-      lastAssistant = assistant;
-      currentMessages.push(assistant);
-      updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, assistant);
-      setConversations(updatedConversations);
+      const assistant = result.assistantMessage as PromptMessage | undefined;
+      if (assistant) {
+        const assistantMsg = typeof assistant.id === 'string' && assistant.id.trim()
+          ? assistant
+          : { ...assistant, id: newId() };
+        lastAssistant = assistantMsg;
+        await appendAndPersist(assistantMsg);
+      }
+
       if (!result.toolCalls || result.toolCalls.length === 0) {
-        // No more tool calls -> finalize agent thread as completed
-        updatedConversations = finalizeThreadStatus(updatedConversations, agentThread.id, 'completed');
-        setConversations(updatedConversations);
+        await finalizeThread('completed');
         break;
       }
+
       for (const tc of result.toolCalls) {
         let args: any = {};
         try {
           args = tc.arguments ? JSON.parse(tc.arguments) : {};
         } catch (e: any) {
-          const toolErrorMsg = {
+          const toolErrorMsg: PromptMessage = {
+            id: newId(),
             role: 'tool',
             name: tc.name,
             tool_call_id: tc.id,
             content: JSON.stringify({ error: 'invalid tool arguments', details: String(e?.message || e) })
           };
-          currentMessages.push(toolErrorMsg);
-          updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, toolErrorMsg);
-          setConversations(updatedConversations);
+          await appendAndPersist(toolErrorMsg);
           continue;
         }
 
         try {
-          // Find director and agent info for context enrichment
-          const argsWithContext = { 
-            ...args, 
-            conversationId: agentThread.id,
-            // Canonical provenance for workspace item creation
+          const argsWithContext = {
+            ...args,
+            conversationId: currentThread.id,
             provenance: {
-              emailId: agentThread.email.id,
-              conversationId: agentThread.id,
+              emailId: currentThread.email.id,
+              conversationId: currentThread.id,
               createdBy: 'agent' as const,
-              creatorId: agentThread.agentId,
-              toolName: tc.name
-            }
+              creatorId: currentThread.agentId,
+              toolName: tc.name,
+            },
           };
           let toolTimeoutId: any;
           const execPromise = handleTool(tc.name, argsWithContext);
@@ -211,26 +222,23 @@ export async function runAgentConversation(
           });
           const exec = await Promise.race([execPromise, toolTimeoutPromise]);
           clearTimeout(toolTimeoutId);
-          const toolMsg = {
+          const toolMsg: PromptMessage = {
+            id: newId(),
             role: 'tool',
             name: tc.name,
-            tool_call_id: tc.id, 
-            content: JSON.stringify(exec) 
+            tool_call_id: tc.id,
+            content: JSON.stringify(exec),
           };
-          
-          currentMessages.push(toolMsg);
-          updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, toolMsg);
-          setConversations(updatedConversations);
+          await appendAndPersist(toolMsg);
         } catch (e: any) {
-          const toolErrorMsg = {
+          const toolErrorMsg: PromptMessage = {
+            id: newId(),
             role: 'tool',
             name: tc.name,
             tool_call_id: tc.id,
             content: JSON.stringify({ error: 'tool execution failed', details: String(e?.message || e) })
           };
-          currentMessages.push(toolErrorMsg);
-          updatedConversations = appendMessageToThread(updatedConversations, agentThread.id, toolErrorMsg);
-          setConversations(updatedConversations);
+          await appendAndPersist(toolErrorMsg);
         }
       }
     }
@@ -238,25 +246,23 @@ export async function runAgentConversation(
     return {
       finalMessages: currentMessages,
       finalAssistantMessage: lastAssistant,
-      conversations: updatedConversations,
+      updatedThread: currentThread,
       success: true,
     };
   } catch (e: any) {
-    // On error, mark agent thread as failed
     try {
-      updatedConversations = finalizeThreadStatus(updatedConversations, agentThread.id, 'failed');
-      setConversations(updatedConversations);
+      await finalizeThread('failed');
     } catch (e2: any) {
       logger.warn('ORCHESTRATION failed to persist agent failed status', {
         error: e2?.message || String(e2),
-        conversationId: agentThread.id,
+        conversationId: currentThread.id,
       });
     }
     if (logProviderEvent) {
       const now = new Date().toISOString();
       await logProviderEvent({
         id: newId(),
-        conversationId: agentThread.id,
+        conversationId: currentThread.id,
         provider: 'openai',
         type: 'error',
         timestamp: now,
@@ -266,7 +272,7 @@ export async function runAgentConversation(
     return {
       finalMessages: currentMessages,
       finalAssistantMessage: lastAssistant,
-      conversations: updatedConversations,
+      updatedThread: currentThread,
       success: false,
       error: String(e?.message || e),
     };

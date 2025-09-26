@@ -37,6 +37,17 @@ async function purgeWorkspaceItems(repo: WorkspaceItemsRepoInstance): Promise<nu
   return deleted;
 }
 
+async function purgeConversations(repos: LiveRepos, req: ReqLike): Promise<number> {
+  const threads = await repos.getConversations(req);
+  let deleted = 0;
+  for (const thread of threads) {
+    if (await repos.deleteConversation(req, thread.id)) {
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
 export default function registerCleanupRoutes(
   app: express.Express,
   repos: LiveRepos,
@@ -108,8 +119,8 @@ export default function registerCleanupRoutes(
       await fetcherManager.clearFetcherLog();
     }
     
+    const conversationsDeleted = await purgeConversations(repos, ureq);
     await Promise.all([
-      repos.setConversations(ureq, []),
       getOrchestrationLogRepo(ureq).clear(),
       getProviderEventsRepo(ureq).clear(),
       getTracesRepo(ureq).clear(),
@@ -117,7 +128,7 @@ export default function registerCleanupRoutes(
     const deleted = {
       fetcherLogs: fetcherLog.length,
       orchestrationLogs: orchestrationLog.length,
-      conversations: conversations.length,
+      conversations: conversationsDeleted,
       workspaceItems: workspaceDeleted,
       providerEvents: providerEvents.length,
       traces: traces.length,
@@ -147,9 +158,8 @@ export default function registerCleanupRoutes(
   }));
   app.delete('/api/cleanup/conversations', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);
-    const prev = await repos.getConversations(ureq);
-    await repos.setConversations(ureq, []);
-    res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} conversations` });
+    const deleted = await purgeConversations(repos, ureq);
+    res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
   }));
   app.delete('/api/cleanup/workspace-items', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ureq = requireReq(req as ReqLike);

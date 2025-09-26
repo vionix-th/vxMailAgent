@@ -33,7 +33,7 @@ function assertMethods(repo: any, entity: string, methods: readonly string[]): v
 export type AccountsRepoInstance = SqlAccountsRepository & AccountsContract;
 
 export function augmentAccountsRepository(repo: SqlAccountsRepository): AccountsRepoInstance {
-  assertMethods(repo, 'AccountsRepository', ['list', 'getById', 'insert', 'update', 'delete']);
+  assertMethods(repo, 'AccountsRepository', ['list', 'getById', 'insert', 'update', 'updateTokens', 'delete']);
   return repo as AccountsRepoInstance;
 }
 

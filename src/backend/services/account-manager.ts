@@ -152,27 +152,6 @@ export class AccountManager {
     tokens: { accessToken: string; refreshToken: string; expiry: string },
     userReq: ReqLike
   ): Promise<void> {
-    const accounts = await this.repos.getAccounts(userReq);
-    const accountIndex = accounts.findIndex((a: any) => a.id === account.id);
-    
-    if (accountIndex !== -1) {
-      const updatedAccount = {
-        ...accounts[accountIndex],
-        tokens: {
-          ...accounts[accountIndex].tokens,
-          accessToken: tokens.accessToken,
-          expiry: tokens.expiry,
-          refreshToken: tokens.refreshToken
-        }
-      };
-
-      const updatedAccounts = [
-        ...accounts.slice(0, accountIndex),
-        updatedAccount,
-        ...accounts.slice(accountIndex + 1)
-      ];
-
-      await this.repos.setAccounts(userReq, updatedAccounts);
-    }
+    await this.repos.updateAccountTokens(userReq, account.id, tokens);
   }
 }
