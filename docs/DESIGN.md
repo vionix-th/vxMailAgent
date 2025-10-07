@@ -92,7 +92,7 @@ vxMailAgent is a secure, multi-user web application for processing and managing 
 
 #### At Rest Encryption
 - **SQLite page encryption support**: The runtime is compatible with SQLCipher/SQLite SEE. Provide an encrypted SQLite build and key management to enable transparent page encryption.
-- Legacy JSON encryption (AES-256-GCM controlled by `VX_MAILAGENT_KEY`) is deprecated and retained only for backward compatibility tools.
+- Legacy JSON encryption (AES-256-GCM) has been removed; rely on SQLCipher/SEE for at-rest protection.
 - Key rotation: not implemented; rotate by provisioning a new encrypted database and migrating rows offline if required.
 
 #### In-Transit Security
@@ -419,7 +419,7 @@ data/
 - **Implementation**: `better-sqlite3` with WAL mode and serialized connection factory.
   - Per-user repositories expose typed CRUD/mutate operations; transactions are used for atomic mutations.
   - SQL-based pruning enforces retention TTLs (`*_TTL_DAYS`) and per-user caps (`USER_MAX_LOGS_PER_TYPE`).
-- **Encryption**: Link against SQLCipher/SEE to enable page-level encryption. The historical JSON/AES path (`VX_MAILAGENT_KEY`) is retained solely for compatibility tooling.
+- **Encryption**: Link against SQLCipher/SEE to enable page-level encryption. All historical JSON/AES hooks have been removed, so no application-managed encryption key is required.
 - **Conversations and Provider Events**
   - `conversation_threads` + `conversation_messages` hold canonical transcripts (OpenAI-aligned `messages[]` plus lifecycle).
   - Provider requests/responses/errors persist in the `provider_events` table with timestamps, latency, token usage, and redacted payloads.
@@ -524,7 +524,6 @@ The following are system defaults and are configurable via environment variables
 
 - Encryption at rest
   - SQLCipher/SEE recommended for production. Provide key management out-of-band and configure the SQLite runtime accordingly.
-  - `VX_MAILAGENT_KEY` remains for legacy JSON exports; new deployments should prefer encrypted SQLite instead of relying on this flag.
 
 Notes:
 - All values above are per-user where applicable (logs, conversations). There are no global data caps beyond the user registry.

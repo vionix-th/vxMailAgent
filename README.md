@@ -65,7 +65,6 @@ See `docs/DEVELOPER.md` for usage patterns and options.
 
 ## Environment Variables (Backend)
 
-- `VX_MAILAGENT_KEY` — legacy JSON encryption flag. New deployments should favor encrypted SQLite (SQLCipher/SEE) instead.
 - `CORS_ORIGIN` — **required** in production. Set to the exact frontend origin (e.g., `https://mail.example.com`). For local dev use `http://localhost:3000`.
 - Google OAuth2 (Provider accounts: Gmail/Calendar/Tasks)
   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
@@ -125,7 +124,7 @@ Frontend (`src/frontend`)
 - **Storage**: SQLite databases under `data/users/{uid}/user.sqlite3` (per-user isolation). Tables include accounts, prompts, conversations, workspace items, fetcher/orchestration/provider/traces logs, etc.
 - **Global Data Restriction**: Only `data/system.sqlite3` contains global application data (user registry for login). This file is NOT exposed via UI or APIs.
 - **User Context Required**: All data access requires authenticated user context. No global fallbacks exist to prevent data leakage between users.
-- **Encryption**: Use SQLCipher/SEE for encrypted deployments. `VX_MAILAGENT_KEY` remains for legacy JSON tooling only.
+- **Encryption**: Use SQLCipher/SEE for encrypted deployments.
 - **Secrets**: never commit `.env` or tokens. Use the example template and export env vars locally.
 
 ## OAuth Flow (Gmail/Outlook)
@@ -223,7 +222,7 @@ See `docs/DEVELOPER.md` for details.
   - `http://localhost:3001/api/accounts/oauth/google/callback`
   - `http://localhost:3001/api/accounts/oauth/outlook/callback`
 - Data path issues: set `VX_MAILAGENT_DATA_DIR` to an absolute path and ensure the process has write permissions
-- Encrypted deployments: ensure your SQLCipher/SEE build loads before starting the backend. `VX_MAILAGENT_KEY` remains only for legacy JSON tooling.
+- Encrypted deployments: ensure your SQLCipher/SEE build loads before starting the backend; no additional application-managed key is required.
 - Proxy issues: frontend requests to `/api` should reach the backend at `http://localhost:3001` (see `src/frontend/vite.config.ts`)
 
 ## Contributing

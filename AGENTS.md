@@ -13,7 +13,7 @@ Authoritative guide for how vxMailAgent’s LLM agents behave, interact, and are
 
 Progress and structure conventions:
 - Preambles: Before running tools, briefly state the immediate next action (1–2 sentences).
-- Plans: Use the `update_plan` tool for multi‑step or ambiguous tasks; keep steps minimal and logically ordered with one step in progress.
+- Plans: Use a todo list for multi‑step or ambiguous tasks; keep steps minimal and logically ordered with one step in progress.
 - Updates: For long tasks, provide short progress updates as milestones complete.
 - Final Answers: Use clear headers and bullets where it improves scanability; keep formatting minimal and consistent. See “Response Structure” below.
 

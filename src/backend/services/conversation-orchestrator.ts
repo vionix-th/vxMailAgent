@@ -1,4 +1,4 @@
-import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfig } from '../../shared/types';
+import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfig, AgentThread } from '../../shared/types';
 import { runAgentConversation, ensureAgentThread, AgentConversationPersistence } from './orchestration-agent';
 import { createToolHandler } from '../toolCalls';
 import { requireReq, requireRepos } from '../utils/repo-access';
@@ -241,26 +241,21 @@ export class ConversationOrchestrator {
       throw new Error('API config not found');
     }
 
-    if (thread.kind !== 'agent') {
-      throw new InvalidAgentConfigError(
-        `runAgentAssistant requires agent thread; received ${thread.kind}`,
-        'AGENT_THREAD_KIND_MISMATCH'
-      );
-    }
+    const agentThread = this.requireAgentThread(thread, 'runAgentAssistant');
 
     // Equal tool exposure for agent, except spawning further agents (disabled)
     // Load agent allowlist and apply role + allowlist gating
     const agents = await userReq.repos.getAgents(userReq.reqLike);
-    const agent = this.requireAgentById(thread.agentId, agents, `Agent ${thread.agentId} not found for thread ${thread.id}`);
+    const agent = this.requireAgentById(agentThread.agentId, agents, `Agent ${agentThread.agentId} not found for thread ${agentThread.id}`);
     const gatedToolDescriptors = resolveAgentToolDescriptors(agent);
 
     let userContent: string;
     try {
-      userContent = extractLastUserContent(thread.messages as any);
+      userContent = extractLastUserContent(agentThread.messages as any);
     } catch (error: any) {
       if (error instanceof ValidationError) {
         throw new ValidationError(
-          `Agent thread ${thread.id}: ${error.message}`,
+          `Agent thread ${agentThread.id}: ${error.message}`,
           error.code,
           error.statusCode
         );
@@ -270,26 +265,28 @@ export class ConversationOrchestrator {
 
     const rawHandleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)));
     const scopedHandleTool = (name: string, params: any) =>
-      rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: thread.id } } : undefined);
+      rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined);
 
-    let activeThread = thread;
+    let activeThread: AgentThread = agentThread;
     const persistence: AgentConversationPersistence = {
-      appendMessages: async (messages: PromptMessage[]): Promise<ConversationThread> => {
+      appendMessages: async (messages: PromptMessage[]) => {
         const updated = await repoAppendMessages(userReq.repos, userReq.reqLike, activeThread.id, messages as any[]);
         if (!updated) {
           throw new Error(`Agent thread ${activeThread.id} missing during append`);
         }
-        activeThread = updated;
-        return updated;
+        const ensured = this.requireAgentThread(updated, 'runAgentAssistant.appendMessages');
+        activeThread = ensured;
+        return ensured;
       },
-      finalize: async (status: 'completed' | 'failed'): Promise<ConversationThread> => {
+      finalize: async (status: 'completed' | 'failed') => {
         await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, activeThread.id, status);
         const reloaded = await repoGetThreadById(userReq.repos, userReq.reqLike, activeThread.id);
         if (!reloaded) {
           throw new Error(`Agent thread ${activeThread.id} missing after finalize`);
         }
-        activeThread = reloaded;
-        return reloaded;
+        const ensured = this.requireAgentThread(reloaded, 'runAgentAssistant.finalize');
+        activeThread = ensured;
+        return ensured;
       },
     };
 
@@ -305,22 +302,22 @@ export class ConversationOrchestrator {
       async (ev: ProviderEvent) => {
         const t = (ev as any).type;
         if (t === 'request') {
-          await this.providerLogger.logRequest(thread.id, (ev as any).payload);
+          await this.providerLogger.logRequest(activeThread.id, (ev as any).payload);
         } else if (t === 'response') {
           await this.providerLogger.logResponse(
-            thread.id,
+            activeThread.id,
             (ev as any).latencyMs,
             (ev as any).payload,
             (ev as any).usage
           );
         } else if (t === 'error') {
           await this.providerLogger.logError(
-            thread.id,
+            activeThread.id,
             String((ev as any).error),
             (ev as any).latencyMs
           );
         } else {
-          logger.warn('Unknown provider event type', { type: t, conversationId: thread.id });
+          logger.warn('Unknown provider event type', { type: t, conversationId: activeThread.id });
         }
       }
     );
@@ -392,6 +389,16 @@ export class ConversationOrchestrator {
       throw new ValidationError('Director configuration missing for conversation context', 'DIRECTOR_CONFIG_MISSING');
     }
     return context.director;
+  }
+
+  private requireAgentThread(thread: ConversationThread, context: string): AgentThread {
+    if (thread.kind !== 'agent') {
+      throw new InvalidAgentConfigError(
+        `${context} requires agent thread; received ${thread.kind}`,
+        'AGENT_THREAD_KIND_MISMATCH'
+      );
+    }
+    return thread;
   }
 
   private requireAgentForContext(context: ConversationContext): Agent {
@@ -785,51 +792,49 @@ export class ConversationOrchestrator {
         return;
       }
 
-      if (agentThread.kind !== 'agent') {
-        throw new InvalidAgentConfigError(
-          `executeAgentConversation requires agent thread; received ${agentThread.kind}`,
-          'AGENT_THREAD_KIND_MISMATCH'
-        );
-      }
+      const verifiedAgentThread = this.requireAgentThread(agentThread, 'executeAgentConversation');
 
       // Equal tool exposure for agent, except spawning further agents (disabled)
       const agents = await userReq.repos.getAgents(userReq.reqLike);
-      const srcAgent = this.requireAgentById(agentThread.agentId, agents, `Agent ${agentThread.agentId} not found for agent conversation`);
+      const srcAgent = this.requireAgentById(verifiedAgentThread.agentId, agents, `Agent ${verifiedAgentThread.agentId} not found for agent conversation`);
       const gatedToolDescriptors = resolveAgentToolDescriptors(srcAgent);
 
       const rawHandleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)));
       const scopedHandleTool = (name: string, params: any) =>
-        rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined);
+        rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: verifiedAgentThread.id } } : undefined);
 
       if (typeof apiConfig.apiKey !== 'string' || !apiConfig.apiKey.trim()) {
         throw new ValidationError('apiConfig.apiKey missing for agent conversation');
       }
 
-      let delegatedThread = agentThread;
+      let delegatedThread: AgentThread = verifiedAgentThread;
       const delegatedPersistence: AgentConversationPersistence = {
-        appendMessages: async (messages: PromptMessage[]): Promise<ConversationThread> => {
+        appendMessages: async (messages: PromptMessage[]) => {
           const updated = await repoAppendMessages(userReq.repos, userReq.reqLike, delegatedThread.id, messages as any[]);
           if (!updated) {
             throw new Error(`Agent thread ${delegatedThread.id} missing during delegated append`);
           }
-          delegatedThread = updated;
-          return updated;
+          const ensured = this.requireAgentThread(updated, 'executeAgentConversation.appendMessages');
+          delegatedThread = ensured;
+          return ensured;
         },
-        finalize: async (status: 'completed' | 'failed'): Promise<ConversationThread> => {
+        finalize: async (status: 'completed' | 'failed') => {
           await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, delegatedThread.id, status);
           const reloaded = await repoGetThreadById(userReq.repos, userReq.reqLike, delegatedThread.id);
           if (!reloaded) {
             throw new Error(`Agent thread ${delegatedThread.id} missing after delegated finalize`);
           }
-          delegatedThread = reloaded;
-          return reloaded;
+          const ensured = this.requireAgentThread(reloaded, 'executeAgentConversation.finalize');
+          delegatedThread = ensured;
+          return ensured;
         },
       };
 
       const agentResult = await runAgentConversation(
         delegatedThread,
         args.content || args.title || 'New task assigned',
-        { id: apiConfig.id, name: apiConfig.name, model: apiConfig.model, ...(typeof apiConfig.maxCompletionTokens === 'number' ? { maxCompletionTokens: apiConfig.maxCompletionTokens } : {}) } as any,
+        delegatedPersistence,
+        serializeApiConfig(apiConfig),
         gatedToolDescriptors,
         scopedHandleTool,
         userReq.traceId,

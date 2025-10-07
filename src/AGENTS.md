@@ -76,5 +76,5 @@
 - Gates: lint + typecheck + tests must pass. No silent defaults for required config; fail fast with clear errors.
 
 ## Security & Configuration
-- Encryption key: export `VX_MAILAGENT_KEY` (64‑char hex) for at‑rest encryption.
+- At-rest encryption relies on SQLCipher/SEE builds; no application-level key is consumed.
 - Do not log secrets. Validate external inputs at boundaries. Follow `docs/DESIGN.md` principles and root `AGENTS.md` coding discipline.

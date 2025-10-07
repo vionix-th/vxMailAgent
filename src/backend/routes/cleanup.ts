@@ -101,12 +101,10 @@ export default function registerCleanupRoutes(
     const fetcherLog = fetcherManager ? await fetcherManager.getFetcherLog() : [];
     
     const [
-      conversations,
       orchestrationLog,
       providerEvents,
       traces,
     ] = await Promise.all([
-      repos.getConversations(ureq),
       repos.getOrchestrationLog(ureq),
       getProviderEventsRepo(ureq).list(),
       getTracesRepo(ureq).list(),

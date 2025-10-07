@@ -44,7 +44,6 @@ function getOptionalIntEnv(key: string, fallback: number): number {
 }
 
 // VX-only configuration
-export const VX_MAILAGENT_KEY = requireEnv('VX_MAILAGENT_KEY');
 export const PORT: number = getOptionalIntEnv('PORT', 3001);
 export const HOST = getOptionalEnv('HOST', '0.0.0.0');
 export const CORS_ORIGIN = getOptionalEnv('CORS_ORIGIN', '*');
@@ -151,7 +150,6 @@ export function getGoogleLoginOAuthConfigOrPrimary(): OAuthCfg {
 
 export function envSummary() {
   return {
-    VX_MAILAGENT_KEY_PRESENT: VX_MAILAGENT_KEY.length === 64,
     PORT,
     CORS_ORIGIN,
     GOOGLE: {
@@ -193,12 +191,6 @@ export function envSummary() {
 }
 
 export function assertSecureConfig() {
-  if (!/^[0-9a-fA-F]{64}$/.test(VX_MAILAGENT_KEY)) {
-    const msg = 'VX_MAILAGENT_KEY must be a 64-character hex string.';
-    logger.error(msg, { envVar: 'VX_MAILAGENT_KEY' });
-    throw new Error(msg);
-  }
-
   if (JWT_SECRET.length < 32) {
     const msg = 'JWT_SECRET must be at least 32 characters.';
     logger.error(msg, { envVar: 'JWT_SECRET' });
