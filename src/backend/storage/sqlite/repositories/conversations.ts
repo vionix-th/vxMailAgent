@@ -123,14 +123,16 @@ export class ConversationsRepository extends SqliteRepository {
     });
   }
 
-  async appendMessages(threadId: string, messages: readonly PromptMessage[]): Promise<ConversationThread | null> {
+  async appendMessages(threadId: string, messages: readonly PromptMessage[]): Promise<ConversationThread> {
     this.assertId(threadId);
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new Error('ConversationsRepository: messages array required');
     }
     return this.transaction((db) => {
       const current = this.loadOne(db, threadId);
-      if (!current) return null;
+      if (!current) {
+        throw new Error(`ConversationsRepository: thread '${threadId}' not found during append`);
+      }
       const now = new Date().toISOString();
       const next: ConversationThread = {
         ...current,
@@ -181,7 +183,7 @@ export class ConversationsRepository extends SqliteRepository {
       messageMap.set(row.thread_id, list);
     }
     const threads = db.prepare(
-      'SELECT id, kind, parent_id, director_id, agent_id, account_id, email_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json FROM conversation_threads'
+      'SELECT id, kind, parent_id, director_id, agent_id, account_id, email_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json FROM conversation_threads ORDER BY last_active_at DESC, id ASC'
     ).all() as any[];
     return threads.map((row: any) => mapThread(row, messageMap));
   }

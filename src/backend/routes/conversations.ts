@@ -4,7 +4,7 @@ import { requireReq } from '../utils/repo-access';
 import type { ReqLike } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
-import { repoAppendMessage } from '../services/conversation-mutations';
+import { repoAppendMessage, assertThreadTimestamps } from '../services/conversation-mutations';
 import { newId } from '../utils/id';
 import logger from '../services/logger';
 import { ConversationOrchestrator, createUserRequest } from '../services/conversation-orchestrator';
@@ -25,25 +25,9 @@ async function validateConversationRequest(
   const thread = conversations.find((c) => c.id === id);
   if (!thread) throw new NotFoundError('Conversation not found');
 
-  ensureThreadTimestamps(thread, 'validateConversationRequest');
+  assertThreadTimestamps(thread, 'validateConversationRequest');
 
   return { thread };
-}
-
-function ensureThreadTimestamps(thread: ConversationThread, context: string): void {
-  const { startedAt, lastActiveAt } = thread as ConversationThread & { startedAt?: string | null; lastActiveAt?: string | null };
-  if (typeof startedAt !== 'string' || !startedAt.trim()) {
-    throw new ValidationError(`${context}: conversation ${thread.id} missing startedAt`, 'CONVERSATION_STARTED_AT_MISSING');
-  }
-  if (Number.isNaN(Date.parse(startedAt))) {
-    throw new ValidationError(`${context}: conversation ${thread.id} has invalid startedAt`, 'CONVERSATION_STARTED_AT_INVALID');
-  }
-  if (typeof lastActiveAt !== 'string' || !lastActiveAt.trim()) {
-    throw new ValidationError(`${context}: conversation ${thread.id} missing lastActiveAt`, 'CONVERSATION_LAST_ACTIVE_MISSING');
-  }
-  if (Number.isNaN(Date.parse(lastActiveAt))) {
-    throw new ValidationError(`${context}: conversation ${thread.id} has invalid lastActiveAt`, 'CONVERSATION_LAST_ACTIVE_INVALID');
-  }
 }
 
 // Agent processing moved under ConversationOrchestrator.runAgentAssistant
@@ -77,7 +61,7 @@ export default function registerConversationsRoutes(
     const offset = hasOffset ? Number(rawOffset) : 0;
 
     const list = await repos.getConversations(req as any as ReqLike);
-    list.forEach((thread) => ensureThreadTimestamps(thread, 'GET /api/conversations'));
+    list.forEach((thread) => assertThreadTimestamps(thread, 'GET /api/conversations'));
     const paged = list.slice(offset, offset + limit);
     return res.json({ total: list.length, items: paged });
   }));
@@ -90,7 +74,7 @@ export default function registerConversationsRoutes(
     if (!conversation) {
       throw new NotFoundError(`Conversation ${conversationId} not found`);
     }
-    ensureThreadTimestamps(conversation, 'GET /api/conversations/:id/details');
+    assertThreadTimestamps(conversation, 'GET /api/conversations/:id/details');
     const [orchestrationEvents, providerEvents, workspaceItems] = await Promise.all([
       repos.getOrchestrationLogByConversation(reqLike, conversationId),
       repos.getProviderEventsByConversation(reqLike, conversationId),
@@ -163,7 +147,7 @@ export default function registerConversationsRoutes(
     if (!threads.length) throw new NotFoundError('Conversation not found');
     // Pick the most recent by lastActiveAt (strict)
     const decorated = threads.map((thread) => {
-      ensureThreadTimestamps(thread, 'GET /api/conversations/byDirectorEmail');
+      assertThreadTimestamps(thread, 'GET /api/conversations/byDirectorEmail');
       const lastActiveAt = (thread as any).lastActiveAt as string;
       const ts = Date.parse(lastActiveAt);
       return { thread, ts };

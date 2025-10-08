@@ -132,7 +132,6 @@ async function executeDelegateToAgent(
   const persistence: AgentConversationPersistence = {
     appendMessages: async (messages: PromptMessage[]): Promise<ConversationThread> => {
       const updated = await repos.conversations.appendMessages(agentThread.id, messages);
-      if (!updated) throw new Error(`Agent thread ${agentThread.id} missing during snapshot-free append`);
       agentThread = updated;
       return updated;
     },

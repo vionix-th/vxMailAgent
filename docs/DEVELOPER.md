@@ -194,7 +194,6 @@ This section is the operational contract the backend must uphold. It is used as 
 
 #### Conversation mutations (canonical)
 - All thread message appends and status changes MUST use helpers in `src/backend/services/conversation-mutations.ts`.
-- In-memory helpers (pure): `appendMessageToThread()`, `appendMessagesToThread()`, `finalizeThreadStatus()`.
 - Repo-backed helpers (persisted): `repoAppendMessage()`, `repoAppendMessages()`, `repoFinalizeThreadStatus()`, `repoGetThreadById()`.
 - Do not mutate `messages`, `lastActiveAt`, or `endedAt` directly; use the helpers to preserve invariants and timestamps consistently.
  - ESLint enforces this rule for backend sources via flat config `src/backend/eslint.config.cjs` using `no-restricted-syntax` selectors; CI runs lint in `.github/workflows/tests.yml`.

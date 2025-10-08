@@ -108,7 +108,7 @@ export interface ConversationsRepository {
   getById(id: string): Promise<ConversationThread | null>;
   insert(thread: ConversationThread): Promise<void>;
   update(thread: ConversationThread): Promise<void>;
-  appendMessages(threadId: string, messages: readonly PromptMessage[]): Promise<ConversationThread | null>;
+  appendMessages(threadId: string, messages: readonly PromptMessage[]): Promise<ConversationThread>;
   finalizeStatus(threadId: string, status: 'completed' | 'failed', timestamp: string): Promise<ConversationThread | null>;
   delete(id: string): Promise<boolean>;
 }

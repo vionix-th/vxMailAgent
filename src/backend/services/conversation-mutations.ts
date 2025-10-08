@@ -3,7 +3,7 @@ import type { ReqLike } from '../interfaces';
 import type { LiveRepos } from '../liveRepos';
 import { ValidationError } from './error-handler';
 
-function assertTimestampInvariant(thread: ConversationThread, context: string): void {
+export function assertThreadTimestamps(thread: ConversationThread, context: string): void {
   const { startedAt, lastActiveAt } = thread as ConversationThread & { startedAt?: string | null; lastActiveAt?: string | null };
   if (typeof startedAt !== 'string' || !startedAt.trim()) {
     throw new ValidationError(`${context}: startedAt missing`, 'CONVERSATION_STARTED_AT_MISSING');
@@ -20,67 +20,6 @@ function assertTimestampInvariant(thread: ConversationThread, context: string): 
 }
 
 /**
- * In-memory conversation thread mutations (pure functions over arrays)
- */
-export function appendMessageToThread(
-  conversations: ConversationThread[],
-  threadId: string,
-  message: PromptMessage | any,
-  nowIso?: string,
-): ConversationThread[] {
-  const idx = conversations.findIndex((c) => c.id === threadId);
-  if (idx === -1) return conversations;
-  assertTimestampInvariant(conversations[idx], 'appendMessageToThread');
-  const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
-  const updated: ConversationThread = {
-    ...conversations[idx],
-    lastActiveAt: now,
-    messages: [...conversations[idx].messages, message],
-  } as ConversationThread;
-  return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
-}
-
-export function appendMessagesToThread(
-  conversations: ConversationThread[],
-  threadId: string,
-  messages: Array<PromptMessage | any>,
-  nowIso?: string,
-): ConversationThread[] {
-  const idx = conversations.findIndex((c) => c.id === threadId);
-  if (idx === -1) return conversations;
-  assertTimestampInvariant(conversations[idx], 'appendMessagesToThread');
-  if (!Array.isArray(messages) || messages.length === 0) {
-    throw new ValidationError('appendMessagesToThread requires non-empty messages array', 'CONVERSATION_APPEND_EMPTY');
-  }
-  const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
-  const updated: ConversationThread = {
-    ...conversations[idx],
-    lastActiveAt: now,
-    messages: [...conversations[idx].messages, ...messages],
-  } as ConversationThread;
-  return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
-}
-
-export function finalizeThreadStatus(
-  conversations: ConversationThread[],
-  threadId: string,
-  status: 'completed' | 'failed',
-  nowIso?: string,
-): ConversationThread[] {
-  const idx = conversations.findIndex((c) => c.id === threadId);
-  if (idx === -1) return conversations;
-  assertTimestampInvariant(conversations[idx], 'finalizeThreadStatus');
-  const now = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
-  const updated: ConversationThread = {
-    ...conversations[idx],
-    status,
-    endedAt: now,
-    lastActiveAt: now,
-  } as ConversationThread;
-  return [...conversations.slice(0, idx), updated, ...conversations.slice(idx + 1)];
-}
-
-/**
  * Repository-backed helpers (perform read-modify-write against repos)
  */
 export async function repoAppendMessage(
@@ -88,7 +27,7 @@ export async function repoAppendMessage(
   req: ReqLike,
   threadId: string,
   message: PromptMessage,
-): Promise<ConversationThread | null> {
+): Promise<ConversationThread> {
   return repos.appendMessagesToConversation(req, threadId, [message]);
 }
 
@@ -97,7 +36,7 @@ export async function repoAppendMessages(
   req: ReqLike,
   threadId: string,
   messages: PromptMessage[] | any[],
-): Promise<ConversationThread | null> {
+): Promise<ConversationThread> {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new ValidationError('appendMessagesToConversation requires non-empty messages array', 'CONVERSATION_APPEND_EMPTY');
   }

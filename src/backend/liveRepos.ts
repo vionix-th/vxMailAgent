@@ -17,7 +17,8 @@ import {
   getEmailsRepo
 } from './utils/repo-access';
 import { loadSettings } from './services/settings';
-import { ValidationError } from './services/error-handler';
+import { ValidationError, NotFoundError } from './services/error-handler';
+import { assertThreadTimestamps } from './services/conversation-mutations';
 import type { ReqLike } from './utils/repo-access';
 
 export interface LiveRepos {
@@ -35,7 +36,7 @@ export interface LiveRepos {
   updateConversation(req: ReqLike, thread: ConversationThread): Promise<ConversationThread>;
   deleteConversation(req: ReqLike, id: string): Promise<boolean>;
   /** Append one or more messages to a thread atomically. */
-  appendMessagesToConversation(req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null>;
+  appendMessagesToConversation(req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread>;
   /** Finalize a thread's status atomically. */
   finalizeThreadStatusAtomic(req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null>;
   getEmails(req?: ReqLike): Promise<EmailEnvelope[]>;
@@ -61,21 +62,6 @@ export interface LiveRepos {
 }
 
 export function createLiveRepos(): LiveRepos {
-  const ensureTimestamps = (thread: ConversationThread, context: string): void => {
-    const { id, startedAt, lastActiveAt } = thread as ConversationThread & { startedAt?: string | null; lastActiveAt?: string | null };
-    if (typeof startedAt !== 'string' || !startedAt.trim()) {
-      throw new ValidationError(`${context}: startedAt missing for conversation ${id}`, 'CONVERSATION_STARTED_AT_MISSING');
-    }
-    if (typeof lastActiveAt !== 'string' || !lastActiveAt.trim()) {
-      throw new ValidationError(`${context}: lastActiveAt missing for conversation ${id}`, 'CONVERSATION_LAST_ACTIVE_MISSING');
-    }
-    if (Number.isNaN(Date.parse(startedAt))) {
-      throw new ValidationError(`${context}: startedAt invalid for conversation ${id}`, 'CONVERSATION_STARTED_AT_INVALID');
-    }
-    if (Number.isNaN(Date.parse(lastActiveAt))) {
-      throw new ValidationError(`${context}: lastActiveAt invalid for conversation ${id}`, 'CONVERSATION_LAST_ACTIVE_INVALID');
-    }
-  };
   const get = <T>(fn: (req: ReqLike) => any) => async (req?: ReqLike): Promise<T[]> => {
     const repo = fn(requireReq(req));
     if (typeof repo.list === 'function') {
@@ -127,7 +113,7 @@ export function createLiveRepos(): LiveRepos {
     getOrchestrationLog: get<OrchestrationEvent>((req) => getOrchestrationLogRepo(req)),
     getConversations: get<ConversationThread>((req) => getConversationsRepo(req)),
     appendConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
-      ensureTimestamps(thread, 'appendConversation');
+      assertThreadTimestamps(thread, 'appendConversation');
       const repo = requireConversationRepo(req);
       await repo.insert(thread);
       const appended = await repo.getById(thread.id);
@@ -137,7 +123,7 @@ export function createLiveRepos(): LiveRepos {
       return appended;
     },
     updateConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
-      ensureTimestamps(thread, 'updateConversation');
+      assertThreadTimestamps(thread, 'updateConversation');
       const repo = requireConversationRepo(req);
       await repo.update(thread);
       const updated = await repo.getById(thread.id);
@@ -150,13 +136,21 @@ export function createLiveRepos(): LiveRepos {
       const repo = requireConversationRepo(req);
       return await repo.delete(id);
     },
-    appendMessagesToConversation: async (req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread | null> => {
+    appendMessagesToConversation: async (req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread> => {
       if (!Array.isArray(messages) || messages.length === 0) {
         throw new ValidationError('appendMessagesToConversation requires non-empty messages array', 'CONVERSATION_APPEND_EMPTY');
       }
       const repo = requireConversationRepo(req);
-      const updated = await repo.appendMessages(threadId, messages as PromptMessage[]);
-      return updated;
+      try {
+        const updated = await repo.appendMessages(threadId, messages as PromptMessage[]);
+        assertThreadTimestamps(updated, 'appendMessagesToConversation');
+        return updated;
+      } catch (error: any) {
+        if (error && typeof error.message === 'string' && error.message.includes('not found')) {
+          throw new NotFoundError(`Conversation ${threadId} not found during append`, 'CONVERSATION_NOT_FOUND');
+        }
+        throw error;
+      }
     },
     finalizeThreadStatusAtomic: async (req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null> => {
       const repo = requireConversationRepo(req);

@@ -35,25 +35,25 @@ module.exports = [
           selector:
             "CallExpression[callee.property.name='push'][callee.object.property.name='messages']",
           message:
-            'Do not push directly to thread.messages; use appendMessageToThread/repoAppendMessage from services/conversation-mutations.ts',
+            'Do not push directly to thread.messages; use repoAppendMessage/repoAppendMessages from services/conversation-mutations.ts',
         },
         {
           selector:
             "CallExpression[callee.property.name='push'] > MemberExpression.callee[object.type='MemberExpression'][object.computed=true][object.property.value='messages']",
           message:
-            "Do not push directly to thread['messages']; use conversation-mutations helpers.",
+            "Do not push directly to thread['messages']; use repoAppendMessage/repoAppendMessages from services/conversation-mutations.ts.",
         },
         {
           selector:
             "AssignmentExpression[left.type='MemberExpression'][left.property.name=/^(messages|lastActiveAt|endedAt)$/]",
           message:
-            'Do not assign to messages/lastActiveAt/endedAt on threads; use conversation-mutations helpers.',
+            'Do not assign to messages/lastActiveAt/endedAt on threads; use repoAppendMessage/repoAppendMessages from services/conversation-mutations.ts.',
         },
         {
           selector:
             "AssignmentExpression[left.type='MemberExpression'][left.computed=true][left.property.value=/^(messages|lastActiveAt|endedAt)$/]",
           message:
-            "Do not assign to thread['messages|lastActiveAt|endedAt']; use conversation-mutations helpers.",
+            "Do not assign to thread['messages|lastActiveAt|endedAt']; use repoAppendMessage/repoAppendMessages from services/conversation-mutations.ts.",
         },
         {
           selector:
