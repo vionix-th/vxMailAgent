@@ -118,7 +118,5 @@ export async function repoGetThreadById(
   req: ReqLike,
   threadId: string,
 ): Promise<ConversationThread | null> {
-  const conversations = await repos.getConversations(req);
-  const updatedThread = conversations.find((c: ConversationThread) => c.id === threadId) || null;
-  return updatedThread;
+  return repos.getConversationById(req, threadId);
 }
