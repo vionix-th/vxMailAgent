@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  Box, Typography, Paper, Stack, IconButton, Tooltip, Chip, Alert, 
-  Button, Card, CardContent, Tab, Tabs, FormControl, InputLabel, 
-  Select, MenuItem, TextField, Grid, Divider
+  Box, Typography, Paper, Stack, Chip, Button, Card, CardContent, Tabs, Tab, Grid
 } from '@mui/material';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import EmailIcon from '@mui/icons-material/Email';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import MessageIcon from '@mui/icons-material/Message';
+import CloudSyncIcon from '@mui/icons-material/CloudSync';
+import ForumIcon from '@mui/icons-material/Forum';
+import { useTranslation } from 'react-i18next';
 import { EmailEnvelope } from './types/shared';
 import EmailProcessingDashboard from './EmailProcessingDashboard';
 import ConversationInspector from './ConversationInspector';
 import ThreadInspector from './ThreadInspector';
+import FetcherControl from './FetcherControl';
+import Conversations from './Conversations';
+import { useCookieState } from './hooks/useCookieState';
 
 interface EmailWithConversations extends EmailEnvelope {
   conversations: ConversationSummary[];
@@ -36,21 +39,10 @@ interface ConversationSummary {
 
 type ViewMode = 'dashboard' | 'conversation' | 'thread';
 
-function TabPanel({ children, value, index, ...other }: any) {
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`diagnostics-tabpanel-${index}`}
-      aria-labelledby={`diagnostics-tab-${index}`}
-      {...other}
-    >
-      {value === index && <Box>{children}</Box>}
-    </div>
-  );
-}
-
 export default function UnifiedDiagnosticsRewrite() {
+  const { t } = useTranslation('common');
+  const [tab, setTab] = useCookieState<number>('vx_ui.diagnostics.tab', 0, { maxAge: 60 * 60 * 24 * 365 });
+  const safeTab = tab >= 0 && tab <= 2 ? tab : 0;
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -60,10 +52,7 @@ export default function UnifiedDiagnosticsRewrite() {
   const handleEmailSelect = (email: EmailWithConversations) => {
     setSelectedEmail(email);
     setSelectedEmailId(email.id);
-    
-    // If email has conversations, show conversation view
     if (email.conversations.length > 0) {
-      // Auto-select first conversation for immediate inspection
       setSelectedConversationId(email.conversations[0].id);
       setViewMode('conversation');
     }
@@ -92,9 +81,38 @@ export default function UnifiedDiagnosticsRewrite() {
     setSelectedThreadId(null);
   };
 
+  const resetEmailContext = () => {
+    setViewMode('dashboard');
+    setSelectedEmailId(null);
+    setSelectedConversationId(null);
+    setSelectedThreadId(null);
+    setSelectedEmail(null);
+  };
+
+  const handleTabChange = (_: React.SyntheticEvent, value: number) => {
+    setTab(value);
+    if (value !== 0) {
+      resetEmailContext();
+    }
+  };
+
+  const renderTabPanel = (index: number, children: React.ReactNode) => (
+    <Box
+      role="tabpanel"
+      hidden={safeTab !== index}
+      id={`diagnostics-tabpanel-${index}`}
+      aria-labelledby={`diagnostics-tab-${index}`}
+      sx={{ display: safeTab === index ? 'flex' : 'none', flex: 1, overflow: 'hidden' }}
+    >
+      <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+        {children}
+      </Box>
+    </Box>
+  );
+
   const renderBreadcrumbs = () => {
     const breadcrumbs = [];
-    
+
     breadcrumbs.push(
       <Button
         key="dashboard"
@@ -103,7 +121,7 @@ export default function UnifiedDiagnosticsRewrite() {
         startIcon={<EmailIcon />}
         onClick={handleBackToDashboard}
       >
-        Email Dashboard
+        {t('diagnosticsTabs.mailFlow')}
       </Button>
     );
 
@@ -195,43 +213,72 @@ export default function UnifiedDiagnosticsRewrite() {
   };
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Paper sx={{ p: 2, borderRadius: 0 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
           <Typography variant="h5" component="h1">
-            Unified Diagnostics & Conversations
+            {t('diagnostics.title')}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Email-centric LLM agent debugging interface
+            {t('diagnostics.subtitle')}
           </Typography>
         </Stack>
-        
-        {renderBreadcrumbs()}
-        
-        {(viewMode === 'conversation' || viewMode === 'thread') && renderEmailContext()}
+        <Tabs value={safeTab} onChange={handleTabChange} aria-label="diagnostics sections" variant="scrollable" allowScrollButtonsMobile>
+          <Tab
+            id="diagnostics-tab-0"
+            aria-controls="diagnostics-tabpanel-0"
+            icon={<EmailIcon fontSize="small" />}
+            iconPosition="start"
+            label={t('diagnosticsTabs.mailFlow')}
+          />
+          <Tab
+            id="diagnostics-tab-1"
+            aria-controls="diagnostics-tabpanel-1"
+            icon={<CloudSyncIcon fontSize="small" />}
+            iconPosition="start"
+            label={t('diagnosticsTabs.fetcher')}
+          />
+          <Tab
+            id="diagnostics-tab-2"
+            aria-controls="diagnostics-tabpanel-2"
+            icon={<ForumIcon fontSize="small" />}
+            iconPosition="start"
+            label={t('diagnosticsTabs.conversations')}
+          />
+        </Tabs>
+        {safeTab === 0 && (
+          <Box sx={{ mt: 2 }}>
+            {renderBreadcrumbs()}
+            {(viewMode === 'conversation' || viewMode === 'thread') && renderEmailContext()}
+          </Box>
+        )}
       </Paper>
 
-      {/* Main Content */}
-      <Box sx={{ flex: 1, overflow: 'auto' }}>
-        {viewMode === 'dashboard' && (
-          <EmailProcessingDashboard onEmailSelect={handleEmailSelect} />
-        )}
+      {renderTabPanel(0, (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {viewMode === 'dashboard' && (
+            <EmailProcessingDashboard onEmailSelect={handleEmailSelect} />
+          )}
 
-        {viewMode === 'conversation' && selectedConversationId && (
-          <ConversationInspector
-            conversationId={selectedConversationId}
-            onBack={handleBackToDashboard}
-          />
-        )}
+          {viewMode === 'conversation' && selectedConversationId && (
+            <ConversationInspector
+              conversationId={selectedConversationId}
+              onBack={handleBackToDashboard}
+            />
+          )}
 
-        {viewMode === 'thread' && selectedThreadId && (
-          <ThreadInspector
-            threadId={selectedThreadId}
-            onBack={handleBackToConversation}
-          />
-        )}
-      </Box>
+          {viewMode === 'thread' && selectedThreadId && (
+            <ThreadInspector
+              threadId={selectedThreadId}
+              onBack={handleBackToConversation}
+            />
+          )}
+        </Box>
+      ))}
+
+      {renderTabPanel(1, <FetcherControl />)}
+
+      {renderTabPanel(2, <Conversations />)}
     </Box>
   );
 }

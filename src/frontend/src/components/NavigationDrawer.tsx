@@ -7,7 +7,8 @@ import MemoryIcon from '@mui/icons-material/Memory';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
-import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
+import BugReportIcon from '@mui/icons-material/BugReport';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { useTranslation } from 'react-i18next';
 import { useCookieState } from '../hooks/useCookieState';
 
@@ -29,8 +30,8 @@ const NavigationDrawer: React.FC<Props> = ({ selected, onSelect }) => {
     { key: 'Prompts', label: t('nav.prompts'), icon: <ChatBubbleOutlineIcon fontSize="small" /> },
     { key: 'Directors', label: t('nav.directors'), icon: <AccountTreeIcon fontSize="small" /> },
     { key: 'Filters', label: t('nav.filters'), icon: <FilterAltIcon fontSize="small" /> },
-    { key: 'Diagnostics', label: t('nav.diagnostics') as string, icon: <TroubleshootIcon fontSize="small" /> },
-    { key: 'Admin', label: t('nav.admin'), icon: <TroubleshootIcon fontSize="small" /> },
+    { key: 'Diagnostics', label: t('nav.diagnostics') as string, icon: <BugReportIcon fontSize="small" /> },
+    { key: 'Admin', label: t('nav.admin'), icon: <AdminPanelSettingsIcon fontSize="small" /> },
   ];
 
   return (

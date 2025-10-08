@@ -17,13 +17,17 @@ const resources = {
         diagnostics: 'Diagnostics',
       },
       adminTabs: {
-        diagnostics: 'Diagnostics',
-        conversations: 'Conversations',
-        settings: 'Settings',
-        fetcher: 'Fetcher',
         accounts: 'Accounts',
-        orchestrationDiagnostics: 'Orchestration',
-        tracesDiagnostics: 'Traces'
+        settings: 'Settings'
+      },
+      diagnostics: {
+        title: 'Diagnostics',
+        subtitle: 'Operational introspection for mail flow, fetcher, and conversations'
+      },
+      diagnosticsTabs: {
+        mailFlow: 'Mail Flow',
+        fetcher: 'Fetcher Control',
+        conversations: 'Conversations'
       },
       theme: {
         light: 'Light',
@@ -816,18 +820,23 @@ const resources = {
         agents: 'เอเจนต์',
         filters: 'ฟิลเตอร์',
         prompts: 'พรอมพ์',
+        diagnostics: 'การวินิจฉัย',
         admin: 'แอดมิน',
         memory: 'เมมโมรี่',
         results: 'ผลลัพธ์',
       },
       adminTabs: {
-        diagnostics: 'การวินิจฉัย',
-        conversations: 'การสนทนา',
-        settings: 'การตั้งค่า',
-        fetcher: 'ตัวดึงข้อมูล',
         accounts: 'บัญชี',
-        orchestrationDiagnostics: 'ออร์เคสเตรชัน',
-        tracesDiagnostics: 'เทรซ'
+        settings: 'การตั้งค่า'
+      },
+      diagnostics: {
+        title: 'การวินิจฉัย',
+        subtitle: 'มองเห็นการทำงานของเมล โฟลว์ ตัวดึงข้อมูล และการสนทนา'
+      },
+      diagnosticsTabs: {
+        mailFlow: 'โฟลว์อีเมล',
+        fetcher: 'ตัวดึงข้อมูล',
+        conversations: 'การสนทนา'
       },
       theme: {
         light: 'สว่าง',

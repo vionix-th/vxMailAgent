@@ -6,11 +6,10 @@ import ScienceIcon from '@mui/icons-material/Science';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 
 import { Account } from './types/shared';
-import FetcherControl from './FetcherControl';
 import { useTranslation } from 'react-i18next';
 import { apiFetch, apiFetchWithResponse } from './utils/http';
 
-export default function Accounts({ showFetcher = true }: { showFetcher?: boolean }) {
+export default function Accounts() {
   const { t } = useTranslation();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [open, setOpen] = useState(false);
@@ -277,21 +276,6 @@ export default function Accounts({ showFetcher = true }: { showFetcher?: boolean
           })}
           </Grid>
         </Paper>
-      )}
-      {showFetcher && (
-        <Box sx={{ mt: 3, mb: 4 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-            <Typography variant="h6">{t('adminTabs.fetcher')}</Typography>
-            <Tooltip title={t('results.refresh') as string}>
-              <span>
-                <IconButton size="small" onClick={fetchAccounts}>
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Stack>
-          <FetcherControl />
-        </Box>
       )}
       <Dialog open={open} onClose={() => setOpen(false)}>
         <DialogTitle>{t('accounts.add')}</DialogTitle>
