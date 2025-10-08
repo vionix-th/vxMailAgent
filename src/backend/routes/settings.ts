@@ -51,7 +51,16 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
       success: true
     }, req);
     logger.info('PUT /api/settings updated', { uid });
-    res.json({ success: true, settings: updated });
+    const apiConfigsPublic = Array.isArray(updated.apiConfigs)
+      ? updated.apiConfigs.map(serializeApiConfig)
+      : [];
+    res.json({
+      success: true,
+      settings: {
+        ...updated,
+        apiConfigs: apiConfigsPublic,
+      },
+    });
   }));
 
   app.post('/api/settings/api-configs', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
