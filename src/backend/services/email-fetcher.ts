@@ -17,6 +17,13 @@ export interface FetchContext {
   directors: any[];
   agents: any[];
   accounts: any[];
+  onAccountSuccess?: (accountId: string) => void;
+  onAccountError?: (accountId: string, error: string) => void;
+}
+
+interface AccountProcessResult {
+  success: boolean;
+  error?: string;
 }
 
 /**
@@ -38,7 +45,7 @@ export class EmailFetcher {
    * Main entry point for email fetching and processing.
    */
   async fetchEmails(context: FetchContext): Promise<void> {
-    const { userReq, settings, filters, directors, agents, accounts } = context;
+    const { userReq, settings, filters, directors, agents, accounts, onAccountSuccess, onAccountError } = context;
     const fetchStart = new Date().toISOString();
     const runId = newId();
 
@@ -55,7 +62,7 @@ export class EmailFetcher {
     });
 
     for (const account of accounts) {
-      await this.processAccountEmails({
+      const result = await this.processAccountEmails({
         account,
         userReq,
         settings,
@@ -65,6 +72,11 @@ export class EmailFetcher {
         fetchStart,
         runId
       });
+      if (result.success) {
+        onAccountSuccess?.(account.id);
+      } else {
+        onAccountError?.(account.id, result.error || 'account_processing_failed');
+      }
     }
 
     this.logFetch({
@@ -91,7 +103,7 @@ export class EmailFetcher {
     agents: any[];
     fetchStart: string;
     runId: string;
-  }): Promise<void> {
+  }): Promise<AccountProcessResult> {
     const { account, userReq, settings, filters, directors, agents, runId } = context;
     const accountTraceId = beginTrace({ accountId: account.id, provider: account.provider }, userReq);
 
@@ -104,15 +116,17 @@ export class EmailFetcher {
       });
 
       if (!tokenResult.success) {
-        endTrace(accountTraceId, 'error', tokenResult.error || 'Token refresh failed', userReq);
-        return;
+        const errorMessage = tokenResult.error || 'token_refresh_failed';
+        endTrace(accountTraceId, 'error', errorMessage, userReq);
+        return { success: false, error: errorMessage };
       }
 
       // Fetch unread emails
       const envelopes = await this.fetchUnreadEmails(account, accountTraceId, userReq);
       if (!envelopes) {
-        endTrace(accountTraceId, 'error', 'Failed to fetch emails', userReq);
-        return;
+        const errorMessage = 'failed_to_fetch_emails';
+        endTrace(accountTraceId, 'error', errorMessage, userReq);
+        return { success: false, error: errorMessage };
       }
 
       // Persist/merge envelopes into the email store (source of truth for UI)
@@ -136,9 +150,13 @@ export class EmailFetcher {
       }
 
       endTrace(accountTraceId, 'ok', 'Account processing completed', userReq);
+      return { success: true };
 
     } catch (error: any) {
-      endTrace(accountTraceId, 'error', error.message, userReq);
+      const errorMessage = typeof error?.message === 'string' && error.message
+        ? error.message
+        : String(error ?? 'account_processing_error');
+      endTrace(accountTraceId, 'error', errorMessage, userReq);
       this.logFetch({
         id: newId(),
         timestamp: new Date().toISOString(),
@@ -147,8 +165,9 @@ export class EmailFetcher {
         accountId: account.id,
         event: 'account_processing_error',
         message: 'Failed to process account emails',
-        detail: error.message
+        detail: errorMessage
       });
+      return { success: false, error: errorMessage };
     }
   }
 

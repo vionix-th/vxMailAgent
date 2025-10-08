@@ -58,11 +58,39 @@ export function initFetcher(
       const directors = await repos.getDirectors(fetcherReq);
       const agents = await repos.getAgents(fetcherReq);
       const accounts = await repos.getAccounts(fetcherReq);
-      
-      // Update account status for all accounts
-      for (const account of accounts) {
-        fetcherAccountStatus[account.id] = { lastRun: new Date().toISOString(), lastError: null };
+
+      const ensureAccountStatus = (accountId: string) => {
+        const existing = fetcherAccountStatus[accountId];
+        if (existing) return existing;
+        const created = { lastRun: null, lastError: null };
+        fetcherAccountStatus[accountId] = created;
+        return created;
+      };
+
+      const latestAccountIds = new Set(accounts.map((account: any) => account.id));
+      for (const existingId of Object.keys(fetcherAccountStatus)) {
+        if (!latestAccountIds.has(existingId)) {
+          delete fetcherAccountStatus[existingId];
+        }
       }
+
+      for (const account of accounts) {
+        ensureAccountStatus(account.id);
+      }
+
+      const markAccountSuccess = (accountId: string) => {
+        const status = ensureAccountStatus(accountId);
+        status.lastRun = new Date().toISOString();
+        status.lastError = null;
+      };
+
+      const markAccountError = (accountId: string, errorMessage: string) => {
+        const status = ensureAccountStatus(accountId);
+        status.lastRun = new Date().toISOString();
+        status.lastError = typeof errorMessage === 'string' && errorMessage.trim().length > 0
+          ? errorMessage
+          : 'account_processing_failed';
+      };
       
       const fetchContext: FetchContext = {
         userReq: fetcherReq,
@@ -70,7 +98,9 @@ export function initFetcher(
         filters,
         directors,
         agents,
-        accounts
+        accounts,
+        onAccountSuccess: markAccountSuccess,
+        onAccountError: markAccountError
       };
       
       await emailFetcher.fetchEmails(fetchContext);

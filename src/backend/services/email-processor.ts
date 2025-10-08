@@ -2,6 +2,7 @@ import { ConversationThread, Agent, Director, Filter, Prompt, EmailEnvelope } fr
 import { LiveRepos } from '../liveRepos';
 import { evaluateFilters, selectDirectorTriggers } from './orchestration-director';
 import { ConversationOrchestrator, createUserRequest } from './conversation-orchestrator';
+import { repoFinalizeThreadStatus } from './conversation-mutations';
 import type { ReqLike } from '../interfaces';
 import { newId } from '../utils/id';
 import { beginSpan, endSpan } from './logging';
@@ -342,6 +343,19 @@ snippet: ${envelope.snippet}`;
           prompts: context.prompts
         }, orchestratorUserReq, 6);
       } catch (error: any) {
+        const orchestrationErrorMessage = error?.message || String(error);
+        let finalizeErrorMessage: string | undefined;
+        try {
+          await repoFinalizeThreadStatus(
+            orchestratorUserReq.repos,
+            orchestratorUserReq.reqLike,
+            thread.id,
+            'failed'
+          );
+        } catch (finalizeError: any) {
+          finalizeErrorMessage = finalizeError?.message || String(finalizeError);
+        }
+
         this.logFetch({
           id: newId(),
           timestamp: new Date().toISOString(),
@@ -352,7 +366,8 @@ snippet: ${envelope.snippet}`;
           message: 'Failed to start director orchestration',
           directorId: director.id,
           threadId: thread.id,
-          detail: error.message
+          detail: orchestrationErrorMessage,
+          ...(finalizeErrorMessage ? { finalizeError: finalizeErrorMessage } : {})
         });
       }
     });
