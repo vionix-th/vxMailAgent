@@ -9,11 +9,18 @@ test('Logging: orchestration and provider append semantics', async () => {
     path.join(__dirname, '..', 'dist', 'backend', 'services'),
     path.join(__dirname, '..', 'dist', 'services'),
   ];
-  const base = candidates.find((p) => {
-    try { require.resolve(path.join(p, 'logging-handlers.js')); return true; } catch { return false; }
-  });
-  if (!base) throw new Error('Could not locate compiled services for logging-handlers');
-  const handlers = require(path.join(base, 'logging-handlers.js'));
+  const loggingModule = candidates
+    .map((dir) => path.join(dir, 'logging.js'))
+    .find((fullPath) => {
+      try {
+        require.resolve(fullPath);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  if (!loggingModule) throw new Error('Could not locate compiled services/logging module');
+  const handlers = require(loggingModule);
 
   // In-memory repositories (append-only)
   const orchestration = [];
