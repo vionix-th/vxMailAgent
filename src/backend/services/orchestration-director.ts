@@ -81,6 +81,10 @@ export function logConversationStepDiagnostic(
       level: 'debug'
     });
   } catch (e) {
-    console.warn('Failed to log conversation step diagnostic:', e);
+    logger.warn('Failed to log conversation step diagnostic', {
+      error: e instanceof Error ? e.message : String(e),
+      stepType,
+      conversationId,
+    });
   }
 }

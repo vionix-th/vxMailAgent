@@ -43,8 +43,34 @@ export function configureCors(app: express.Application): void {
 export function configureParsersAndRequestLogging(app: express.Application): void {
   app.use(express.json());
   app.use((req, res, next) => {
-    void res;
-    logger.info('HTTP request', { method: req.method, url: req.url });
+    const started = process.hrtime.bigint();
+    let completed = false;
+    const finish = (event: 'finish' | 'close') => {
+      if (completed) return;
+      completed = true;
+      const elapsedNs = Number(process.hrtime.bigint() - started);
+      const durationMs = Math.round(elapsedNs / 1_000_000);
+      const status = res.statusCode;
+      const method = req.method;
+      const url = req.originalUrl ?? req.url;
+      const uid = (req as any)?.auth?.uid;
+      const headerTrace = req.headers?.['x-trace-id'];
+      const traceId = Array.isArray(headerTrace) ? headerTrace[0] : headerTrace;
+      const contentLength = res.getHeader('content-length');
+      const logFn = status >= 500 ? logger.error : status >= 400 ? logger.warn : logger.info;
+      logFn('HTTP request completed', {
+        method,
+        url,
+        status,
+        durationMs,
+        uid,
+        traceId,
+        event,
+        ...(contentLength ? { contentLength } : {}),
+      });
+    };
+    res.on('finish', () => finish('finish'));
+    res.on('close', () => finish('close'));
     next();
   });
 }

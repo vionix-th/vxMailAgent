@@ -307,7 +307,15 @@ export function createToolHandler(repos: RepoBundle) {
           return { kind: name, success: false, result: null, error: 'tool not implemented' };
       }
     } catch (e: any) {
-      return { kind: name, success: false, result: null, error: e?.message || String(e) };
+      const message = e?.message || String(e);
+      logger.error('Tool call execution failed', {
+        tool: name,
+        error: message,
+        stack: e instanceof Error ? e.stack : undefined,
+        params: sanitize(params),
+        workspace: context?.workspace?.conversationId,
+      });
+      return { kind: name, success: false, result: null, error: message };
     }
   }
   return handleToolByName;
@@ -507,9 +515,19 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: MemoryRepos
     throw new ValidationError('Invalid memory action', 'MEMORY_ACTION_INVALID');
   } catch (err: any) {
     if (err instanceof ValidationError) {
+      logger.warn('Memory tool validation failed', {
+        error: err.message,
+        code: err.code,
+        payload: sanitize(payload),
+      });
       return { kind: 'memory', success: false, result: { ok: false, error: err.message, code: err.code, received: sanitize(payload) }, error: err.message };
     }
-    return { kind: 'memory', success: false, result: null, error: err?.message || String(err) };
+    const message = err?.message || String(err);
+    logger.error('Memory tool execution failed', {
+      error: message,
+      payload: sanitize(payload),
+    });
+    return { kind: 'memory', success: false, result: null, error: message };
   }
 }
 
@@ -598,7 +616,26 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceIte
     }
     return { kind: 'workspace', success: false, result: null, error: 'Invalid workspace action' };
   } catch (err: any) {
-    return { kind: 'workspace', success: false, result: null, error: err?.message || String(err) };
+    if (err instanceof ValidationError) {
+      logger.warn('Workspace tool validation failed', {
+        error: err.message,
+        payload: sanitize(payload),
+        conversationId: scopedConversationId,
+      });
+      return {
+        kind: 'workspace',
+        success: false,
+        result: { ok: false, error: err.message, code: err.code ?? 'WORKSPACE_VALIDATION_ERROR', received: sanitize(payload) },
+        error: err.message,
+      };
+    }
+    const message = err?.message || String(err);
+    logger.error('Workspace tool execution failed', {
+      error: message,
+      payload: sanitize(payload),
+      conversationId: scopedConversationId,
+    });
+    return { kind: 'workspace', success: false, result: null, error: message };
   }
 }
 

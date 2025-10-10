@@ -140,8 +140,13 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
     }
   } else if (account.provider === 'outlook') {
     let cfg;
-    try { cfg = getOutlookOAuthConfig(); }
-    catch (e: any) { return { ok: false, error: e?.message || String(e) }; }
+    try {
+      cfg = getOutlookOAuthConfig();
+    } catch (e: any) {
+      const errTxt = String(e?.message || e);
+      logger.error('Outlook refresh failed to load config', { id, error: errTxt });
+      return { ok: false, error: errTxt };
+    }
     try {
       const result = await ensureValidOutlookAccessToken(
         account.tokens,

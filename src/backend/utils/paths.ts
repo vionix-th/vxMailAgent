@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import logger from '../services/logger';
 
 // Global path helpers using DATA_DIR are intentionally omitted to avoid
 // circular dependencies and to enforce per-user isolation only.
@@ -27,7 +28,7 @@ export function resolveDataDir(): string {
       if (fs.existsSync(p) && fs.statSync(p).isDirectory()) return p;
     } catch (e) {
       // Probe errors are non-fatal; log at debug and continue.
-      console.debug('resolveDataDir probe failed for candidate', p, String(e));
+      logger.debug('resolveDataDir probe failed for candidate', { candidate: p, error: e instanceof Error ? e.message : String(e) });
     }
   }
   // Fallback to the ts-node default
