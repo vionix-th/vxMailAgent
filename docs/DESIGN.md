@@ -344,7 +344,7 @@ data/
 
 #### 3.2.3 Director Orchestration
 - **Functionality**: Receive filtered emails and initialize a conversation using the director’s prompt and `ApiConfig`. The director’s model is in control and uses function-calling to invoke tools (calendar, to-do, filesystem, memory) and to message specialized agents via per-agent tools. Agents are not invoked independently.
-- **Configuration**: `{ id, name, promptId, apiConfigId, agentIds: string[], enabledToolCalls?: string[] }`.
+- **Configuration**: `{ id, name, promptId, apiConfigId, agentIds: string[], enabledOptionalTools?: string[] }`.
 - **Implementation**: The orchestration loop is director-driven. The director’s model issues tool calls and, when delegating, spawns agent conversation threads; agent outputs are returned to the director as tool results, and the director produces the final content.
 
 #### 3.2.4 Specialized Agents
@@ -365,7 +365,7 @@ data/
   - **File System**: Search/retrieve files by name/content within virtual root (e.g., `/home/jane/client_docs`), using Node.js `fs` (e.g., `readdir`, `readFile`).
   - **Memory**: Search/add/edit semi-structured memories (see `MemoryEntry` in `src/shared/types.ts`: `{ id, scope, content, created, updated, tags?, relatedEmailId?, owner?, metadata? }`); search cascades (local→global), additions specify scope.
   - **Output**: Text (plain, markdown, rich text) or images; tool outputs (e.g., file content, memory entries) included only if agent specifies (e.g., in reply text or as attachments).
-  - **Configuration**: Agent objects use `{ id, name, type: 'openai', promptId, apiConfigId, enabledToolCalls?: string[] }`.
+  - **Configuration**: Agent objects use `{ id, name, type: 'openai', promptId, apiConfigId, enabledOptionalTools?: string[] }`.
   - **Implementation**: Uses OpenAI’s function-calling API for tasks/tools. Tool outputs are processed by the agent’s prompt logic.
 
 #### 3.2.5 Processing Pipeline
@@ -431,7 +431,7 @@ data/
   - Agent messaging: per-agent tools exposed as `agent__<id>` for assigned agents only.
   - Workspace tools: `workspace_add_item`, `workspace_list_items`, `workspace_get_item`, `workspace_update_item`, `workspace_remove_item`.
   - Live tools (as available): `calendar_read`, `calendar_add`, `todo_add`, `filesystem_search`, `filesystem_retrieve`, `memory_search`, `memory_add`, `memory_edit`.
-  - Effective registry: mandatory tools always on; optional tools filtered by `director.enabledToolCalls`.
+  - Effective registry: mandatory tools always on; optional tools filtered by `director.enabledOptionalTools`.
   - Dynamic `agent__<id>` tools limited to `director.agentIds` when provided.
   - Tool names/schemas: see `src/shared/tools.ts`. Provider actions are handled by `src/backend/toolCalls.ts`.
   - Agent delegation call ensures or creates an agent child `ConversationThread`, runs the agent loop (bounded steps), and returns a summary `{ status, agentThreadId }` as a director tool message.
@@ -445,7 +445,7 @@ data/
  - **Invariants**:
    - A director thread is never reused across emails/runs; exactly one director thread per (emailId × directorId).
    - All workspace operations are scoped to the director thread id (`conversationId`); agents write into the director’s workspace.
-   - Tool registry: dynamic `agent__<id>` tools only for the director’s assigned agents; optional tools gated by `enabledToolCalls`; mandatory tools are always available.
+   - Tool registry: dynamic `agent__<id>` tools only for the director’s assigned agents; optional tools gated by `enabledOptionalTools`; mandatory tools are always available.
    - Transcript cadence is OpenAI-aligned: assistant with `tool_calls[]` → one tool message per call (matching `tool_call_id`) → next assistant.
 
 #### 3.2.8b OpenAI Tools and Canonical Signatures
@@ -541,9 +541,7 @@ These examples illustrate final, unambiguous shapes. Field omissions are intenti
   "promptId": "prm-director-001",
   "apiConfigId": "cfg-openai-001",
   "agentIds": ["ag-reply", "ag-analysis"],
-  "enabledToolCalls": [
-    "workspace_add_item",
-    "workspace_update_item",
+  "enabledOptionalTools": [
     "memory_search",
     "memory_add"
   ]
@@ -558,9 +556,8 @@ These examples illustrate final, unambiguous shapes. Field omissions are intenti
   "type": "openai",
   "promptId": "prm-agent-reply",
   "apiConfigId": "cfg-openai-001",
-  "enabledToolCalls": [
+  "enabledOptionalTools": [
     "filesystem_search",
-    "workspace_add_item",
     "memory_search"
   ]
 }

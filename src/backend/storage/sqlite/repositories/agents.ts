@@ -44,7 +44,7 @@ export class AgentsRepository extends SqliteRepository {
         type: agent.type,
         prompt_id: agent.promptId,
         api_config_id: agent.apiConfigId,
-        enabled_tool_calls_json: stringify(agent.enabledToolCalls),
+        enabled_tool_calls_json: stringify(agent.enabledOptionalTools),
       });
     });
   }
@@ -62,7 +62,7 @@ export class AgentsRepository extends SqliteRepository {
           type: agent.type,
           prompt_id: agent.promptId,
           api_config_id: agent.apiConfigId,
-          enabled_tool_calls_json: stringify(agent.enabledToolCalls),
+          enabled_tool_calls_json: stringify(agent.enabledOptionalTools),
         });
       if (result.changes === 0) {
         throw new Error(`AgentsRepository: agent '${agent.id}' not found`);
@@ -86,7 +86,7 @@ export class AgentsRepository extends SqliteRepository {
   private mapRow(row: any): Agent {
     const enabled = JSON.parse(row.enabled_tool_calls_json);
     if (!Array.isArray(enabled)) {
-      throw new Error(`AgentsRepository: enabledToolCalls invalid for agent '${row.id}'`);
+      throw new Error(`AgentsRepository: enabledOptionalTools invalid for agent '${row.id}'`);
     }
     return {
       id: row.id,
@@ -94,7 +94,7 @@ export class AgentsRepository extends SqliteRepository {
       type: row.type,
       promptId: row.prompt_id,
       apiConfigId: row.api_config_id,
-      enabledToolCalls: enabled,
+      enabledOptionalTools: enabled,
     } as Agent;
   }
 
@@ -121,8 +121,8 @@ export class AgentsRepository extends SqliteRepository {
     if (typeof agent.apiConfigId !== 'string' || !agent.apiConfigId.trim()) {
       throw new Error(`AgentsRepository: apiConfigId required for '${agent.id}'`);
     }
-    if (!Array.isArray(agent.enabledToolCalls) || agent.enabledToolCalls.length === 0) {
-      throw new Error(`AgentsRepository: enabledToolCalls must be non-empty for '${agent.id}'`);
+    if (!Array.isArray(agent.enabledOptionalTools)) {
+      throw new Error(`AgentsRepository: enabledOptionalTools must be an array for '${agent.id}'`);
     }
     validateAgentToolConfig(agent);
   }

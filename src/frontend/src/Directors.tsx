@@ -23,7 +23,7 @@ interface Director {
   agentIds: string[];
   promptId?: string;
   apiConfigId: string;
-  enabledToolCalls: string[];
+  enabledOptionalTools: string[];
 }
 
 interface Agent {
@@ -32,7 +32,7 @@ interface Agent {
   type?: 'openai';
   promptId?: string;
   apiConfigId?: string;
-  enabledToolCalls?: Array<'calendar' | 'todo' | 'filesystem' | 'memory'>;
+  enabledOptionalTools?: Array<'calendar' | 'todo' | 'filesystem' | 'memory'>;
 }
 
 const emptyDirector: Director = {
@@ -41,7 +41,7 @@ const emptyDirector: Director = {
   agentIds: [],
   promptId: '',
   apiConfigId: '',
-  enabledToolCalls: [],
+  enabledOptionalTools: [],
 };
 
 export default function Directors() {
@@ -233,14 +233,14 @@ export default function Directors() {
                   key={tool}
                   control={
                     <Checkbox
-                      checked={editing ? (editing.enabledToolCalls ? editing.enabledToolCalls.includes(tool) : false) : false}
+                      checked={editing ? (editing.enabledOptionalTools ? editing.enabledOptionalTools.includes(tool) : false) : false}
                       onChange={(_, checked) => {
                         if (!editing) return;
                         const full = OPTIONAL;
-                        const set = new Set(editing.enabledToolCalls || []);
+                        const set = new Set(editing.enabledOptionalTools || []);
                         if (checked) set.add(tool); else set.delete(tool);
                         const arr = Array.from(set) as Array<'calendar' | 'todo' | 'filesystem' | 'memory'>;
-                        setEditing({ ...editing, enabledToolCalls: arr as any });
+                        setEditing({ ...editing, enabledOptionalTools: arr as any });
                       }}
                     />
                   }

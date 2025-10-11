@@ -8,7 +8,7 @@ test('toolCalls: list_tools returns mandatory + enabled optional (no dynamic age
   const repo = (items=[]) => ({ list: async () => items.slice() });
   const repos = {
     agents: repo([{ id: 'a1', name: 'A1', apiConfigId: 'cfg' }]),
-    directors: repo([{ id: 'd1', name: 'D1', enabledToolCalls: ['memory_add'] }]),
+    directors: repo([{ id: 'd1', name: 'D1', enabledOptionalTools: ['memory_add'] }]),
     conversations: { list: async () => [], getById: async () => null, insert: async () => {}, update: async () => {}, delete: async () => false },
     prompts: repo([]),
     settings: {

@@ -16,7 +16,7 @@ export interface Director {
   agentIds: string[];
   promptId: string;
   apiConfigId: string;
-  enabledToolCalls: string[];
+  enabledOptionalTools: string[];
 }
 
 export type AgentType = 'openai'; // Future: add other providers as needed
@@ -259,7 +259,7 @@ export interface Agent {
   type: AgentType;
   promptId: string;
   apiConfigId: string;
-  enabledToolCalls: string[];
+  enabledOptionalTools: string[];
 }
 
 /** Chat message used in prompts and transcripts. */

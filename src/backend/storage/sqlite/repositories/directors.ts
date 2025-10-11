@@ -43,7 +43,7 @@ export class DirectorsRepository extends SqliteRepository {
         name: director.name,
         prompt_id: director.promptId,
         api_config_id: director.apiConfigId,
-        enabled_tool_calls_json: stringify(director.enabledToolCalls),
+        enabled_tool_calls_json: stringify(director.enabledOptionalTools),
         agent_ids_json: stringify(director.agentIds),
       });
     });
@@ -61,7 +61,7 @@ export class DirectorsRepository extends SqliteRepository {
           name: director.name,
           prompt_id: director.promptId,
           api_config_id: director.apiConfigId,
-          enabled_tool_calls_json: stringify(director.enabledToolCalls),
+          enabled_tool_calls_json: stringify(director.enabledOptionalTools),
           agent_ids_json: stringify(director.agentIds),
         });
       if (result.changes === 0) {
@@ -87,7 +87,7 @@ export class DirectorsRepository extends SqliteRepository {
     const enabled = JSON.parse(row.enabled_tool_calls_json);
     const agentIds = JSON.parse(row.agent_ids_json);
     if (!Array.isArray(enabled)) {
-      throw new Error(`DirectorsRepository: enabledToolCalls invalid for director '${row.id}'`);
+      throw new Error(`DirectorsRepository: enabledOptionalTools invalid for director '${row.id}'`);
     }
     if (!Array.isArray(agentIds)) {
       throw new Error(`DirectorsRepository: agentIds invalid for director '${row.id}'`);
@@ -97,7 +97,7 @@ export class DirectorsRepository extends SqliteRepository {
       name: row.name,
       promptId: row.prompt_id,
       apiConfigId: row.api_config_id,
-      enabledToolCalls: enabled,
+      enabledOptionalTools: enabled,
       agentIds,
     } as Director;
   }
@@ -125,8 +125,8 @@ export class DirectorsRepository extends SqliteRepository {
     if (!Array.isArray(director.agentIds)) {
       throw new Error(`DirectorsRepository: agentIds must be an array for '${director.id}'`);
     }
-    if (!Array.isArray(director.enabledToolCalls)) {
-      throw new Error(`DirectorsRepository: enabledToolCalls must be an array for '${director.id}'`);
+    if (!Array.isArray(director.enabledOptionalTools)) {
+      throw new Error(`DirectorsRepository: enabledOptionalTools must be an array for '${director.id}'`);
     }
     validateDirectorToolConfig(director);
   }

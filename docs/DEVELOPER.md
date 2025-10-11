@@ -163,7 +163,7 @@ This section is the operational contract the backend must uphold. It is used as 
   - Messages = full OpenAI-compatible transcript
   - Tools = effective tool registry:
     - Mandatory tools are always available.
-    - Optional tools are included only when enabled on the Director (`director.enabledToolCalls`).
+    - Optional tools are included only when enabled on the Director (`director.enabledOptionalTools`).
     - Dynamic `agent__<id>` tools are exposed only for the Director’s assigned `agentIds` (when provided).
 - Append the assistant message (may contain `tool_calls`).
 - If assistant contains `tool_calls[]`, execute each call and then immediately run another director turn unless the step limit is reached.
@@ -178,7 +178,7 @@ This section is the operational contract the backend must uphold. It is used as 
 
 - Up to LOOP_MAX steps:
   - Call the provider chat API with agent messages and tools.
-    - Tools = effective tool registry for the Agent: mandatory + optional from `agent.enabledToolCalls` only.
+    - Tools = effective tool registry for the Agent: mandatory + optional from `agent.enabledOptionalTools` only.
   - Append assistant; if assistant has no `tool_calls`, break.
   - For each `tool_call`, execute tool, append `tool` message, and continue.
 
@@ -232,7 +232,7 @@ Lint command (backend): `npm run lint` from `src/backend/`.
 - The orchestrator encapsulates:
   - Provider event logging for both roles via `ProviderEventLogger`.
   - Director tool-call processing (e.g., `workspace_add_item`, `workspace_list_items`).
-  - Agent tool gating (mandatory + `agent.enabledToolCalls`) and agent loop execution.
+  - Agent tool gating (mandatory + `agent.enabledOptionalTools`) and agent loop execution.
 - Rationale: single source of truth for conversation behavior, thinner routes, and consistent diagnostics/persistence.
 
 ## Terminology (Authoritative)

@@ -2,7 +2,7 @@ import express from 'express';
 import type { LiveRepos } from '../liveRepos';
 import { Agent } from '../../shared/types';
 import { createCrudRoutes } from './helpers';
-import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
+import { sanitizeEnabledOptionalTools } from '../utils/sanitizeToolCalls';
 import { validateAgentToolConfig } from '../services/tool-config-service';
 import { getAgentsRepo, requireReq, ReqLike } from '../utils/repo-access';
 
@@ -46,16 +46,13 @@ export default function registerAgentsRoutes(app: express.Express, _repos: LiveR
         if (!aid) throw new Error('apiConfigId is required for Agent');
       },
       afterValidate: (agent: Agent) => {
-        const enabled = sanitizeEnabled((agent as any).enabledToolCalls);
+        const enabled = sanitizeEnabledOptionalTools((agent as any).enabledOptionalTools);
         if (enabled === null) {
-          throw new Error('enabledToolCalls must be an array of optional tool names');
-        }
-        if (enabled.length === 0) {
-          throw new Error('enabledToolCalls must include at least one optional tool');
+          throw new Error('enabledOptionalTools must be an array of optional tool names');
         }
         const normalized = {
           ...agent,
-          enabledToolCalls: enabled,
+          enabledOptionalTools: enabled,
         } as Agent;
         validateAgentToolConfig(normalized);
         return normalized;
@@ -67,15 +64,12 @@ export default function registerAgentsRoutes(app: express.Express, _repos: LiveR
           ...(typeof (patch as any).promptId === 'string' ? { promptId: (patch as any).promptId } : {}),
           ...(typeof (patch as any).apiConfigId === 'string' ? { apiConfigId: (patch as any).apiConfigId } : {}),
         } as Agent;
-        if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolCalls')) {
-          const enabled = sanitizeEnabled((patch as any).enabledToolCalls);
+        if (Object.prototype.hasOwnProperty.call(patch, 'enabledOptionalTools')) {
+          const enabled = sanitizeEnabledOptionalTools((patch as any).enabledOptionalTools);
           if (enabled === null) {
-            throw new Error('enabledToolCalls update must be an array of optional tool names');
+            throw new Error('enabledOptionalTools update must be an array of optional tool names');
           }
-          if (enabled.length === 0) {
-            throw new Error('enabledToolCalls update must include at least one optional tool');
-          }
-          next.enabledToolCalls = enabled;
+          next.enabledOptionalTools = enabled;
         }
         validateAgentToolConfig(next);
         return next;

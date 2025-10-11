@@ -2,7 +2,7 @@ import express from 'express';
 import type { LiveRepos } from '../liveRepos';
 import { Director } from '../../shared/types';
 import { createCrudRoutes } from './helpers';
-import { sanitizeEnabled } from '../utils/sanitizeToolCalls';
+import { sanitizeEnabledOptionalTools } from '../utils/sanitizeToolCalls';
 import { validateDirectorToolConfig } from '../services/tool-config-service';
 import { getDirectorsRepo, requireReq, ReqLike } from '../utils/repo-access';
 
@@ -46,10 +46,9 @@ export default function registerDirectorsRoutes(app: express.Express, _repos: Li
         if (!aid) throw new Error('apiConfigId is required for Director');
       },
       afterValidate: (director: Director) => {
-        const enabled = sanitizeEnabled((director as any).enabledToolCalls);
-        if (enabled === null) throw new Error('enabledToolCalls must be an array of optional tool names');
-        if (enabled.length === 0) throw new Error('enabledToolCalls must include at least one optional tool');
-        const normalized = { ...director, enabledToolCalls: enabled } as Director;
+        const enabled = sanitizeEnabledOptionalTools((director as any).enabledOptionalTools);
+        if (enabled === null) throw new Error('enabledOptionalTools must be an array of optional tool names');
+        const normalized = { ...director, enabledOptionalTools: enabled } as Director;
         validateDirectorToolConfig(normalized);
         return normalized;
       },
@@ -61,15 +60,12 @@ export default function registerDirectorsRoutes(app: express.Express, _repos: Li
           ...(typeof (patch as any).promptId === 'string' ? { promptId: (patch as any).promptId } : {}),
           ...(typeof (patch as any).apiConfigId === 'string' ? { apiConfigId: (patch as any).apiConfigId } : {}),
         } as Director;
-        if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolCalls')) {
-          const enabled = sanitizeEnabled((patch as any).enabledToolCalls);
+        if (Object.prototype.hasOwnProperty.call(patch, 'enabledOptionalTools')) {
+          const enabled = sanitizeEnabledOptionalTools((patch as any).enabledOptionalTools);
           if (enabled === null) {
-            throw new Error('enabledToolCalls update must be an array of optional tool names');
+            throw new Error('enabledOptionalTools update must be an array of optional tool names');
           }
-          if (enabled.length === 0) {
-            throw new Error('enabledToolCalls update must include at least one optional tool');
-          }
-          next.enabledToolCalls = enabled;
+          next.enabledOptionalTools = enabled;
         }
         validateDirectorToolConfig(next);
         return next;
