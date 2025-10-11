@@ -11,7 +11,7 @@ export class AgentsRepository extends SqliteRepository {
   async list(): Promise<readonly Agent[]> {
     return this.withConnection((db) => {
       const rows = db.prepare(
-        'SELECT id, name, type, prompt_id, api_config_id, enabled_tool_calls_json FROM agents ORDER BY name'
+        'SELECT id, name, type, prompt_id, api_config_id, enabled_optional_tools_json FROM agents ORDER BY name'
       ).all();
       return rows.map((row: any) => this.mapRow(row));
     });
@@ -22,7 +22,7 @@ export class AgentsRepository extends SqliteRepository {
     return this.withConnection((db) => {
       const row = db
         .prepare(
-          'SELECT id, name, type, prompt_id, api_config_id, enabled_tool_calls_json FROM agents WHERE id = ?'
+          'SELECT id, name, type, prompt_id, api_config_id, enabled_optional_tools_json FROM agents WHERE id = ?'
         )
         .get(id);
       return row ? this.mapRow(row) : null;
@@ -37,14 +37,14 @@ export class AgentsRepository extends SqliteRepository {
         throw new Error(`AgentsRepository: agent '${agent.id}' already exists`);
       }
       db.prepare(
-        'INSERT INTO agents (id, name, type, prompt_id, api_config_id, enabled_tool_calls_json) VALUES (@id, @name, @type, @prompt_id, @api_config_id, @enabled_tool_calls_json)'
+        'INSERT INTO agents (id, name, type, prompt_id, api_config_id, enabled_optional_tools_json) VALUES (@id, @name, @type, @prompt_id, @api_config_id, @enabled_optional_tools_json)'
       ).run({
         id: agent.id,
         name: agent.name,
         type: agent.type,
         prompt_id: agent.promptId,
         api_config_id: agent.apiConfigId,
-        enabled_tool_calls_json: stringify(agent.enabledOptionalTools),
+        enabled_optional_tools_json: stringify(agent.enabledOptionalTools),
       });
     });
   }
@@ -54,7 +54,7 @@ export class AgentsRepository extends SqliteRepository {
     await this.transaction((db) => {
       const result = db
         .prepare(
-          'UPDATE agents SET name = @name, type = @type, prompt_id = @prompt_id, api_config_id = @api_config_id, enabled_tool_calls_json = @enabled_tool_calls_json WHERE id = @id'
+          'UPDATE agents SET name = @name, type = @type, prompt_id = @prompt_id, api_config_id = @api_config_id, enabled_optional_tools_json = @enabled_optional_tools_json WHERE id = @id'
         )
         .run({
           id: agent.id,
@@ -62,7 +62,7 @@ export class AgentsRepository extends SqliteRepository {
           type: agent.type,
           prompt_id: agent.promptId,
           api_config_id: agent.apiConfigId,
-          enabled_tool_calls_json: stringify(agent.enabledOptionalTools),
+          enabled_optional_tools_json: stringify(agent.enabledOptionalTools),
         });
       if (result.changes === 0) {
         throw new Error(`AgentsRepository: agent '${agent.id}' not found`);
@@ -84,7 +84,7 @@ export class AgentsRepository extends SqliteRepository {
   }
 
   private mapRow(row: any): Agent {
-    const enabled = JSON.parse(row.enabled_tool_calls_json);
+    const enabled = JSON.parse(row.enabled_optional_tools_json);
     if (!Array.isArray(enabled)) {
       throw new Error(`AgentsRepository: enabledOptionalTools invalid for agent '${row.id}'`);
     }

@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS agents (
   type TEXT NOT NULL CHECK(type IN ('openai')),
   prompt_id TEXT NOT NULL,
   api_config_id TEXT NOT NULL,
-  enabled_tool_calls_json TEXT NOT NULL CHECK(json_valid(enabled_tool_calls_json))
+  enabled_optional_tools_json TEXT NOT NULL CHECK(json_valid(enabled_optional_tools_json))
 );
 
 CREATE TABLE IF NOT EXISTS directors (
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS directors (
   name TEXT NOT NULL,
   prompt_id TEXT NOT NULL,
   api_config_id TEXT NOT NULL,
-  enabled_tool_calls_json TEXT NOT NULL CHECK(json_valid(enabled_tool_calls_json)),
+  enabled_optional_tools_json TEXT NOT NULL CHECK(json_valid(enabled_optional_tools_json)),
   agent_ids_json TEXT NOT NULL CHECK(json_valid(agent_ids_json))
 );
 

@@ -11,7 +11,7 @@ export class DirectorsRepository extends SqliteRepository {
   async list(): Promise<readonly Director[]> {
     return this.withConnection((db) => {
       const rows = db.prepare(
-        'SELECT id, name, prompt_id, api_config_id, enabled_tool_calls_json, agent_ids_json FROM directors ORDER BY name'
+        'SELECT id, name, prompt_id, api_config_id, enabled_optional_tools_json, agent_ids_json FROM directors ORDER BY name'
       ).all();
       return rows.map((row: any) => this.mapRow(row));
     });
@@ -22,7 +22,7 @@ export class DirectorsRepository extends SqliteRepository {
     return this.withConnection((db) => {
       const row = db
         .prepare(
-          'SELECT id, name, prompt_id, api_config_id, enabled_tool_calls_json, agent_ids_json FROM directors WHERE id = ?'
+          'SELECT id, name, prompt_id, api_config_id, enabled_optional_tools_json, agent_ids_json FROM directors WHERE id = ?'
         )
         .get(id);
       return row ? this.mapRow(row) : null;
@@ -37,13 +37,13 @@ export class DirectorsRepository extends SqliteRepository {
         throw new Error(`DirectorsRepository: director '${director.id}' already exists`);
       }
       db.prepare(
-        'INSERT INTO directors (id, name, prompt_id, api_config_id, enabled_tool_calls_json, agent_ids_json) VALUES (@id, @name, @prompt_id, @api_config_id, @enabled_tool_calls_json, @agent_ids_json)'
+        'INSERT INTO directors (id, name, prompt_id, api_config_id, enabled_optional_tools_json, agent_ids_json) VALUES (@id, @name, @prompt_id, @api_config_id, @enabled_optional_tools_json, @agent_ids_json)'
       ).run({
         id: director.id,
         name: director.name,
         prompt_id: director.promptId,
         api_config_id: director.apiConfigId,
-        enabled_tool_calls_json: stringify(director.enabledOptionalTools),
+        enabled_optional_tools_json: stringify(director.enabledOptionalTools),
         agent_ids_json: stringify(director.agentIds),
       });
     });
@@ -54,14 +54,14 @@ export class DirectorsRepository extends SqliteRepository {
     await this.transaction((db) => {
       const result = db
         .prepare(
-          'UPDATE directors SET name = @name, prompt_id = @prompt_id, api_config_id = @api_config_id, enabled_tool_calls_json = @enabled_tool_calls_json, agent_ids_json = @agent_ids_json WHERE id = @id'
+          'UPDATE directors SET name = @name, prompt_id = @prompt_id, api_config_id = @api_config_id, enabled_optional_tools_json = @enabled_optional_tools_json, agent_ids_json = @agent_ids_json WHERE id = @id'
         )
         .run({
           id: director.id,
           name: director.name,
           prompt_id: director.promptId,
           api_config_id: director.apiConfigId,
-          enabled_tool_calls_json: stringify(director.enabledOptionalTools),
+          enabled_optional_tools_json: stringify(director.enabledOptionalTools),
           agent_ids_json: stringify(director.agentIds),
         });
       if (result.changes === 0) {
@@ -84,7 +84,7 @@ export class DirectorsRepository extends SqliteRepository {
   }
 
   private mapRow(row: any): Director {
-    const enabled = JSON.parse(row.enabled_tool_calls_json);
+    const enabled = JSON.parse(row.enabled_optional_tools_json);
     const agentIds = JSON.parse(row.agent_ids_json);
     if (!Array.isArray(enabled)) {
       throw new Error(`DirectorsRepository: enabledOptionalTools invalid for director '${row.id}'`);

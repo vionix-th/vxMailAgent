@@ -124,6 +124,7 @@ Production awareness & stability
 
 Forward‑only development
 - No backwards compatibility or migrations unless explicitly instructed.
+- Pre-release policy: do not add schema migration code; adjust the schema directly and document any one-off manual steps until the product has an external release.
 - Prefer API changes that improve design; update UI to match backend changes.
 - Use Git history for recovery; do not preserve obsolete implementations.
 
