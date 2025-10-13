@@ -1,5 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
+const { applyTestEnvDefaults, resolveTestUserId } = require('./lib/env.cjs');
+
+applyTestEnvDefaults();
+const TEST_UID = resolveTestUserId();
 
 // Simple unit tests that don't require complex imports
 test('EmailProcessor orchestration trigger - mock test', async () => {
@@ -34,7 +38,7 @@ test('EmailProcessor orchestration trigger - mock test', async () => {
     status: 'ongoing'
   };
   
-  await triggerOrchestration(validThread, { uid: 'test-user' });
+  await triggerOrchestration(validThread, { uid: TEST_UID });
   
   assert.strictEqual(orchestrationCalled, true);
   assert.strictEqual(orchestrationError, null);
@@ -70,7 +74,7 @@ test('EmailProcessor orchestration error handling - mock test', async () => {
     status: 'ongoing'
   };
   
-  await triggerOrchestration(invalidThread, { uid: 'test-user' });
+  await triggerOrchestration(invalidThread, { uid: TEST_UID });
   
   assert.strictEqual(orchestrationCalled, true);
   assert.strictEqual(orchestrationError, 'API config not found');
@@ -87,7 +91,7 @@ test('FetcherManager status structure - mock test', () => {
     })
   };
   
-  const status = mockFetcherManager.getStatus({ uid: 'test-user' });
+  const status = mockFetcherManager.getStatus({ uid: TEST_UID });
   
   assert.strictEqual(typeof status.active, 'boolean');
   assert.strictEqual(typeof status.lastRun, 'string');
@@ -131,4 +135,3 @@ test('ConversationOrchestrator step handling - mock test', async () => {
   assert.strictEqual(loggedEvents[0].event, 'step_start');
   assert.strictEqual(loggedEvents[0].threadId, 'thread-789');
 });
-

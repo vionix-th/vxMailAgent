@@ -7,7 +7,8 @@ const path = require('path');
 class TestConfig {
   constructor() {
     this.useRealData = process.env.VX_TEST_REAL_DATA === 'true';
-    this.testUserId = process.env.VX_TEST_USER_ID || 'test-user';
+    const { resolveTestUserId } = require('./lib/env.cjs');
+    this.testUserId = resolveTestUserId();
     this.dataPath = process.env.VX_DATA_PATH || path.join(__dirname, '../../data');
   }
 

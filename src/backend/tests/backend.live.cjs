@@ -1,10 +1,29 @@
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const { createAuthHeaders, fetchJson, withHeartbeat, logEvent } = require('./lib/harness.cjs');
+const { startTestServer } = require('./lib/test-server.cjs');
+const { resolveTestUserId } = require('./lib/env.cjs');
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
-const TEST_UID = process.env.VX_TEST_USER_ID || 'test-user';
+const IN_PROCESS = process.env.VX_TEST_IN_PROCESS_SERVER !== 'false';
+const TEST_UID = resolveTestUserId();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-jwt';
+let BACKEND_URL;
+let server;
+before(async () => {
+  if (IN_PROCESS) {
+    server = await startTestServer();
+    BACKEND_URL = server.baseUrl;
+  } else {
+    BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+  }
+});
+
+after(async () => {
+  if (server) {
+    await server.stop();
+    server = undefined;
+  }
+});
 
 test('Live: backend health and auth', async () => {
   // Health (public)
@@ -41,4 +60,3 @@ test('Live: backend health and auth', async () => {
   };
   console.log(`RESULT_JSON ${JSON.stringify(summary)}`);
 });
-

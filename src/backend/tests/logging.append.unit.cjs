@@ -1,6 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
+const { applyTestEnvDefaults, resolveTestUserId } = require('./lib/env.cjs');
+
+applyTestEnvDefaults();
 
 // Verify logging handlers append to repos (no lossy read+set races)
 test('Logging: orchestration and provider append semantics', async () => {
@@ -27,7 +30,7 @@ test('Logging: orchestration and provider append semantics', async () => {
   const providerEvents = [];
   const req = {
     userContext: {
-      uid: 'test-user',
+      uid: resolveTestUserId(),
       repos: {
         orchestrationLog: {
           append: async (e) => { orchestration.push(e); },

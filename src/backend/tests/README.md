@@ -9,8 +9,16 @@
 - Live first, then unit/mock: `node run-all-tests.cjs`
 - Only live: `node --test *.live.cjs`
 
-## Live Auth
-- Env: `BACKEND_URL` (default `http://localhost:3001`), `JWT_SECRET` (default `dev-insecure-jwt`), `VX_TEST_USER_ID` (default `test-user`).
+### In-process Backend
+- Live suites no longer assume a pre-running server. Each file calls `startTestServer()` (see `tests/lib/test-server.cjs`) to boot the backend on an ephemeral port and tears it down in an `after` hook.
+- The helper applies test-safe env defaults (`tests/lib/env.cjs`), so no manual `.env` preparation is required.
+- To exercise an external deployment instead, set `VX_TEST_IN_PROCESS_SERVER=false` and start the backend yourself; `run-all-tests.cjs` will re-enable preflight checks in that mode.
+- Common fixture data (api configs, prompts, directors, accounts, filters) should be seeded via `tests/lib/fixtures.cjs` to avoid repeating REST priming logic.
+- `run-all-tests.cjs` skips `*.live.cjs` suites unless `VX_TEST_INCLUDE_LIVE=true` is set; use that flag for REST smoke coverage when needed.
+- Test servers clone `VX_MAILAGENT_DATA_DIR` into a per-run temp folder; set `VX_TEST_CLONE_DATA=false` when you explicitly want to mutate the real store.
+
+-## Live Auth
+- Env: `BACKEND_URL` (default `http://localhost:3001`), `JWT_SECRET` (default `dev-insecure-jwt`), `VX_TEST_USER_ID` (must be set explicitly or discovered via a `.testuser` marker under `data/users/<uid>/`).
 - The live test signs a JWT and sends `Authorization: Bearer …` to assume the user.
 
 ## Status + Agent Output

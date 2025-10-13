@@ -1,9 +1,28 @@
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const { createAuthHeaders, fetchJson, withHeartbeat, logEvent } = require('./lib/harness.cjs');
+const { startTestServer } = require('./lib/test-server.cjs');
+const { resolveTestUserId } = require('./lib/env.cjs');
 
-const BASE = process.env.BACKEND_URL || 'http://localhost:3001';
-const TEST_UID = process.env.VX_TEST_USER_ID || 'test-user';
+const IN_PROCESS = process.env.VX_TEST_IN_PROCESS_SERVER !== 'false';
+let BASE;
+let server;
+before(async () => {
+  if (IN_PROCESS) {
+    server = await startTestServer();
+    BASE = server.baseUrl;
+  } else {
+    BASE = process.env.BACKEND_URL || 'http://localhost:3001';
+  }
+});
+
+after(async () => {
+  if (server) {
+    await server.stop();
+    server = undefined;
+  }
+});
+const TEST_UID = resolveTestUserId();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-jwt';
 const headers = createAuthHeaders({ uid: TEST_UID, jwtSecret: JWT_SECRET });
 headers['Content-Type'] = 'application/json';
@@ -62,4 +81,3 @@ test('Live Fetcher: stop -> start -> status -> logs', async () => {
   logEvent({ type: 'fetcher', stage: 'stopped2', ok: stopped2 });
   assert.strictEqual(stopped2, true, 'Fetcher did not stop (2)');
 });
-

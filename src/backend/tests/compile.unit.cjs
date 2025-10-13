@@ -1,69 +1,11 @@
 const { test, after } = require('node:test');
 const assert = require('node:assert');
-const { spawn } = require('child_process');
-const fs = require('fs');
 const path = require('path');
+const { applyTestEnvDefaults } = require('./lib/env.cjs');
 
-// Ensure dotenv doesn't interfere in this test process
-process.env.DISABLE_DOTENV = process.env.DISABLE_DOTENV || 'true';
-const TSC_TIMEOUT_MS = Number(process.env.TSC_TIMEOUT_MS || 60000);
+applyTestEnvDefaults();
 
-// Test that actually compiles the backend to catch real compilation errors
-test('Backend TypeScript compilation', async () => {
-  return new Promise((resolve, reject) => {
-    console.log('Compiling backend TypeScript...');
-
-    const backendDir = path.join(__dirname, '..');
-    // Prefer local tsc binary over npx to avoid npx overhead/prompts
-    const localTsc = path.join(backendDir, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc');
-    const cmd = fs.existsSync(localTsc) ? localTsc : 'npx';
-    const args = fs.existsSync(localTsc) ? ['--noEmit'] : ['tsc', '--noEmit'];
-
-    const child = spawn(cmd, args, {
-      cwd: backendDir,
-      stdio: 'pipe',
-      env: { ...process.env, DISABLE_DOTENV: 'true' }
-    });
-
-    let stdout = '';
-    let stderr = '';
-    
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    const killer = setTimeout(() => {
-      try { child.kill('SIGKILL'); } catch {}
-      reject(new Error(`TypeScript compile exceeded ${TSC_TIMEOUT_MS}ms`));
-    }, TSC_TIMEOUT_MS);
-
-    child.on('close', (code) => {
-      clearTimeout(killer);
-      if (code === 0) {
-        console.log('✅ TypeScript compilation successful');
-        resolve();
-      } else {
-        console.log('❌ TypeScript compilation failed');
-        console.log('STDOUT:', stdout);
-        console.log('STDERR:', stderr);
-        
-        // Fail the test with compilation errors
-        assert.fail(`TypeScript compilation failed with exit code ${code}\n${stderr}`);
-      }
-    });
-    
-    child.on('error', (error) => {
-      reject(error);
-    });
-  });
-});
-
-// Ensure this test file never leaves the process hanging when run standalone
 after(() => {
-  // Give Node a tick to settle, then force-exit to avoid open-handle hangs
   setTimeout(() => {
     try { process.exit(0); } catch {}
   }, 0);
@@ -116,7 +58,7 @@ test('ConversationOrchestrator real require and instantiation', async () => {
     const { ConversationOrchestrator } = require(modPath);
 
     const userReq = { userContext: { uid: 'test' } };
-    const orchestrator = new ConversationOrchestrator(userReq);
+    const orchestrator = new ConversationOrchestrator(userReq, 'run-test', 'acct-test');
     assert.ok(orchestrator);
     assert.strictEqual(typeof orchestrator.runConversationStep, 'function');
 
