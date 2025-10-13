@@ -243,13 +243,14 @@ export interface FetcherLogEntry {
   id: string;                          // assigned for deletion targeting
   timestamp: string;                   // ISO timestamp
   level: FetcherLogLevel;              // severity
-  provider?: AccountProvider;          // 'gmail' | 'outlook'
+  provider: AccountProvider | null;    // 'gmail' | 'outlook' | null for system-level logs
   accountId: string;                   // source account id ('all' for aggregate events)
   event: string;                       // e.g., 'cycle_start', 'account_start', 'oauth_refreshed', 'messages_listed', 'message_fetched', 'account_complete', 'cycle_complete'
-  message?: string;                    // human-readable message
-  emailId?: string;                    // optional related email id
-  count?: number;                      // optional count metric (e.g., messages listed)
+  message?: string | null;             // human-readable message
+  emailId: string | null;              // related email id or null when not applicable
+  count?: number | null;               // optional count metric (e.g., messages listed)
   detail?: any;                        // structured payload (e.g., headers, error objects)
+  [key: string]: unknown;              // allow structured metadata extensions
 }
 
 /** Orchestration agent definition and configuration. */

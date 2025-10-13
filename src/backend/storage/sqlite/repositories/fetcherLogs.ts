@@ -10,12 +10,24 @@ function ensureLogString(value: unknown, field: string, id: string): string {
   return value;
 }
 
-function ensureAccountProvider(value: unknown, id: string): AccountProvider {
-  const provider = ensureLogString(value, 'provider', id);
-  if (provider === 'gmail' || provider === 'outlook') {
-    return provider;
+function normalizeProvider(value: unknown, id: string): AccountProvider | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (value === 'gmail' || value === 'outlook') {
+    return value;
   }
   throw new Error(`fetcher log ${id}: provider invalid`);
+}
+
+function normalizeEmailId(value: unknown, id: string): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
+  }
+  throw new Error(`fetcher log ${id}: email_id invalid`);
 }
 
 function pruneFetcherLogs(db: any) {
@@ -53,8 +65,8 @@ export class FetcherLogRepository extends SqliteRepository {
         if (!row.account_id) {
           throw new Error(`fetcher log missing account_id (id=${row.id})`);
         }
-        const provider = ensureAccountProvider(row.provider, row.id);
-        const emailId = ensureLogString(row.email_id, 'email_id', row.id);
+        const provider = normalizeProvider(row.provider, row.id);
+        const emailId = normalizeEmailId(row.email_id, row.id);
         return {
           id: row.id,
           timestamp: row.timestamp,
@@ -63,9 +75,9 @@ export class FetcherLogRepository extends SqliteRepository {
           accountId: row.account_id,
           event: row.event,
           emailId,
-          count: typeof row.count === 'number' ? row.count : undefined,
-          detail: row.detail_json ? JSON.parse(row.detail_json) : undefined,
-        };
+          count: typeof row.count === 'number' ? row.count : null,
+          detail: row.detail_json ? JSON.parse(row.detail_json) : null,
+        } as FetcherLogEntry;
       });
     });
   }
@@ -77,8 +89,8 @@ export class FetcherLogRepository extends SqliteRepository {
         'INSERT INTO fetcher_logs (id, timestamp, level, provider, account_id, event, email_id, count, detail_json) VALUES (@id, @timestamp, @level, @provider, @account_id, @event, @email_id, @count, @detail_json)'
       );
       for (const entry of entries) {
-        const provider = ensureAccountProvider(entry.provider, entry.id);
-        const emailId = ensureLogString(entry.emailId, 'emailId', entry.id);
+        const provider = normalizeProvider(entry.provider, entry.id);
+        const emailId = normalizeEmailId(entry.emailId, entry.id);
         insert.run({
           id: entry.id,
           timestamp: entry.timestamp,
@@ -98,8 +110,8 @@ export class FetcherLogRepository extends SqliteRepository {
 
   async append(entry: FetcherLogEntry): Promise<void> {
     await this.transaction((db) => {
-      const provider = ensureAccountProvider(entry.provider, entry.id);
-      const emailId = ensureLogString(entry.emailId, 'emailId', entry.id);
+      const provider = normalizeProvider(entry.provider, entry.id);
+      const emailId = normalizeEmailId(entry.emailId, entry.id);
       db.prepare(
         'INSERT INTO fetcher_logs (id, timestamp, level, provider, account_id, event, email_id, count, detail_json) VALUES (@id, @timestamp, @level, @provider, @account_id, @event, @email_id, @count, @detail_json)'
       ).run({

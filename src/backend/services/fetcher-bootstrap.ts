@@ -34,9 +34,12 @@ export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise
             id: newId(),
             timestamp: new Date().toISOString(),
             level: 'info',
+            provider: null,
+            accountId: 'all',
             event: 'boot_autostart',
-            message: 'Fetcher loop auto-started on server boot'
-          } as any;
+            message: 'Fetcher loop auto-started on server boot',
+            emailId: null
+          };
           await fetcherManager.appendFetcherLogForUid(uid, entry);
         } catch (e) {
           logger.error('Boot: failed to start fetcher loop', { uid, err: e });
@@ -45,10 +48,13 @@ export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise
               id: newId(),
               timestamp: new Date().toISOString(),
               level: 'error',
+              provider: null,
+              accountId: 'all',
               event: 'boot_autostart_failed',
               message: 'Failed to auto-start fetcher loop on server boot',
+              emailId: null,
               detail: String((e as any)?.message || e)
-            } as any;
+            };
             await fetcherManager.appendFetcherLogForUid(uid, entry);
           } catch (e2: any) {
             logger.warn('Boot: failed to write boot_autostart_failed entry to user fetcher log', { uid, error: e2?.message || String(e2) });

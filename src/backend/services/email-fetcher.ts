@@ -53,7 +53,8 @@ export class EmailFetcher {
       id: newId(),
       timestamp: fetchStart,
       level: 'info',
-      provider: 'system',
+      provider: null,
+      emailId: null,
       accountId: 'all',
       event: 'fetch_cycle_start',
       message: 'Starting email fetch cycle',
@@ -83,7 +84,8 @@ export class EmailFetcher {
       id: newId(),
       timestamp: new Date().toISOString(),
       level: 'info',
-      provider: 'system',
+      provider: null,
+      emailId: null,
       accountId: 'all',
       event: 'fetch_cycle_complete',
       message: 'Completed email fetch cycle',
@@ -163,6 +165,7 @@ export class EmailFetcher {
         level: 'error',
         provider: account.provider,
         accountId: account.id,
+        emailId: null,
         event: 'account_processing_error',
         message: 'Failed to process account emails',
         detail: errorMessage
@@ -196,7 +199,8 @@ export class EmailFetcher {
       id: newId(),
       timestamp: new Date().toISOString(),
       level: 'info',
-      provider: 'system',
+      provider: null,
+      emailId: null,
       accountId: 'all',
       event: 'emails_upserted',
       message: 'Upserted emails into store',
@@ -221,6 +225,7 @@ export class EmailFetcher {
         level: 'error',
         provider: account.provider,
         accountId: account.id,
+        emailId: null,
         event: 'provider_not_found',
         message: 'Email provider not found'
       });
@@ -269,7 +274,7 @@ export class EmailFetcher {
             level: 'error',
             provider: account.provider,
             accountId: account.id,
-            emailId: typeof (raw as any)?.id === 'string' ? (raw as any).id : undefined,
+            emailId: typeof (raw as any)?.id === 'string' ? (raw as any).id : null,
             event: 'invalid_envelope_error',
             message: 'Envelope failed invariants',
             detail: { error: e?.message }
@@ -279,10 +284,12 @@ export class EmailFetcher {
       }
 
       this.logFetch({
+        id: newId(),
         timestamp: new Date().toISOString(),
         level: 'info',
         provider: account.provider,
         accountId: account.id,
+        emailId: null,
         event: 'messages_listed',
         message: 'Listed unread messages (post-validation)',
         count: valid.length,
@@ -299,6 +306,7 @@ export class EmailFetcher {
         level: 'error',
         provider: account.provider,
         accountId: account.id,
+        emailId: null,
         event: 'provider_fetch_error',
         message: 'Failed to list unread messages',
         detail: error.message

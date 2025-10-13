@@ -97,6 +97,7 @@ export class EmailProcessor {
         level: 'error',
         provider: account.provider,
         accountId: account.id,
+        emailId: envelope.id,
         event: 'email_processing_error',
         message: 'Failed to process email',
         detail: error.message
@@ -302,6 +303,7 @@ snippet: ${envelope.snippet}`;
       level: 'error',
       provider: account.provider,
       accountId: account.id,
+      emailId: null,
       event: 'director_config_missing',
       message: error,
       directorId
@@ -315,6 +317,7 @@ snippet: ${envelope.snippet}`;
       level: 'info',
       provider: account.provider,
       accountId: account.id,
+      emailId: null,
       event: 'director_thread_created',
       message: 'Created director conversation thread',
       directorId,
@@ -362,6 +365,7 @@ snippet: ${envelope.snippet}`;
           level: 'error',
           provider: context.account.provider,
           accountId: context.account.id,
+          emailId: thread.email.id,
           event: 'orchestration_error',
           message: 'Failed to start director orchestration',
           directorId: director.id,

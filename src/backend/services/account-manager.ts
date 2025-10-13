@@ -78,6 +78,7 @@ export class AccountManager {
           level: 'info',
           provider: account.provider,
           accountId: account.id,
+          emailId: null,
           event: 'oauth_refreshed',
           message: 'OAuth token refreshed successfully'
         });
@@ -105,6 +106,7 @@ export class AccountManager {
         level: 'error',
         provider: account.provider,
         accountId: account.id,
+        emailId: null,
         event: 'oauth_refresh_failed',
         message: 'Failed to refresh OAuth token',
         detail: error.message
