@@ -93,9 +93,9 @@ module.exports = [
       'no-restricted-syntax': 'off',
     },
   },
-  // In non-producer layers (routes, tests), surface domain-literal issues as warnings
+  // Routes lint config
   {
-    files: ['routes/**/*.ts','tests/**/*.ts','tests/**/*.cjs'],
+    files: ['routes/**/*.ts'],
     plugins: {
       invariants: require('./eslint-plugin-invariants'),
     },
