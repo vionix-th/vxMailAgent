@@ -6,21 +6,21 @@ import { chatCompletion } from '../providers/openai';
 
 import { requireUserContext } from '../middleware/user-context';
 import logger from '../services/logger';
-import { ReqLike } from '../utils/repo-access';
+import { ContextInput, requireContext } from '../utils/repo-access';
 import { errorHandler, ValidationError, NotFoundError, ConflictError } from '../services/error-handler';
 import { buildTargetMessage, parseContextSelection, parseIncluding, parseTarget, TemplateMsg } from '../utils/prompt-helpers';
 import { buildSelectedPacks } from '../services/promptContext';
 import { loadUserTemplates } from '../services/templates';
 
 export interface PromptsRoutesDeps {
-  listPrompts: (req?: ReqLike) => Promise<readonly Prompt[]>;
-  getPrompt: (req: ReqLike, id: string) => Promise<Prompt | null>;
-  createPrompt: (req: ReqLike, item: Prompt) => Promise<void>;
-  updatePrompt: (req: ReqLike, item: Prompt) => Promise<void>;
-  deletePrompt: (req: ReqLike, id: string) => Promise<boolean>;
-  getSettings: (req?: ReqLike) => Promise<any>;
-  getAgents: (req?: ReqLike) => Promise<Array<{ id: string; name: string; promptId?: string; apiConfigId: string }>>;
-  getDirectors: (req?: ReqLike) => Promise<Array<{ id: string; name: string; agentIds: string[]; promptId?: string; apiConfigId: string }>>;
+  listPrompts: (req?: ContextInput) => Promise<readonly Prompt[]>;
+  getPrompt: (req: ContextInput, id: string) => Promise<Prompt | null>;
+  createPrompt: (req: ContextInput, item: Prompt) => Promise<void>;
+  updatePrompt: (req: ContextInput, item: Prompt) => Promise<void>;
+  deletePrompt: (req: ContextInput, id: string) => Promise<boolean>;
+  getSettings: (req?: ContextInput) => Promise<any>;
+  getAgents: (req?: ContextInput) => Promise<Array<{ id: string; name: string; promptId?: string; apiConfigId: string }>>;
+  getDirectors: (req?: ContextInput) => Promise<Array<{ id: string; name: string; agentIds: string[]; promptId?: string; apiConfigId: string }>>;
 }
 
 function ensurePromptPayload(payload: unknown, context: string): Prompt {
@@ -38,18 +38,20 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // GET /api/prompts
   app.get('/api/prompts', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     logger.info('GET /api/prompts');
-    const list = await deps.listPrompts(req as ReqLike);
+    const context = requireContext(req);
+    const list = await deps.listPrompts(context);
     res.json(Array.from(list));
   }));
 
   // POST /api/prompts
   app.post('/api/prompts', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const prompt = ensurePromptPayload(req.body, 'body');
-    const existing = await deps.getPrompt(req as ReqLike, prompt.id);
+    const context = requireContext(req);
+    const existing = await deps.getPrompt(context, prompt.id);
     if (existing) {
       throw new ConflictError(`Prompt with id '${prompt.id}' already exists`);
     }
-    await deps.createPrompt(req as ReqLike, prompt);
+    await deps.createPrompt(context, prompt);
     logger.info('POST /api/prompts: added prompt', { id: prompt.id });
     res.json({ success: true });
   }));
@@ -58,15 +60,16 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   app.put('/api/prompts/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     const prompt = ensurePromptPayload(req.body, 'body');
+    const context = requireContext(req);
     if (prompt.id !== id) {
       throw new ValidationError('Prompt id mismatch', 'PROMPT_ID_MISMATCH');
     }
-    const current = await deps.getPrompt(req as ReqLike, id);
+    const current = await deps.getPrompt(context, id);
     if (!current) {
       logger.warn('PUT /api/prompts/:id not found', { id });
       throw new NotFoundError('Prompt not found');
     }
-    await deps.updatePrompt(req as ReqLike, prompt);
+    await deps.updatePrompt(context, prompt);
     logger.info('PUT /api/prompts/:id updated', { id });
     res.json({ success: true });
   }));
@@ -74,7 +77,8 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // DELETE /api/prompts/:id
   app.delete('/api/prompts/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const removed = await deps.deletePrompt(req as ReqLike, id);
+    const context = requireContext(req);
+    const removed = await deps.deletePrompt(context, id);
     if (!removed) {
       throw new NotFoundError('Prompt not found');
     }
@@ -85,16 +89,17 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
   // POST /api/prompts/assist - optimize a prompt with application context
   app.post('/api/prompts/assist', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const payload = req.body || {};
+    const context = requireContext(req);
     const prompt: Prompt | undefined = payload.prompt;
     if (!prompt || !Array.isArray(prompt.messages)) {
       throw new ValidationError('Invalid payload: prompt with messages[] is required');
     }
-    const settings = await deps.getSettings(req as ReqLike);
+    const settings = await deps.getSettings(context);
     const api = Array.isArray(settings?.apiConfigs) && settings.apiConfigs[0];
     if (!api) throw new ValidationError('No API configuration available');
 
     // Always resolve optimizer/system messages from the canonical 'prompt_optimizer' template
-    const list = await loadUserTemplates(req as ReqLike);
+    const list = await loadUserTemplates(context);
     const opt = list.find(t => t.id === 'prompt_optimizer');
     if (!opt) {
       throw new NotFoundError('optimizer_template_missing');
@@ -107,8 +112,8 @@ export default function registerPromptsRoutes(app: express.Express, deps: Prompt
     const includingPacks = parseIncluding(payload, req.query);
     const finalPacks = Array.from(new Set<string>([...selectedPacks, ...includingPacks])) as any;
     // Runtime agents/directors (ids/names only), and supported tools/actions
-    const agents = (await (deps.getAgents?.(req as ReqLike) || Promise.resolve([]))).map(a => ({ id: a.id, name: a.name }));
-    const directors = (await (deps.getDirectors?.(req as ReqLike) || Promise.resolve([]))).map(d => ({ id: d.id, name: d.name, agentIds: d.agentIds }));
+    const agents = (await (deps.getAgents?.(context) || Promise.resolve([]))).map(a => ({ id: a.id, name: a.name }));
+    const directors = (await (deps.getDirectors?.(context) || Promise.resolve([]))).map(d => ({ id: d.id, name: d.name, agentIds: d.agentIds }));
     const tools = [
       { kind: 'calendar', actions: ['read', 'add'] },
       { kind: 'todo', actions: ['add'] },

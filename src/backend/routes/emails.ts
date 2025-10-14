@@ -2,6 +2,7 @@ import express from 'express';
 import { errorHandler } from '../services/error-handler';
 import { LiveRepos } from '../liveRepos';
 import { EmailEnvelope } from '../../shared/types';
+import { requireContext } from '../utils/repo-access';
 
 interface EmailWithConversations extends EmailEnvelope {
   conversations: ConversationSummary[];
@@ -34,12 +35,12 @@ export function createEmailRoutes(repos: LiveRepos): express.Router {
     const status = req.query.status as string;
 
     // Get all emails from repo (single source of truth)
-    const allEmails = await repos.getEmails(req as any);
+    const allEmails = await repos.getEmails(requireContext(req));
     
     // Get conversations and orchestration events for correlation
-    const conversations = await repos.getConversations(req as any);
-    const orchestrationEvents = await repos.getOrchestrationLog(req as any);
-    const providerEvents = await repos.getProviderEvents(req as any);
+    const conversations = await repos.getConversations(requireContext(req));
+    const orchestrationEvents = await repos.getOrchestrationLog(requireContext(req));
+    const providerEvents = await repos.getProviderEvents(requireContext(req));
 
     // No fallback derivation: if empty, the UI will truthfully reflect no indexed emails.
 

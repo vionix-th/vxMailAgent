@@ -6,7 +6,8 @@ import { upsertAccount } from '../../services/accounts';
 import type { User, Account } from '../../../shared/types';
 import { createAccount } from '../../../shared/constructors';
 import { signJwt } from '../../utils/jwt';
-import type { ReqLike } from '../../interfaces';
+import { ensureContext } from '../../utils/repo-access';
+import type { ContextInput } from '../../utils/repo-access';
 import { AuthenticationError, ValidationError } from '../../services/error-handler';
 import logger from '../../services/logger';
 
@@ -86,7 +87,7 @@ export async function initiateGoogleAccountOAuth(rawState: string): Promise<{ ur
   return { url, loginCookie };
 }
 
-export async function handleGoogleAccountCallback(code: string, stateToken: string, cookieHeader: string | undefined, req: ReqLike): Promise<Account> {
+export async function handleGoogleAccountCallback(code: string, stateToken: string, cookieHeader: string | undefined, req: ContextInput): Promise<Account> {
   const stored = parseLoginCookie(cookieHeader);
   if (!stored || stored.state !== stateToken) {
     throw new AuthenticationError('Invalid or missing OIDC account state');
@@ -131,7 +132,8 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
   });
   
   logger.info('About to upsert Google account', { email, hasAccessToken: !!tokenSet.access_token, hasRefreshToken: !!tokenSet.refresh_token });
-  await upsertAccount(req, account);
+  const ctx = ensureContext(req);
+  await upsertAccount(ctx, account);
   logger.info('Google account upserted successfully', { email });
   return account;
 }

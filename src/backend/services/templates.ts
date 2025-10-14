@@ -1,10 +1,10 @@
 import { TemplateItem } from '../../shared/types';
 import logger from './logger';
-import { requireReq, getTemplatesRepo, ReqLike } from '../utils/repo-access';
+import { requireContext, getTemplatesRepo, ContextInput } from '../utils/repo-access';
 
-export async function loadUserTemplates(req?: ReqLike): Promise<TemplateItem[]> {
+export async function loadUserTemplates(req?: ContextInput): Promise<TemplateItem[]> {
   try {
-    const ureq = requireReq(req);
+    const ureq = requireContext(req);
     const repo = getTemplatesRepo(ureq);
     const arr = await repo.list();
     // Producer initializes/ensures optimizer; do not seed here.
@@ -18,11 +18,11 @@ export async function loadUserTemplates(req?: ReqLike): Promise<TemplateItem[]> 
 
 /** Partially update a template by id; only name, description, messages are mutable. */
 export async function updateTemplatePartial(
-  req: ReqLike,
+  req: ContextInput,
   id: string,
   patch: Partial<Pick<TemplateItem, 'name' | 'description' | 'messages'>>
 ): Promise<void> {
-  const ureq = requireReq(req);
+  const ureq = requireContext(req);
   const repo = getTemplatesRepo(ureq);
   const current = await repo.getById(id);
   if (!current) throw new Error('Template not found');

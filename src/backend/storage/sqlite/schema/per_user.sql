@@ -123,7 +123,6 @@ CREATE TABLE IF NOT EXISTS conversation_threads (
   director_id TEXT,
   agent_id TEXT,
   account_id TEXT NOT NULL,
-  email_id TEXT NOT NULL,
   email_json TEXT NOT NULL CHECK(json_valid(email_json)),
   prompt_id TEXT NOT NULL,
   api_config_id TEXT NOT NULL,
@@ -138,6 +137,8 @@ CREATE TABLE IF NOT EXISTS conversation_threads (
 CREATE INDEX IF NOT EXISTS idx_conversation_threads_account ON conversation_threads(account_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_threads_updated ON conversation_threads(last_active_at);
 
+CREATE INDEX IF NOT EXISTS idx_conversation_threads_email ON conversation_threads(json_extract(email_json, '$.id'));
+
 CREATE TABLE IF NOT EXISTS conversation_messages (
   thread_id TEXT NOT NULL,
   seq INTEGER NOT NULL,
@@ -148,7 +149,7 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
 
 CREATE TABLE IF NOT EXISTS provider_events (
   id TEXT PRIMARY KEY,
-  conversation_id TEXT,
+  conversation_id TEXT NOT NULL,
   provider TEXT NOT NULL CHECK(provider IN ('openai')),
   type TEXT NOT NULL CHECK(type IN ('request','response','error')),
   timestamp TEXT NOT NULL,
@@ -156,7 +157,7 @@ CREATE TABLE IF NOT EXISTS provider_events (
   usage_json TEXT CHECK(usage_json IS NULL OR json_valid(usage_json)),
   payload_json TEXT CHECK(payload_json IS NULL OR json_valid(payload_json)),
   error TEXT,
-  FOREIGN KEY (conversation_id) REFERENCES conversation_threads(id) ON DELETE SET NULL
+  FOREIGN KEY (conversation_id) REFERENCES conversation_threads(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_provider_events_conversation ON provider_events(conversation_id);
@@ -179,12 +180,12 @@ CREATE INDEX IF NOT EXISTS idx_fetcher_logs_account ON fetcher_logs(account_id);
 
 CREATE TABLE IF NOT EXISTS orchestration_logs (
   id TEXT PRIMARY KEY,
-  conversation_id TEXT,
+  conversation_id TEXT NOT NULL,
   timestamp TEXT NOT NULL,
   phase TEXT NOT NULL CHECK(phase IN ('director','agent','tool','result')),
   outcome_json TEXT NOT NULL CHECK(json_valid(outcome_json)),
   context_json TEXT NOT NULL CHECK(json_valid(context_json)),
-  FOREIGN KEY (conversation_id) REFERENCES conversation_threads(id) ON DELETE SET NULL
+  FOREIGN KEY (conversation_id) REFERENCES conversation_threads(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_orchestration_logs_conversation ON orchestration_logs(conversation_id);

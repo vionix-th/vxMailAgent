@@ -1,11 +1,11 @@
 import express from 'express';
 import {
-  requireReq,
+  requireContext,
   getWorkspaceItemsRepo,
   getProviderEventsRepo,
   getTracesRepo,
   getOrchestrationLogRepo,
-  ReqLike
+  ContextInput
 } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler } from '../services/error-handler';
@@ -37,7 +37,7 @@ async function purgeWorkspaceItems(repo: WorkspaceItemsRepoInstance): Promise<nu
   return deleted;
 }
 
-async function purgeConversations(repos: LiveRepos, req: ReqLike): Promise<number> {
+async function purgeConversations(repos: LiveRepos, req: ContextInput): Promise<number> {
   const threads = await repos.getConversations(req);
   let deleted = 0;
   for (const thread of threads) {
@@ -52,7 +52,7 @@ export default function registerCleanupRoutes(
   app: express.Express,
   repos: LiveRepos,
   services: {
-    getFetcherManager: (req: ReqLike) => {
+    getFetcherManager: (req: ContextInput) => {
       getFetcherLog: () => Promise<any[]>;
       setFetcherLog: (next: any[]) => Promise<void>;
       clearFetcherLog: () => Promise<void>;
@@ -62,10 +62,10 @@ export default function registerCleanupRoutes(
 
   // Stats for current user (used by frontend settings)
   app.get('/api/cleanup/stats', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
+    const context = requireContext(req);
     
     // Get fetcher log from active fetcher manager, not repository
-    const fetcherManager = services.getFetcherManager(ureq);
+    const fetcherManager = services.getFetcherManager(context);
     const fetcherLog = fetcherManager ? await fetcherManager.getFetcherLog() : [];
     
     const [
@@ -75,11 +75,11 @@ export default function registerCleanupRoutes(
       traces,
       workspaceItems,
     ] = await Promise.all([
-      repos.getConversations(ureq),
-      repos.getOrchestrationLog(ureq),
-      getProviderEventsRepo(ureq).list(),
-      getTracesRepo(ureq).list(),
-      getWorkspaceItemsRepo(ureq).list(),
+      repos.getConversations(context),
+      repos.getOrchestrationLog(context),
+      getProviderEventsRepo(context).list(),
+      getTracesRepo(context).list(),
+      getWorkspaceItemsRepo(context).list(),
     ]);
     const stats = {
       fetcherLogs: fetcherLog.length,
@@ -94,10 +94,10 @@ export default function registerCleanupRoutes(
 
   // Purge all logs and data for the current user (frontend expects /api/cleanup/all)
   app.delete('/api/cleanup/all', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
+    const context = requireContext(req);
     
     // Get current counts before deletion
-    const fetcherManager = services.getFetcherManager(ureq);
+    const fetcherManager = services.getFetcherManager(context);
     const fetcherLog = fetcherManager ? await fetcherManager.getFetcherLog() : [];
     
     const [
@@ -105,11 +105,11 @@ export default function registerCleanupRoutes(
       providerEvents,
       traces,
     ] = await Promise.all([
-      repos.getOrchestrationLog(ureq),
-      getProviderEventsRepo(ureq).list(),
-      getTracesRepo(ureq).list(),
+      repos.getOrchestrationLog(context),
+      getProviderEventsRepo(context).list(),
+      getTracesRepo(context).list(),
     ]);
-    const workspaceRepo = getWorkspaceItemsRepo(ureq);
+    const workspaceRepo = getWorkspaceItemsRepo(context);
     const workspaceDeleted = await purgeWorkspaceItems(workspaceRepo);
     
     // Clear fetcher log through manager
@@ -117,11 +117,11 @@ export default function registerCleanupRoutes(
       await fetcherManager.clearFetcherLog();
     }
     
-    const conversationsDeleted = await purgeConversations(repos, ureq);
+    const conversationsDeleted = await purgeConversations(repos, context);
     await Promise.all([
-      getOrchestrationLogRepo(ureq).clear(),
-      getProviderEventsRepo(ureq).clear(),
-      getTracesRepo(ureq).clear(),
+      getOrchestrationLogRepo(context).clear(),
+      getProviderEventsRepo(context).clear(),
+      getTracesRepo(context).clear(),
     ]);
     const deleted = {
       fetcherLogs: fetcherLog.length,
@@ -140,8 +140,8 @@ export default function registerCleanupRoutes(
 
   // Individual purge endpoints expected by frontend
   app.delete('/api/cleanup/fetcher-logs', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
-    const fetcherManager = services.getFetcherManager(ureq);
+    const context = requireContext(req);
+    const fetcherManager = services.getFetcherManager(context);
     const prev = fetcherManager ? await fetcherManager.getFetcherLog() : [];
     if (fetcherManager) {
       await fetcherManager.clearFetcherLog();
@@ -149,32 +149,32 @@ export default function registerCleanupRoutes(
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} fetcher logs` });
   }));
   app.delete('/api/cleanup/orchestration-logs', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
-    const prev = await repos.getOrchestrationLog(ureq);
-    await getOrchestrationLogRepo(ureq).clear();
+    const context = requireContext(req);
+    const prev = await repos.getOrchestrationLog(context);
+    await getOrchestrationLogRepo(context).clear();
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} orchestration logs` });
   }));
   app.delete('/api/cleanup/conversations', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
-    const deleted = await purgeConversations(repos, ureq);
+    const context = requireContext(req);
+    const deleted = await purgeConversations(repos, context);
     res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });
   }));
   app.delete('/api/cleanup/workspace-items', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
-    const workspaceRepo = getWorkspaceItemsRepo(ureq);
+    const context = requireContext(req);
+    const workspaceRepo = getWorkspaceItemsRepo(context);
     const deleted = await purgeWorkspaceItems(workspaceRepo);
     res.json({ success: true, deleted, message: `Deleted ${deleted} workspace items` });
   }));
   app.delete('/api/cleanup/provider-events', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
-    const repo = getProviderEventsRepo(ureq);
+    const context = requireContext(req);
+    const repo = getProviderEventsRepo(context);
     const prev = await repo.list();
     await repo.clear();
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} provider events` });
   }));
   app.delete('/api/cleanup/traces', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
-    const repo = getTracesRepo(ureq);
+    const context = requireContext(req);
+    const repo = getTracesRepo(context);
     const prev = await repo.list();
     await repo.clear();
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} traces` });

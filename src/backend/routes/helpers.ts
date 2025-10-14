@@ -1,15 +1,15 @@
 import express from 'express';
-import { ReqLike } from '../utils/repo-access';
+import { ContextInput, requireContext } from '../utils/repo-access';
 import logger from '../services/logger';
 import { errorHandler, ValidationError, NotFoundError, ConflictError } from '../services/error-handler';
 
 export interface CrudRepoFunctions<T> {
-  list: (req?: ReqLike) => Promise<readonly T[]>;
-  getById: (req: ReqLike, id: string) => Promise<T | null>;
-  create: (req: ReqLike, item: T) => Promise<void>;
-  update: (req: ReqLike, item: T) => Promise<void>;
-  delete: (req: ReqLike, id: string) => Promise<boolean>;
-  reorder?: (req: ReqLike, orderedIds: readonly string[]) => Promise<void>;
+  list: (req?: ContextInput) => Promise<readonly T[]>;
+  getById: (req: ContextInput, id: string) => Promise<T | null>;
+  create: (req: ContextInput, item: T) => Promise<void>;
+  update: (req: ContextInput, item: T) => Promise<void>;
+  delete: (req: ContextInput, id: string) => Promise<boolean>;
+  reorder?: (req: ContextInput, orderedIds: readonly string[]) => Promise<void>;
 }
 
 export interface CrudCallbacks<T> {
@@ -66,7 +66,8 @@ export function createCrudRoutes<T extends Record<string, any>>(
   // GET /api/{resource}
   app.get(basePath, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     logger.info(`GET ${basePath}`);
-    let items = Array.from(await repoFns.list(req as ReqLike));
+    const context = requireContext(req);
+    let items = Array.from(await repoFns.list(context));
     if (transformList) {
       items = transformList(items);
     }
@@ -93,12 +94,13 @@ export function createCrudRoutes<T extends Record<string, any>>(
     if (newId === undefined || newId === null || String(newId).length === 0) {
       throw new ValidationError(`${itemName} ${String(idField)} is required`);
     }
-    const existing = await repoFns.getById(req as ReqLike, String(newId));
+    const context = requireContext(req);
+    const existing = await repoFns.getById(context, String(newId));
     if (existing) {
       throw new ConflictError(`${itemName} with ${String(idField)} '${String(newId)}' already exists`);
     }
 
-    await repoFns.create(req as ReqLike, item);
+    await repoFns.create(context, item);
 
     logger.info(`POST ${basePath}: added ${itemName}`, { id: newId });
     res.status(201)
@@ -109,7 +111,8 @@ export function createCrudRoutes<T extends Record<string, any>>(
   // PUT /api/{resource}/:id
   app.put(`${basePath}/:id`, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const current = await repoFns.getById(req as ReqLike, id);
+    const context = requireContext(req);
+    const current = await repoFns.getById(context, id);
 
     if (!current) {
       logger.warn(`PUT ${basePath}/:id not found`, { id });
@@ -143,7 +146,7 @@ export function createCrudRoutes<T extends Record<string, any>>(
       candidate = afterValidate(candidate, true);
     }
 
-    await repoFns.update(req as ReqLike, candidate);
+    await repoFns.update(context, candidate);
 
     logger.info(`PUT ${basePath}/:id updated`, { id });
     res.json(candidate);
@@ -152,7 +155,8 @@ export function createCrudRoutes<T extends Record<string, any>>(
   // DELETE /api/{resource}/:id
   app.delete(`${basePath}/:id`, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const removed = await repoFns.delete(req as ReqLike, id);
+    const context = requireContext(req);
+    const removed = await repoFns.delete(context, id);
     if (!removed) {
       logger.warn(`DELETE ${basePath}/:id not found`, { id });
       throw new NotFoundError(`${itemName} not found`);
@@ -176,7 +180,8 @@ export function createCrudRoutes<T extends Record<string, any>>(
         throw new Error('Reorder operation not supported for this resource');
       }
 
-      await repoFns.reorder(req as ReqLike, orderedIds);
+      const context = requireContext(req);
+      await repoFns.reorder(context, orderedIds);
       logger.info(`PUT ${basePath}/reorder: reordered ${itemName}s`, { count: orderedIds.length });
       res.json({ success: true });
     }));

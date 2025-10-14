@@ -1,6 +1,6 @@
 import logger from './logger';
 import { RepositoryError } from './error-handler';
-import { requireReq, requireUid, ReqLike, getSettingsRepo } from '../utils/repo-access';
+import { ensureContext, requireUid, getSettingsRepo, ContextInput } from '../utils/repo-access';
 import { newId } from '../utils/id';
 
 import type { ApiConfig } from '../../shared/types';
@@ -16,9 +16,9 @@ export interface Settings {
 }
 
 /** Load settings from the per-user repository (single settings object). */
-export async function loadSettings(req?: ReqLike): Promise<Settings> {
-  const ureq = requireReq(req);
-  const repo = getSettingsRepo(ureq);
+export async function loadSettings(req?: ContextInput): Promise<Settings> {
+  const ctx = ensureContext(req);
+  const repo = getSettingsRepo(ctx);
   const settings = await repo.load();
   if (!settings) {
     throw new RepositoryError('Settings not initialized');
@@ -44,22 +44,22 @@ export async function loadSettings(req?: ReqLike): Promise<Settings> {
   if (typeof settings.sessionTimeoutMinutes !== 'number') {
     throw new RepositoryError('Invalid settings: sessionTimeoutMinutes');
   }
-  logger.debug('Loaded settings', { uid: requireUid(ureq) });
+  logger.debug('Loaded settings', { uid: requireUid(ctx) });
   return settings;
 }
 
 /** Save settings to the per-user repository. */
-export async function saveSettings(settings: Settings, req: ReqLike): Promise<void> {
-  const ureq = requireReq(req);
+export async function saveSettings(settings: Settings, req: ContextInput): Promise<void> {
+  const ctx = ensureContext(req);
   try {
-    const repo = getSettingsRepo(ureq);
+    const repo = getSettingsRepo(ctx);
     settings.apiConfigs.forEach((cfg) => {
       if (typeof cfg.apiKey !== 'string' || !cfg.apiKey) {
         throw new RepositoryError('Cannot persist apiConfig without apiKey');
       }
     });
     await repo.save(settings);
-    logger.debug('Saved settings', { uid: requireUid(ureq) });
+    logger.debug('Saved settings', { uid: requireUid(ctx) });
   } catch (e) {
     logger.error('Failed to save settings', { err: e });
     throw e;
@@ -68,7 +68,7 @@ export async function saveSettings(settings: Settings, req: ReqLike): Promise<vo
 
 /** Partially update settings with whitelisted fields and type checks. */
 export async function updateSettingsPartial(
-  req: ReqLike,
+  req: ContextInput,
   patch: Partial<Settings>
 ): Promise<Settings> {
   const current = await loadSettings(req);
@@ -144,9 +144,9 @@ export interface ApiConfigCreateInput {
   maxCompletionTokens?: number;
 }
 
-export async function createApiConfig(req: ReqLike, input: ApiConfigCreateInput): Promise<ApiConfig> {
-  const ureq = requireReq(req);
-  const settings = await loadSettings(ureq);
+export async function createApiConfig(req: ContextInput, input: ApiConfigCreateInput): Promise<ApiConfig> {
+  const ctx = ensureContext(req);
+  const settings = await loadSettings(ctx);
 
   const name = ensureNonEmptyString(input.name, 'apiConfig.name');
   const model = ensureNonEmptyString(input.model, 'apiConfig.model');
@@ -172,7 +172,7 @@ export async function createApiConfig(req: ReqLike, input: ApiConfigCreateInput)
     ...settings,
     apiConfigs: [...settings.apiConfigs, created].map(cloneApiConfig),
   };
-  await saveSettings(next, ureq);
+  await saveSettings(next, ctx);
   return created;
 }
 
@@ -184,9 +184,9 @@ export interface ApiConfigUpdateInput {
   maxCompletionTokens?: number | null;
 }
 
-export async function updateApiConfig(req: ReqLike, id: string, patch: ApiConfigUpdateInput): Promise<ApiConfig> {
-  const ureq = requireReq(req);
-  const settings = await loadSettings(ureq);
+export async function updateApiConfig(req: ContextInput, id: string, patch: ApiConfigUpdateInput): Promise<ApiConfig> {
+  const ctx = ensureContext(req);
+  const settings = await loadSettings(ctx);
   const cfg = settings.apiConfigs.find((c) => c.id === id);
   if (!cfg) {
     throw new RepositoryError(`apiConfig ${id} not found`);
@@ -219,13 +219,13 @@ export async function updateApiConfig(req: ReqLike, id: string, patch: ApiConfig
     ...settings,
     apiConfigs: settings.apiConfigs.map((existing) => (existing.id === id ? next : existing)),
   };
-  await saveSettings(updated, ureq);
+  await saveSettings(updated, ctx);
   return next;
 }
 
-export async function deleteApiConfig(req: ReqLike, id: string): Promise<void> {
-  const ureq = requireReq(req);
-  const settings = await loadSettings(ureq);
+export async function deleteApiConfig(req: ContextInput, id: string): Promise<void> {
+  const ctx = ensureContext(req);
+  const settings = await loadSettings(ctx);
   const exists = settings.apiConfigs.some((cfg) => cfg.id === id);
   if (!exists) {
     throw new RepositoryError(`apiConfig ${id} not found`);
@@ -234,5 +234,5 @@ export async function deleteApiConfig(req: ReqLike, id: string): Promise<void> {
     ...settings,
     apiConfigs: settings.apiConfigs.filter((cfg) => cfg.id !== id),
   };
-  await saveSettings(next, ureq);
+  await saveSettings(next, ctx);
 }

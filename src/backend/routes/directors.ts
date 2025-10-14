@@ -4,28 +4,28 @@ import { Director } from '../../shared/types';
 import { createCrudRoutes } from './helpers';
 import { sanitizeEnabledOptionalTools } from '../utils/sanitizeToolCalls';
 import { validateDirectorToolConfig } from '../services/tool-config-service';
-import { getDirectorsRepo, requireReq, ReqLike } from '../utils/repo-access';
+import { getDirectorsRepo, requireContext, ContextInput } from '../utils/repo-access';
 
 export default function registerDirectorsRoutes(app: express.Express, _repos: LiveRepos) {
   const repoFns = {
-    list: async (req?: ReqLike) => {
-      const repo = getDirectorsRepo(requireReq(req));
+    list: async (req?: ContextInput) => {
+      const repo = getDirectorsRepo(requireContext(req));
       return await repo.list();
     },
-    getById: async (req: ReqLike, id: string) => {
-      const repo = getDirectorsRepo(requireReq(req));
+    getById: async (req: ContextInput, id: string) => {
+      const repo = getDirectorsRepo(requireContext(req));
       return await repo.getById(id);
     },
-    create: async (req: ReqLike, item: Director) => {
-      const repo = getDirectorsRepo(requireReq(req));
+    create: async (req: ContextInput, item: Director) => {
+      const repo = getDirectorsRepo(requireContext(req));
       await repo.insert(item);
     },
-    update: async (req: ReqLike, item: Director) => {
-      const repo = getDirectorsRepo(requireReq(req));
+    update: async (req: ContextInput, item: Director) => {
+      const repo = getDirectorsRepo(requireContext(req));
       await repo.update(item);
     },
-    delete: async (req: ReqLike, id: string) => {
-      const repo = getDirectorsRepo(requireReq(req));
+    delete: async (req: ContextInput, id: string) => {
+      const repo = getDirectorsRepo(requireContext(req));
       return await repo.delete(id);
     },
   };

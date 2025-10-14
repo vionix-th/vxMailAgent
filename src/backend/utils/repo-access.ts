@@ -1,5 +1,5 @@
 import type { UserContext } from '../middleware/user-context';
-import type { ReqLike } from '../interfaces';
+import type { AppRequest, UserScopedContext } from '../interfaces';
 import { RepoBundle } from '../repository/registry';
 import type {
   SettingsRepository,
@@ -22,89 +22,143 @@ import type {
   WorkspaceItemsRepoInstance,
 } from '../repository/wrappers';
 
-export type { ReqLike } from '../interfaces';
+export type { AppRequest, UserScopedContext } from '../interfaces';
 
-/** Ensure the request-like object has a valid user context. */
-export function requireReq<T extends ReqLike>(req?: T): T & { userContext: UserContext } {
-  if (req && req.userContext && req.userContext.uid && req.userContext.repos) return req as T & { userContext: UserContext };
+function assertUserContext(value: unknown): asserts value is UserContext {
+  if (!value || typeof value !== 'object') throw new Error('User context required');
+  const ctx = value as UserContext;
+  if (!ctx.uid || !ctx.repos) throw new Error('User context required');
+}
+
+export function requireAppRequest(req: unknown): AppRequest {
+  const candidate = req as Partial<AppRequest> | undefined;
+  if (candidate && candidate.userContext) {
+    assertUserContext(candidate.userContext);
+    return candidate as AppRequest;
+  }
+  throw new Error('AppRequest required');
+}
+
+export function requireUserScopedContext(ctx: unknown): UserScopedContext {
+  const candidate = ctx as Partial<UserScopedContext> | undefined;
+  if (candidate && candidate.userContext) {
+    assertUserContext(candidate.userContext);
+    return { userContext: candidate.userContext, traceId: candidate.traceId };
+  }
+  throw new Error('UserScopedContext required');
+}
+
+export type ContextInput = AppRequest | UserScopedContext | UserContext;
+
+function hasUserContext(value: any): value is { userContext: UserContext; traceId?: string } {
+  return value && typeof value === 'object' && 'userContext' in value;
+}
+
+function isUserContext(value: any): value is UserContext {
+  return value && typeof value === 'object' && 'uid' in value && 'repos' in value;
+}
+
+export function toUserScopedContext(source: unknown): UserScopedContext {
+  if (hasUserContext(source)) {
+    assertUserContext(source.userContext);
+    const traceFromRequest = (source as AppRequest).traceId;
+    return {
+      userContext: source.userContext,
+      traceId: typeof traceFromRequest === 'string' ? traceFromRequest : source.traceId,
+    };
+  }
+  if (isUserContext(source)) {
+    assertUserContext(source);
+    return { userContext: source };
+  }
   throw new Error('User context required');
 }
 
-/** Get a specific per-user repository by key, requiring user context. */
-export function requireUserRepo<K extends keyof RepoBundle>(req: ReqLike, key: K): RepoBundle[K] {
-  return requireReq(req).userContext.repos[key];
+export function ensureContext(source?: unknown): UserScopedContext {
+  if (!source) throw new Error('User context required');
+  return toUserScopedContext(source);
 }
 
-/** Get the current user's UID, requiring user context. */
-export function requireUid(req: ReqLike): string {
-  return requireReq(req).userContext.uid;
+export function requireContext(source?: unknown): UserScopedContext {
+  return ensureContext(source);
 }
 
-/** Get the per-user RepoBundle, requiring user context. */
-export function requireRepos(req: ReqLike): RepoBundle {
-  return requireReq(req).userContext.repos;
+function ensureBundle(input: unknown): RepoBundle {
+  return toUserScopedContext(input).userContext.repos;
 }
 
-export function getAccountsRepo(req: ReqLike): AccountsRepoInstance {
-  return requireUserRepo(req, 'accounts');
+function ensureUid(input: unknown): string {
+  return toUserScopedContext(input).userContext.uid;
 }
 
-export function getSettingsRepo(req: ReqLike): SettingsRepository {
-  return requireUserRepo(req, 'settings');
+export function requireRepos(source: unknown): RepoBundle {
+  return ensureBundle(source);
 }
 
-export function getPromptsRepo(req: ReqLike): PromptsRepoInstance {
-  return requireUserRepo(req, 'prompts');
+export function requireUid(source: unknown): string {
+  return ensureUid(source);
 }
 
-export function getAgentsRepo(req: ReqLike): AgentsRepoInstance {
-  return requireUserRepo(req, 'agents');
+export function getAccountsRepo(source: ContextInput): AccountsRepoInstance {
+  return ensureBundle(source).accounts;
 }
 
-export function getDirectorsRepo(req: ReqLike): DirectorsRepoInstance {
-  return requireUserRepo(req, 'directors');
+export function getSettingsRepo(source: ContextInput): SettingsRepository {
+  return ensureBundle(source).settings;
 }
 
-export function getFiltersRepo(req: ReqLike): FiltersRepoInstance {
-  return requireUserRepo(req, 'filters');
+export function getPromptsRepo(source: ContextInput): PromptsRepoInstance {
+  return ensureBundle(source).prompts;
 }
 
-export function getTemplatesRepo(req: ReqLike): TemplatesRepoInstance {
-  return requireUserRepo(req, 'templates');
+export function getAgentsRepo(source: ContextInput): AgentsRepoInstance {
+  return ensureBundle(source).agents;
 }
 
-export function getImprintsRepo(req: ReqLike): ImprintsRepoInstance {
-  return requireUserRepo(req, 'imprints');
+export function getDirectorsRepo(source: ContextInput): DirectorsRepoInstance {
+  return ensureBundle(source).directors;
 }
 
-export function getWorkspaceItemsRepo(req: ReqLike): WorkspaceItemsRepoInstance {
-  return requireUserRepo(req, 'workspaceItems');
+export function getFiltersRepo(source: ContextInput): FiltersRepoInstance {
+  return ensureBundle(source).filters;
 }
 
-export function getConversationsRepo(req: ReqLike): ConversationsRepoInstance {
-  return requireUserRepo(req, 'conversations');
+export function getTemplatesRepo(source: ContextInput): TemplatesRepoInstance {
+  return ensureBundle(source).templates;
 }
 
-export function getMemoryRepo(req: ReqLike): MemoryRepoInstance {
-  return requireUserRepo(req, 'memory');
+export function getImprintsRepo(source: ContextInput): ImprintsRepoInstance {
+  return ensureBundle(source).imprints;
 }
 
-export function getEmailsRepo(req: ReqLike): EmailsRepository {
-  return requireUserRepo(req, 'emails');
+export function getWorkspaceItemsRepo(source: ContextInput): WorkspaceItemsRepoInstance {
+  return ensureBundle(source).workspaceItems;
 }
 
-export function getFetcherLogRepo(req: ReqLike): FetcherLogRepository {
-  return requireUserRepo(req, 'fetcherLog');
+export function getConversationsRepo(source: ContextInput): ConversationsRepoInstance {
+  return ensureBundle(source).conversations;
 }
 
-export function getProviderEventsRepo(req: ReqLike): ProviderEventsRepository {
-  return requireUserRepo(req, 'providerEvents');
+export function getMemoryRepo(source: ContextInput): MemoryRepoInstance {
+  return ensureBundle(source).memory;
 }
 
-export function getTracesRepo(req: ReqLike): TracesRepository {
-  return requireUserRepo(req, 'traces');
+export function getEmailsRepo(source: ContextInput): EmailsRepository {
+  return ensureBundle(source).emails;
 }
 
-export function getOrchestrationLogRepo(req: ReqLike): OrchestrationLogRepository {
-  return requireUserRepo(req, 'orchestrationLog');
+export function getFetcherLogRepo(source: ContextInput): FetcherLogRepository {
+  return ensureBundle(source).fetcherLog;
+}
+
+export function getProviderEventsRepo(source: ContextInput): ProviderEventsRepository {
+  return ensureBundle(source).providerEvents;
+}
+
+export function getTracesRepo(source: ContextInput): TracesRepository {
+  return ensureBundle(source).traces;
+}
+
+export function getOrchestrationLogRepo(source: ContextInput): OrchestrationLogRepository {
+  return ensureBundle(source).orchestrationLog;
 }

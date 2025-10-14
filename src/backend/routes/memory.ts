@@ -2,7 +2,7 @@ import express from 'express';
 import { MemoryEntry } from '../../shared/types';
 import logger from '../services/logger';
 import { newId } from '../utils/id';
-import { requireReq, getMemoryRepo, ReqLike } from '../utils/repo-access';
+import { requireContext, getMemoryRepo } from '../utils/repo-access';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 import { requireMemoryScope, optionalMemoryScope, requireMemoryOwner, requireContent, normalizeMemoryTags, normalizeOptionalString } from '../utils/memory-validation';
 
@@ -17,8 +17,8 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const tag = normalizeOptionalString(params.tag, 'query.tag');
     const query = normalizeOptionalString(params.query ?? params.q, 'query.query');
 
-    const ureq = requireReq(req as ReqLike);
-    const repo = getMemoryRepo(ureq);
+    const context = requireContext(req);
+    const repo = getMemoryRepo(context);
     let result = Array.from(await repo.list());
     if (scope) result = result.filter((entry: MemoryEntry) => entry.scope === scope);
     if (owner) result = result.filter((entry: MemoryEntry) => entry.owner === owner);
@@ -61,8 +61,8 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
       ...(relatedEmailId ? { relatedEmailId } : {}),
       ...(typeof body.metadata !== 'undefined' ? { metadata: body.metadata } : {}),
     };
-    const ureq = requireReq(req as ReqLike);
-    const repo = getMemoryRepo(ureq);
+    const context = requireContext(req);
+    const repo = getMemoryRepo(context);
     await repo.upsert(entry);
     logger.info('POST /api/memory: added', { id: entry.id });
     res.json({ success: true, entry });
@@ -75,8 +75,8 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
       throw new ValidationError('id param is required', 'MEMORY_ID_REQUIRED');
     }
     const patch = req.body as Partial<MemoryEntry> & Record<string, unknown>;
-    const ureq = requireReq(req as ReqLike);
-    const repo = getMemoryRepo(ureq);
+    const context = requireContext(req);
+    const repo = getMemoryRepo(context);
     const now = new Date().toISOString();
     const current = await repo.findById(id);
     if (!current) {
@@ -124,8 +124,8 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
   // DELETE /api/memory/:id
   app.delete('/api/memory/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const ureq = requireReq(req as ReqLike);
-    const repo = getMemoryRepo(ureq);
+    const context = requireContext(req);
+    const repo = getMemoryRepo(context);
     const deleted = await repo.delete(id);
     if (!deleted) {
       throw new NotFoundError('Memory entry not found');
@@ -141,8 +141,8 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
       throw new ValidationError('ids must be a non-empty array of strings', 'MEMORY_IDS_INVALID');
     }
     const unique = new Set<string>(ids.map((v: string) => v.trim()));
-    const ureq = requireReq(req as ReqLike);
-    const repo = getMemoryRepo(ureq);
+    const context = requireContext(req);
+    const repo = getMemoryRepo(context);
     const removed = await repo.deleteMany(Array.from(unique));
     logger.info('DELETE /api/memory batch deleted', { deleted: removed });
     res.json({ success: true, deleted: removed });

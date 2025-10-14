@@ -3,25 +3,25 @@ import { createProviderEvent } from '../../shared/constructors';
 import { TRACE_MAX_PAYLOAD, TRACE_MAX_SPANS, TRACE_PERSIST, TRACE_REDACT_FIELDS, TRACE_VERBOSE } from '../config';
 import { newId } from '../utils/id';
 import { OrchestrationLogRepository, ProviderEventsRepository, TracesRepository } from '../storage/sqlite/repositories';
-import { requireReq, requireUserRepo } from '../utils/repo-access';
-import type { ReqLike } from '../interfaces';
+import { ensureContext, getOrchestrationLogRepo as resolveOrchRepo, getProviderEventsRepo as resolveProviderRepo, getTracesRepo as resolveTracesRepo, getFetcherLogRepo } from '../utils/repo-access';
+import type { ContextInput } from '../utils/repo-access';
 import logger from './logger';
 // Diagnostics writes now surface failures via logger while preserving awaited semantics.
 
 // Resolve per-user repositories - user context required
-function getOrchRepo(req?: ReqLike): OrchestrationLogRepository {
-  const ureq = requireReq(req);
-  return requireUserRepo(ureq, 'orchestrationLog');
+function getOrchRepo(req?: ContextInput): OrchestrationLogRepository {
+  const ctx = ensureContext(req);
+  return resolveOrchRepo(ctx);
 }
 
-function getProviderRepo(req?: ReqLike): ProviderEventsRepository {
-  const ureq = requireReq(req);
-  return requireUserRepo(ureq, 'providerEvents');
+function getProviderRepo(req?: ContextInput): ProviderEventsRepository {
+  const ctx = ensureContext(req);
+  return resolveProviderRepo(ctx);
 }
 
-function getTracesRepo(req?: ReqLike): TracesRepository {
-  const ureq = requireReq(req);
-  return requireUserRepo(ureq, 'traces');
+function getTracesRepo(req?: ContextInput): TracesRepository {
+  const ctx = ensureContext(req);
+  return resolveTracesRepo(ctx);
 }
 
 type DiagnosticsKind =
@@ -56,36 +56,36 @@ function fireAndReport(
 }
 
 /** Append an orchestration event to the log. */
-export function logOrch(e: OrchestrationEvent, req?: ReqLike): void {
+export function logOrch(e: OrchestrationEvent, req?: ContextInput): void {
   const repo = getOrchRepo(req);
   fireAndReport('orchestration_append', () => repo.append(e), { eventId: e.id, phase: e.phase });
 }
 
 /** Persist a provider request/response diagnostic entry. */
-export function logProviderEvent(e: ProviderEvent, req?: ReqLike): void {
+export function logProviderEvent(e: ProviderEvent, req?: ContextInput): void {
   const repo = getProviderRepo(req);
   fireAndReport('provider_append', () => repo.append(e), { eventId: e.id, provider: e.provider, type: e.type });
 }
 
 // Async variants for awaited semantics (canonical write path)
-export async function logOrchAsync(e: OrchestrationEvent, req?: ReqLike): Promise<void> {
+export async function logOrchAsync(e: OrchestrationEvent, req?: ContextInput): Promise<void> {
   const repo = getOrchRepo(req);
   await persistWithTelemetry('orchestration_append', () => repo.append(e), { eventId: e.id, phase: e.phase });
 }
 
-export async function logProviderEventAsync(e: ProviderEvent, req?: ReqLike): Promise<void> {
+export async function logProviderEventAsync(e: ProviderEvent, req?: ContextInput): Promise<void> {
   const repo = getProviderRepo(req);
   await persistWithTelemetry('provider_append', () => repo.append(e), { eventId: e.id, provider: e.provider, type: e.type });
 }
 
 /** Retrieve all orchestration events. */
-export function getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]> {
+export function getOrchestrationLog(req?: ContextInput): Promise<OrchestrationEvent[]> {
   const repo = getOrchRepo(req);
   return repo.list();
 }
 
 /** Replace the orchestration event log with the provided list. */
-export async function setOrchestrationLog(next: OrchestrationEvent[], req?: ReqLike): Promise<void> {
+export async function setOrchestrationLog(next: OrchestrationEvent[], req?: ContextInput): Promise<void> {
   const repo = getOrchRepo(req);
   await persistWithTelemetry('orchestration_replace', () => repo.replace(next), { count: next.length });
 }
@@ -126,7 +126,7 @@ function redact(obj: any): any {
  * Create a new trace and persist it if tracing is enabled.
  * Returns the generated trace id.
  */
-export function beginTrace(seed: { accountId: string } & Partial<Trace>, req?: ReqLike): string {
+export function beginTrace(seed: { accountId: string } & Partial<Trace>, req?: ContextInput): string {
   const id = seed?.id || newId();
   const t: Trace = {
     id,
@@ -145,7 +145,7 @@ export function beginTrace(seed: { accountId: string } & Partial<Trace>, req?: R
 }
 
 /** Update a trace when it completes, optionally recording status or error. */
-export function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: ReqLike): void {
+export function endTrace(id: string, status?: 'ok' | 'error', error?: string, req?: ContextInput): void {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   fireAndReport('trace_update', () => repo.update(id, (t) => {
@@ -158,7 +158,7 @@ export function endTrace(id: string, status?: 'ok' | 'error', error?: string, re
 /**
  * Start a new span within an existing trace. Returns the span id.
  */
-export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }, req?: ReqLike): string {
+export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { id?: string }, req?: ContextInput): string {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return '';
   const sid = span.id || newId();
@@ -188,7 +188,7 @@ export function beginSpan(traceId: string, span: Omit<Span, 'id' | 'start'> & { 
 /**
  * Finalize a span and optionally annotate its status, error, or response.
  */
-export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: ReqLike): void {
+export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok' | 'error'; error?: string; response?: any }, req?: ContextInput): void {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   fireAndReport('trace_update', () => repo.update(traceId, (t) => {
@@ -206,7 +206,7 @@ export function endSpan(traceId: string, spanId: string, input?: { status?: 'ok'
 }
 
 /** Merge additional annotations into an existing span. */
-export function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: ReqLike): void {
+export function annotateSpan(traceId: string, spanId: string, annotations: Record<string, any>, req?: ContextInput): void {
   const repo = getTracesRepo(req);
   if (!TRACE_PERSIST || !repo) return;
   fireAndReport('trace_update', () => repo.update(traceId, (t) => {
@@ -223,7 +223,7 @@ export function annotateSpan(traceId: string, spanId: string, annotations: Recor
 }
 
 /** Retrieve all traces available to the request. */
-export function getTraces(req?: ReqLike): Trace[] | Promise<Trace[]> {
+export function getTraces(req?: ContextInput): Trace[] | Promise<Trace[]> {
   const repo = getTracesRepo(req);
   return repo ? repo.list() : [];
 }
@@ -234,7 +234,7 @@ export function getTraces(req?: ReqLike): Trace[] | Promise<Trace[]> {
  * Conversation step logging utilities with awaited persistence.
  */
 export class ConversationStepLogger {
-  constructor(private req: ReqLike | undefined, private runId: string, private accountId: string) {}
+  constructor(private req: ContextInput | undefined, private runId: string, private accountId: string) {}
 
   private async log(entry: OrchestrationEvent): Promise<void> {
     await logOrchAsync(entry, this.req);
@@ -363,7 +363,7 @@ export class ConversationStepLogger {
  * Provider event logging utilities with awaited persistence.
  */
 export class ProviderEventLogger {
-  constructor(private req?: ReqLike) {}
+  constructor(private req?: ContextInput) {}
 
   async logRequest(conversationId: string, payload: any): Promise<void> {
     const event = createProviderEvent({
@@ -408,10 +408,10 @@ export class ProviderEventLogger {
     await logProviderEventAsync(event, this.req);
   }
 
-  logFetcher(entry: Omit<FetcherLogEntry, 'id'>, req?: ReqLike): void {
+  logFetcher(entry: Omit<FetcherLogEntry, 'id'>, req?: ContextInput): void {
     const fullEntry: FetcherLogEntry = { ...entry, id: newId() } as FetcherLogEntry;
     if (req) {
-      const repo = requireUserRepo(req as ReqLike, 'fetcherLog');
+      const repo = getFetcherLogRepo(req);
       fireAndReport('fetcher_log_append', () => repo.append(fullEntry), { entryId: fullEntry.id, event: fullEntry.event });
     }
   }

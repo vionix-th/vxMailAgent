@@ -8,10 +8,10 @@ import { AccountManager } from './account-manager';
 import { getMailProvider } from '../providers/mail';
 import { PROVIDER_REQUEST_TIMEOUT_MS } from '../config';
 import { newId } from '../utils/id';
-import type { ReqLike } from '../interfaces';
+import type { ContextInput } from '../utils/repo-access';
 
 export interface FetchContext {
-  userReq: ReqLike;
+  userReq: ContextInput;
   settings: any;
   filters: any[];
   directors: any[];
@@ -98,7 +98,7 @@ export class EmailFetcher {
   */
   private async processAccountEmails(context: {
     account: any;
-    userReq: ReqLike;
+    userReq: ContextInput;
     settings: any;
     filters: any[];
     directors: any[];
@@ -175,7 +175,7 @@ export class EmailFetcher {
   }
 
   /** Upsert email envelopes by id into the per-user email store. */
-  private async upsertEmails(envelopes: EmailEnvelope[], userReq: ReqLike): Promise<void> {
+  private async upsertEmails(envelopes: EmailEnvelope[], userReq: ContextInput): Promise<void> {
     if (!Array.isArray(envelopes) || envelopes.length === 0) return;
     const existing = await this.repos.getEmails(userReq);
     const byId = new Map<string, EmailEnvelope>(existing.map(e => [e.id, e] as const));
@@ -215,7 +215,7 @@ export class EmailFetcher {
   private async fetchUnreadEmails(
     account: any,
     traceId: string,
-    userReq: ReqLike
+    userReq: ContextInput
   ): Promise<EmailEnvelope[] | null> {
     const provider = getMailProvider(account.provider);
     if (!provider) {
@@ -327,7 +327,7 @@ export class EmailFetcher {
     agents: any[];
     prompts: any[];
     apiConfigs: any[];
-    userReq: ReqLike;
+    userReq: ContextInput;
     accountTraceId: string;
     runId: string;
   }): Promise<void> {

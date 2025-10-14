@@ -1,8 +1,7 @@
 import express from 'express';
 import logger from '../services/logger';
-import { requireReq, requireUid } from '../utils/repo-access';
+import { requireContext, requireUid } from '../utils/repo-access';
 import { CORS_ORIGIN } from '../config';
-import type { ReqLike } from '../interfaces';
 import type { Account, AccountPublic } from '../../shared/types';
 import { createAccount } from '../../shared/constructors';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
@@ -61,7 +60,8 @@ export default function registerAccountsRoutes(app: express.Express) {
     if (!code) throw new ValidationError('Missing code');
     const cookieHeader = typeof req.headers['cookie'] === 'string' ? req.headers['cookie'] : undefined;
     logger.info('Google account callback received', { code: code ? 'present' : 'missing', state: stateToken ? 'present' : 'missing' });
-    const account = await handleGoogleAccountCallback(code, stateToken, cookieHeader, req as ReqLike);
+    const context = requireContext(req);
+    const account = await handleGoogleAccountCallback(code, stateToken, cookieHeader, context);
     logger.info('Google account callback completed', { accountId: account.id, email: account.email });
     const origin = (CORS_ORIGIN && CORS_ORIGIN !== '*') ? CORS_ORIGIN : '';
     const location = origin ?? '/';
@@ -72,9 +72,9 @@ export default function registerAccountsRoutes(app: express.Express) {
   // TODO: Implement Outlook account onboarding using OIDC+PKCE pattern
 
   app.get('/api/accounts', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as ReqLike);
-    const accounts = await listAccounts(ureq);
-    logger.info('Loaded accounts', { count: accounts.length, uid: requireUid(ureq) });
+    const context = requireContext(req);
+    const accounts = await listAccounts(context);
+    logger.info('Loaded accounts', { count: accounts.length, uid: requireUid(context) });
     const sanitized: AccountPublic[] = accounts.map(toAccountPublic);
     res.json(sanitized);
   }));
@@ -82,7 +82,7 @@ export default function registerAccountsRoutes(app: express.Express) {
   app.get('/api/accounts/:id/outlook-test', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     logger.info('GET /api/accounts/:id/outlook-test invoked', { id });
-    const result = await outlookTest(req as ReqLike, id);
+    const result = await outlookTest(requireContext(req), id);
     res.json(result);
   }));
 
@@ -113,9 +113,9 @@ export default function registerAccountsRoutes(app: express.Express) {
     }
 
     const newAccount: Account = createAccount(payload as any);
-    const ureq = requireReq(req as ReqLike);
-    await upsertAccount(ureq, newAccount);
-    const source = `user ${requireUid(ureq)}`;
+    const context = requireContext(req);
+    await upsertAccount(context, newAccount);
+    const source = `user ${requireUid(context)}`;
     logger.info('Saved accounts to store', { source });
     res.json({ success: true });
   }));
@@ -124,8 +124,8 @@ export default function registerAccountsRoutes(app: express.Express) {
     const id = req.params.id;
     try {
       // Preserve existing sensitive fields; only allow updating safe fields (currently: signature)
-      const ureq = requireReq(req as ReqLike);
-      const existing = (await listAccounts(ureq)).find(a => a.id === id);
+      const context = requireContext(req);
+      const existing = (await listAccounts(context)).find(a => a.id === id);
       if (!existing) {
         throw new NotFoundError('Account not found');
       }
@@ -138,7 +138,7 @@ export default function registerAccountsRoutes(app: express.Express) {
         throw new ValidationError('signature is required and must be a non-empty string', 'ACCOUNT_SIGNATURE_MISSING');
       }
       const patch = { signature: signatureRaw.trim() };
-      await svcUpdateAccountPartial(req as ReqLike, id, patch);
+      await svcUpdateAccountPartial(context, id, patch);
     } catch (e: any) {
       if (String(e?.message ?? '').toLowerCase().includes('not found')) {
         throw new NotFoundError('Account not found');
@@ -153,7 +153,8 @@ export default function registerAccountsRoutes(app: express.Express) {
     logger.debug('DELETE /api/accounts/:id invoked', { id: req.params.id });
     const id = req.params.id;
     try {
-      const { revokeStatus, revokeError } = await svcDeleteAccount(req as ReqLike, id);
+      const context = requireContext(req);
+      const { revokeStatus, revokeError } = await svcDeleteAccount(context, id);
       res.json({ success: true, revokeStatus, revokeError });
     } catch (e: any) {
       if (String(e?.message ?? '').toLowerCase().includes('not found')) {
@@ -166,7 +167,7 @@ export default function registerAccountsRoutes(app: express.Express) {
   app.post('/api/accounts/:id/refresh', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     logger.info('POST /api/accounts/:id/refresh invoked', { id });
-    const svcResult = await refreshAccount(req as ReqLike, id);
+    const svcResult = await refreshAccount(requireContext(req), id);
     if (!svcResult.ok) {
       // Map known errors to validation; others bubble as generic errors
       if (svcResult.error === 'missing_refresh_token' || svcResult.error === 'invalid_grant') {
@@ -190,7 +191,7 @@ export default function registerAccountsRoutes(app: express.Express) {
   app.get('/api/accounts/:id/gmail-test', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
     logger.info('GET /api/accounts/:id/gmail-test invoked', { id });
-    const result = await gmailTest(req as ReqLike, id);
+    const result = await gmailTest(requireContext(req), id);
     res.json(result);
   }));
 }

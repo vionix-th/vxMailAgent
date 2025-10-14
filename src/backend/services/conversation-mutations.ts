@@ -1,5 +1,5 @@
 import type { ConversationThread, PromptMessage } from '../../shared/types';
-import type { ReqLike } from '../interfaces';
+import type { ContextInput } from '../utils/repo-access';
 import type { LiveRepos } from '../liveRepos';
 import { ValidationError } from './error-handler';
 
@@ -24,7 +24,7 @@ export function assertThreadTimestamps(thread: ConversationThread, context: stri
  */
 export async function repoAppendMessage(
   repos: LiveRepos,
-  req: ReqLike,
+  req: ContextInput,
   threadId: string,
   message: PromptMessage,
 ): Promise<ConversationThread> {
@@ -33,7 +33,7 @@ export async function repoAppendMessage(
 
 export async function repoAppendMessages(
   repos: LiveRepos,
-  req: ReqLike,
+  req: ContextInput,
   threadId: string,
   messages: PromptMessage[] | any[],
 ): Promise<ConversationThread> {
@@ -45,7 +45,7 @@ export async function repoAppendMessages(
 
 export async function repoFinalizeThreadStatus(
   repos: LiveRepos,
-  req: ReqLike,
+  req: ContextInput,
   threadId: string,
   status: 'completed' | 'failed',
 ): Promise<void> {
@@ -54,7 +54,7 @@ export async function repoFinalizeThreadStatus(
 
 export async function repoGetThreadById(
   repos: LiveRepos,
-  req: ReqLike,
+  req: ContextInput,
   threadId: string,
 ): Promise<ConversationThread | null> {
   return repos.getConversationById(req, threadId);

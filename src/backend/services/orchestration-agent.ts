@@ -4,7 +4,7 @@ import logger from './logger';
 import { CONVERSATION_STEP_TIMEOUT_MS, TOOL_EXEC_TIMEOUT_MS } from '../config';
 import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
-import type { ReqLike } from '../interfaces';
+import type { ContextInput } from '../utils/repo-access';
 import { InvalidAgentConfigError, ValidationError } from './error-handler';
 import { ApiConfigView } from './apiConfigSerializer';
 
@@ -38,7 +38,7 @@ export function ensureAgentThread(
   newIdFn: () => string,
   accountId: string,
   traceId?: string,
-  req?: ReqLike,
+  req?: ContextInput,
 ): { conversations: ConversationThread[]; agentThread: ConversationThread; isNew: boolean } {
   const spanId = traceId ? beginSpan(traceId, { type: 'conversation_update', name: 'ensureAgentThread', directorId: director.id, agentId: agent.id, emailId: (emailEnvelope as any)?.id }, req) : '';
 

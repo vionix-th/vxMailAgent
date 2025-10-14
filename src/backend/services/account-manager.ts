@@ -3,11 +3,11 @@ import { beginSpan, endSpan } from './logging';
 import { getMailProvider } from '../providers/mail';
 import logger from './logger';
 import { newId } from '../utils/id';
-import type { ReqLike } from '../interfaces';
+import type { ContextInput } from '../utils/repo-access';
 
 export interface AccountContext {
   account: any;
-  userReq: ReqLike;
+  userReq: ContextInput;
   traceId: string;
 }
 
@@ -152,7 +152,7 @@ export class AccountManager {
   private async persistTokenUpdate(
     account: any,
     tokens: { accessToken: string; refreshToken: string; expiry: string },
-    userReq: ReqLike
+    userReq: ContextInput
   ): Promise<void> {
     await this.repos.updateAccountTokens(userReq, account.id, tokens);
   }

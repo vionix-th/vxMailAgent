@@ -1,11 +1,11 @@
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfig, AgentThread } from '../../shared/types';
 import { runAgentConversation, ensureAgentThread, AgentConversationPersistence } from './orchestration-agent';
 import { createToolHandler } from '../toolCalls';
-import { requireReq, requireRepos } from '../utils/repo-access';
+import { requireContext, requireRepos, ensureContext } from '../utils/repo-access';
 import logger from './logger';
 import { CONVERSATION_STEP_TIMEOUT_MS } from '../config';
 import { ConversationStepLogger, ProviderEventLogger } from './logging';
-import type { ReqLike } from '../interfaces';
+import type { ContextInput, UserScopedContext } from '../utils/repo-access';
 import type { LiveRepos } from '../liveRepos';
 import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
@@ -27,22 +27,17 @@ export interface ConversationContext {
 
 export interface UserRequest {
   repos: LiveRepos;
-  reqLike: ReqLike;
+  context: UserScopedContext;
   traceId?: string;
 }
 
-export function createUserRequest(middlewareReq: ReqLike, repos: LiveRepos): UserRequest {
-  const { userContext } = requireReq(middlewareReq);
+export function createUserRequest(middlewareReq: ContextInput, repos: LiveRepos): UserRequest {
+  const scoped = ensureContext(middlewareReq);
   const traceHeader = (middlewareReq as any)?.headers?.['x-trace-id'];
   const traceId = typeof traceHeader === 'string' ? traceHeader : undefined;
   return {
     repos,
-    reqLike: {
-      userContext: {
-        uid: userContext.uid,
-        repos: userContext.repos,
-      },
-    },
+    context: scoped,
     traceId,
   };
 }
@@ -65,7 +60,7 @@ export class ConversationOrchestrator {
   private runId: string;
   private accountId: string;
 
-  constructor(req: ReqLike | undefined, runId: string, accountId: string) {
+  constructor(req: ContextInput | undefined, runId: string, accountId: string) {
     if (!runId) throw new Error('runId required');
     if (!accountId) throw new Error('accountId required');
     this.runId = runId;
@@ -156,7 +151,7 @@ export class ConversationOrchestrator {
       // Update thread with new messages
       const newMessages = result.assistantMessage ? [result.assistantMessage] : [];
       const updatedThread = newMessages.length > 0
-        ? await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, newMessages)
+        ? await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, newMessages)
         : context.thread;
 
       // Process any director tool calls and determine continuation
@@ -167,7 +162,7 @@ export class ConversationOrchestrator {
         await this.processDirectorToolCalls({ ...context, thread: updatedThread }, userReq, toolCalls);
       }
 
-      const finalThread = (await repoGetThreadById(userReq.repos, userReq.reqLike, threadId)) || updatedThread;
+      const finalThread = (await repoGetThreadById(userReq.repos, userReq.context, threadId)) || updatedThread;
       
       await this.stepLogger.logStepComplete(threadId, stepType, Date.now() - startTime, shouldContinue, toolCallCount, emailId, context.thread.directorId);
 
@@ -213,13 +208,13 @@ export class ConversationOrchestrator {
       stepCount++;
 
       if (!stepResult.success) {
-        await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, currentThread.id, 'failed');
+        await repoFinalizeThreadStatus(userReq.repos, userReq.context, currentThread.id, 'failed');
         // Propagate the specific error up to the caller to surface actionable failure
         const err = new Error(stepResult.error || 'conversation_step_failed');
         throw err;
       }
       if (!stepResult.shouldContinue) {
-        await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, currentThread.id, 'completed');
+        await repoFinalizeThreadStatus(userReq.repos, userReq.context, currentThread.id, 'completed');
         break;
       }
     }
@@ -235,7 +230,7 @@ export class ConversationOrchestrator {
     userReq: UserRequest
   ): Promise<{ assistantMessage: PromptMessage | null; content?: string }> {
     // Resolve API config for this agent thread
-    const apiConfigs = (await userReq.repos.getSettings(requireReq(userReq.reqLike))).apiConfigs as ApiConfig[];
+    const apiConfigs = (await userReq.repos.getSettings(requireContext(userReq.context))).apiConfigs as ApiConfig[];
     const apiConfig = apiConfigs.find((c) => c.id === thread.apiConfigId);
     if (!apiConfig) {
       throw new Error('API config not found');
@@ -245,7 +240,7 @@ export class ConversationOrchestrator {
 
     // Equal tool exposure for agent, except spawning further agents (disabled)
     // Load agent allowlist and apply role + allowlist gating
-    const agents = await userReq.repos.getAgents(userReq.reqLike);
+    const agents = await userReq.repos.getAgents(userReq.context);
     const agent = this.requireAgentById(agentThread.agentId, agents, `Agent ${agentThread.agentId} not found for thread ${agentThread.id}`);
     const gatedToolDescriptors = resolveAgentToolDescriptors(agent);
 
@@ -263,14 +258,14 @@ export class ConversationOrchestrator {
       throw error;
     }
 
-    const rawHandleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)));
+    const rawHandleTool = createToolHandler(requireRepos(requireContext(userReq.context)));
     const scopedHandleTool = (name: string, params: any) =>
       rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined);
 
     let activeThread: AgentThread = agentThread;
     const persistence: AgentConversationPersistence = {
       appendMessages: async (messages: PromptMessage[]) => {
-        const updated = await repoAppendMessages(userReq.repos, userReq.reqLike, activeThread.id, messages as any[]);
+        const updated = await repoAppendMessages(userReq.repos, userReq.context, activeThread.id, messages as any[]);
         if (!updated) {
           throw new Error(`Agent thread ${activeThread.id} missing during append`);
         }
@@ -279,8 +274,8 @@ export class ConversationOrchestrator {
         return ensured;
       },
       finalize: async (status: 'completed' | 'failed') => {
-        await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, activeThread.id, status);
-        const reloaded = await repoGetThreadById(userReq.repos, userReq.reqLike, activeThread.id);
+        await repoFinalizeThreadStatus(userReq.repos, userReq.context, activeThread.id, status);
+        const reloaded = await repoGetThreadById(userReq.repos, userReq.context, activeThread.id);
         if (!reloaded) {
           throw new Error(`Agent thread ${activeThread.id} missing after finalize`);
         }
@@ -358,7 +353,7 @@ export class ConversationOrchestrator {
         tool_call_id: tc.id,
         content: JSON.stringify({ error: 'unsupported_tool_call', detail: `No handler for ${tc.name}` })
       }));
-      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, msgs as any);
+      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, msgs as any);
       try {
         const emailIdStrict = context.thread.email.id; // invariant
         await this.stepLogger.logStepError(
@@ -379,7 +374,7 @@ export class ConversationOrchestrator {
     }
 
     return (
-      (await repoGetThreadById(userReq.repos, userReq.reqLike, context.thread.id)) ||
+      (await repoGetThreadById(userReq.repos, userReq.context, context.thread.id)) ||
       context.thread
     );
   }
@@ -435,7 +430,7 @@ export class ConversationOrchestrator {
         return true;
       } else {
         // Fallback: route remaining names through generic tool handler to honor contract
-        const handleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)) as any);
+        const handleTool = createToolHandler(requireRepos(requireContext(userReq.context)) as any);
         try {
           // Server-supplied invariants: always include conversationId and directorId
           const enriched = {
@@ -454,7 +449,7 @@ export class ConversationOrchestrator {
             tool_call_id: toolCall.id,
             content: JSON.stringify(exec)
           } as any;
-          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolMsg]);
+          await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolMsg]);
           return true;
         } catch (e: any) {
           const toolErrorMsg = {
@@ -463,7 +458,7 @@ export class ConversationOrchestrator {
             tool_call_id: toolCall.id,
             content: JSON.stringify({ success: false, error: 'tool handler failed', detail: String(e?.message || e) })
           } as any;
-          await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+          await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
           return true;
         }
       }
@@ -491,7 +486,7 @@ export class ConversationOrchestrator {
         tool_call_id: toolCall.id,
         content: JSON.stringify({ success: false, error: 'missing_agent_id' })
       };
-      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
       try {
         await this.stepLogger.logStepError(
           context.thread.id,
@@ -515,7 +510,7 @@ export class ConversationOrchestrator {
         tool_call_id: toolCall.id,
         content: JSON.stringify({ success: false, error: 'agent_not_found', agent_id: String(agentId) })
       };
-      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
       try {
         await this.stepLogger.logStepError(
           context.thread.id,
@@ -540,7 +535,7 @@ export class ConversationOrchestrator {
         tool_call_id: toolCall.id,
         content: JSON.stringify({ success: false, error: 'director_context_missing' })
       };
-      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
       try {
         await this.stepLogger.logStepError(
           context.thread.id,
@@ -556,7 +551,7 @@ export class ConversationOrchestrator {
       return true;
     }
 
-    const conversationSnapshot = await userReq.repos.getConversations(userReq.reqLike);
+    const conversationSnapshot = await userReq.repos.getConversations(userReq.context);
     const nowIso = new Date().toISOString();
     let agentThread: ConversationThread;
     try {
@@ -572,13 +567,13 @@ export class ConversationOrchestrator {
         () => newId(),
         this.accountId,
         userReq.traceId,
-        userReq.reqLike
+        userReq.context
       );
 
       if (ensure.isNew) {
-        agentThread = await userReq.repos.appendConversation(userReq.reqLike, ensure.agentThread);
+        agentThread = await userReq.repos.appendConversation(userReq.context, ensure.agentThread);
       } else {
-        const persisted = await userReq.repos.getConversationById(userReq.reqLike, ensure.agentThread.id);
+        const persisted = await userReq.repos.getConversationById(userReq.context, ensure.agentThread.id);
         agentThread = persisted ?? ensure.agentThread;
       }
     } catch (e: any) {
@@ -588,7 +583,7 @@ export class ConversationOrchestrator {
         tool_call_id: toolCall.id,
         content: JSON.stringify({ success: false, error: 'ensure_agent_thread_failed', detail: String(e?.message || e) })
       };
-      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
       try {
         await this.stepLogger.logStepError(
           context.thread.id,
@@ -616,7 +611,7 @@ export class ConversationOrchestrator {
           tool_call_id: toolCall.id,
           content: JSON.stringify({ success: false, error: 'invalid_workspace_payload', detail: error.message })
         };
-        await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg as any]);
+        await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg as any]);
         try {
           await this.stepLogger.logStepError(
             context.thread.id,
@@ -640,7 +635,7 @@ export class ConversationOrchestrator {
         tool_call_id: toolCall.id,
         content: JSON.stringify({ success: false, error: 'workspace_add_failed' })
       };
-      await repoAppendMessages(userReq.repos, userReq.reqLike, context.thread.id, [toolErrorMsg]);
+      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
       try {
         await this.stepLogger.logStepError(
           context.thread.id,
@@ -663,7 +658,7 @@ export class ConversationOrchestrator {
       tool_call_id: toolCall.id,
       content: JSON.stringify({ added: true, itemId: addedItem.id, label: addedItem.metadata.label }),
     };
-    await repoAppendMessage(userReq.repos, userReq.reqLike, context.thread.id, toolResponse);
+    await repoAppendMessage(userReq.repos, userReq.context, context.thread.id, toolResponse);
 
     // Run the agent conversation after item creation
     await this.executeAgentConversation(context.thread, agentThread, args, toolCall, userReq);
@@ -676,7 +671,7 @@ export class ConversationOrchestrator {
     toolCall: { id: string; name: string; arguments: string },
     args: any
   ): Promise<void> {
-    const handleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)) as any);
+    const handleTool = createToolHandler(requireRepos(requireContext(userReq.context)) as any);
     const listResult = await handleTool('workspace_list_items', {}, { workspace: { conversationId: context.thread.id } });
     if (!listResult.success) {
       await this.injectAgentErrorMessage(context.thread, toolCall.id, listResult.error || 'Failed to list workspace items', userReq);
@@ -696,7 +691,7 @@ export class ConversationOrchestrator {
       content: JSON.stringify({ success: true, result: items })
     };
 
-    await repoAppendMessage(userReq.repos, userReq.reqLike, context.thread.id, toolResponse);
+    await repoAppendMessage(userReq.repos, userReq.context, context.thread.id, toolResponse);
 
     logger.info('Listed workspace items', {
       toolCallId: toolCall.id,
@@ -707,7 +702,7 @@ export class ConversationOrchestrator {
   }
 
   private async validateAgent(agentId: string, userReq: UserRequest): Promise<Agent | null> {
-    const agents = await userReq.repos.getAgents(userReq.reqLike);
+    const agents = await userReq.repos.getAgents(userReq.context);
     const match = agents.find((a: Agent) => a.id === agentId) || null;
     if (!match) {
       return null;
@@ -726,7 +721,7 @@ export class ConversationOrchestrator {
     userReq: UserRequest,
     toolCall?: { id: string; name: string }
   ): Promise<WorkspaceItem | null> {
-    const handleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)) as any);
+    const handleTool = createToolHandler(requireRepos(requireContext(userReq.context)) as any);
     const mimeType = typeof args.mimeType === 'string' ? args.mimeType : undefined;
     if (!mimeType) {
       throw new ValidationError('workspace_add_item: mimeType is required');
@@ -785,7 +780,7 @@ export class ConversationOrchestrator {
     userReq: UserRequest
   ): Promise<void> {
     try {
-      const apiConfigs = (await userReq.repos.getSettings(requireReq(userReq.reqLike))).apiConfigs as ApiConfig[];
+      const apiConfigs = (await userReq.repos.getSettings(requireContext(userReq.context))).apiConfigs as ApiConfig[];
       const apiConfig = apiConfigs.find((c) => c.id === parentThread.apiConfigId);
       if (!apiConfig) {
         logger.warn('API config not found for agent conversation', { apiConfigId: parentThread.apiConfigId });
@@ -795,11 +790,11 @@ export class ConversationOrchestrator {
       const verifiedAgentThread = this.requireAgentThread(agentThread, 'executeAgentConversation');
 
       // Equal tool exposure for agent, except spawning further agents (disabled)
-      const agents = await userReq.repos.getAgents(userReq.reqLike);
+      const agents = await userReq.repos.getAgents(userReq.context);
       const srcAgent = this.requireAgentById(verifiedAgentThread.agentId, agents, `Agent ${verifiedAgentThread.agentId} not found for agent conversation`);
       const gatedToolDescriptors = resolveAgentToolDescriptors(srcAgent);
 
-      const rawHandleTool = createToolHandler(requireRepos(requireReq(userReq.reqLike)));
+      const rawHandleTool = createToolHandler(requireRepos(requireContext(userReq.context)));
       const scopedHandleTool = (name: string, params: any) =>
         rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: verifiedAgentThread.id } } : undefined);
 
@@ -810,7 +805,7 @@ export class ConversationOrchestrator {
       let delegatedThread: AgentThread = verifiedAgentThread;
       const delegatedPersistence: AgentConversationPersistence = {
         appendMessages: async (messages: PromptMessage[]) => {
-          const updated = await repoAppendMessages(userReq.repos, userReq.reqLike, delegatedThread.id, messages as any[]);
+          const updated = await repoAppendMessages(userReq.repos, userReq.context, delegatedThread.id, messages as any[]);
           if (!updated) {
             throw new Error(`Agent thread ${delegatedThread.id} missing during delegated append`);
           }
@@ -819,8 +814,8 @@ export class ConversationOrchestrator {
           return ensured;
         },
         finalize: async (status: 'completed' | 'failed') => {
-          await repoFinalizeThreadStatus(userReq.repos, userReq.reqLike, delegatedThread.id, status);
-          const reloaded = await repoGetThreadById(userReq.repos, userReq.reqLike, delegatedThread.id);
+          await repoFinalizeThreadStatus(userReq.repos, userReq.context, delegatedThread.id, status);
+          const reloaded = await repoGetThreadById(userReq.repos, userReq.context, delegatedThread.id);
           if (!reloaded) {
             throw new Error(`Agent thread ${delegatedThread.id} missing after delegated finalize`);
           }
@@ -905,7 +900,7 @@ export class ConversationOrchestrator {
       content: `Agent conversation failed: ${error || 'Unknown error'}`
     };
     
-    await repoAppendMessage(userReq.repos, userReq.reqLike, thread.id, errorMessage);
+    await repoAppendMessage(userReq.repos, userReq.context, thread.id, errorMessage);
   }
 
   // thread mutation helpers centralized in services/conversation-mutations.ts

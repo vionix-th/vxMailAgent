@@ -1,7 +1,7 @@
 import { LiveRepos } from '../liveRepos';
 import { EmailFetcher, FetchContext } from './email-fetcher';
-import type { ReqLike } from '../interfaces';
-import { requireReq } from '../utils/repo-access';
+import type { ContextInput } from '../utils/repo-access';
+import { requireContext } from '../utils/repo-access';
 import { FetcherLogEntry } from '../../shared/types';
 import { newId } from '../utils/id';
 import logger from './logger';
@@ -9,10 +9,10 @@ import logger from './logger';
 /** Initialize the background fetcher with refactored modular architecture. */
 export function initFetcher(
   repos: LiveRepos,
-  userReq: ReqLike
+  userReq: ContextInput
 ) {
-  const { userContext } = requireReq(userReq);
-  const fetcherReq: ReqLike = {
+  const { userContext } = requireContext(userReq);
+  const fetcherReq: ContextInput = {
     userContext: {
       uid: userContext.uid,
       repos: userContext.repos,

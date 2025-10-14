@@ -2,34 +2,34 @@ import express from 'express';
 import type { LiveRepos } from '../liveRepos';
 import { Filter } from '../../shared/types';
 import { createCrudRoutes } from './helpers';
-import { getFiltersRepo, requireReq, ReqLike } from '../utils/repo-access';
+import { getFiltersRepo, requireContext, ContextInput } from '../utils/repo-access';
 
 export default function registerFiltersRoutes(app: express.Express, _repos: LiveRepos) {
   const allowedFields = ['from', 'to', 'cc', 'bcc', 'subject', 'body', 'date'] as const;
 
   const repoFns = {
-    list: async (req?: ReqLike) => {
-      const repo = getFiltersRepo(requireReq(req));
+    list: async (req?: ContextInput) => {
+      const repo = getFiltersRepo(requireContext(req));
       return await repo.list();
     },
-    getById: async (req: ReqLike, id: string) => {
-      const repo = getFiltersRepo(requireReq(req));
+    getById: async (req: ContextInput, id: string) => {
+      const repo = getFiltersRepo(requireContext(req));
       return await repo.getById(id);
     },
-    create: async (req: ReqLike, item: Filter) => {
-      const repo = getFiltersRepo(requireReq(req));
+    create: async (req: ContextInput, item: Filter) => {
+      const repo = getFiltersRepo(requireContext(req));
       await repo.insert(item);
     },
-    update: async (req: ReqLike, item: Filter) => {
-      const repo = getFiltersRepo(requireReq(req));
+    update: async (req: ContextInput, item: Filter) => {
+      const repo = getFiltersRepo(requireContext(req));
       await repo.update(item);
     },
-    delete: async (req: ReqLike, id: string) => {
-      const repo = getFiltersRepo(requireReq(req));
+    delete: async (req: ContextInput, id: string) => {
+      const repo = getFiltersRepo(requireContext(req));
       return await repo.delete(id);
     },
-    reorder: async (req: ReqLike, orderedIds: readonly string[]) => {
-      const repo = getFiltersRepo(requireReq(req));
+    reorder: async (req: ContextInput, orderedIds: readonly string[]) => {
+      const repo = getFiltersRepo(requireContext(req));
       await repo.reorder(orderedIds);
     },
   };

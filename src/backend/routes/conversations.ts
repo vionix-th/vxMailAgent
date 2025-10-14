@@ -1,7 +1,7 @@
 import express from 'express';
 import { PromptMessage } from '../../shared/types';
-import { requireReq } from '../utils/repo-access';
-import type { ReqLike } from '../utils/repo-access';
+import { requireContext } from '../utils/repo-access';
+import type { ContextInput } from '../utils/repo-access';
 import { LiveRepos } from '../liveRepos';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
 import { repoAppendMessage, assertThreadTimestamps } from '../services/conversation-mutations';
@@ -18,7 +18,7 @@ interface ConversationResult {
 
 async function validateConversationRequest(
   id: string, 
-  req: ReqLike, 
+  req: ContextInput, 
   repos: LiveRepos
 ): Promise<{ thread: ConversationThread }> {
   const conversations = await repos.getConversations(req);
@@ -60,7 +60,8 @@ export default function registerConversationsRoutes(
     const limit = hasLimit ? Number(rawLimit) : 200;
     const offset = hasOffset ? Number(rawOffset) : 0;
 
-    const list = await repos.getConversations(req as any as ReqLike);
+    const context = requireContext(req);
+    const list = await repos.getConversations(context);
     list.forEach((thread) => assertThreadTimestamps(thread, 'GET /api/conversations'));
     const paged = list.slice(offset, offset + limit);
     return res.json({ total: list.length, items: paged });
@@ -69,16 +70,16 @@ export default function registerConversationsRoutes(
   // ENHANCED: GET /api/conversations/:id/details — conversation + related context
   app.get('/api/conversations/:id/details', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const conversationId = req.params.id;
-    const reqLike = req as any as ReqLike;
-    const conversation = await repos.getConversationById(reqLike, conversationId);
+    const context = requireContext(req);
+    const conversation = await repos.getConversationById(context, conversationId);
     if (!conversation) {
       throw new NotFoundError(`Conversation ${conversationId} not found`);
     }
     assertThreadTimestamps(conversation, 'GET /api/conversations/:id/details');
     const [orchestrationEvents, providerEvents, workspaceItems] = await Promise.all([
-      repos.getOrchestrationLogByConversation(reqLike, conversationId),
-      repos.getProviderEventsByConversation(reqLike, conversationId),
-      repos.getWorkspaceItemsByConversation(reqLike, conversationId),
+      repos.getOrchestrationLogByConversation(context, conversationId),
+      repos.getProviderEventsByConversation(context, conversationId),
+      repos.getWorkspaceItemsByConversation(context, conversationId),
     ]);
     const metrics = {
       totalTokens: providerEvents.reduce((sum: number, e: any) => sum + (e.usage?.totalTokens || 0), 0),
@@ -96,18 +97,19 @@ export default function registerConversationsRoutes(
   // ENHANCED: GET /api/conversations/:id/provider-events — provider events for a conversation
   app.get('/api/conversations/:id/provider-events', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const conversationId = req.params.id;
-    const events = await repos.getProviderEventsByConversation(req as any as ReqLike, conversationId);
+    const events = await repos.getProviderEventsByConversation(requireContext(req), conversationId);
     res.json(events);
   }));
 
   // ENHANCED: GET /api/conversations/threads/:id/full — thread with tool-call traces and provider events
   app.get('/api/conversations/threads/:id/full', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const threadId = req.params.id;
-    const conversation = await repos.getConversationById(req as any, threadId);
+    const context = requireContext(req);
+    const conversation = await repos.getConversationById(context, threadId);
     if (!conversation) {
       throw new NotFoundError(`Thread ${threadId} not found`);
     }
-    const threadProviderEvents = await repos.getProviderEventsByConversation(req as any as ReqLike, threadId);
+    const threadProviderEvents = await repos.getProviderEventsByConversation(context, threadId);
     const toolCalls: Array<{ id: string; name: string; arguments: string; result?: any; error?: string; timestamp?: string; durationMs?: number }> = [];
     conversation.messages.forEach((msg: any) => {
       if (msg.tool_calls) {
@@ -130,7 +132,8 @@ export default function registerConversationsRoutes(
   // GET single conversation by id
   app.get('/api/conversations/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const list = await repos.getConversations(req as any as ReqLike);
+    const context = requireContext(req);
+    const list = await repos.getConversations(context);
     const thread = list.find((c) => c.id === id);
     if (!thread) throw new NotFoundError('Conversation not found');
     return res.json(thread);
@@ -141,7 +144,8 @@ export default function registerConversationsRoutes(
     const directorId = String(req.query.directorId ?? '').trim();
     const emailId = String(req.query.emailId ?? '').trim();
     if (!directorId || !emailId) throw new ValidationError('directorId and emailId are required');
-    const threads = (await repos.getConversations(req as any as ReqLike)).filter(
+    const context = requireContext(req);
+    const threads = (await repos.getConversations(context)).filter(
       (c) => c.kind === 'director' && c.directorId === directorId && (c.email as any)?.id === emailId
     );
     if (!threads.length) throw new NotFoundError('Conversation not found');
@@ -161,11 +165,12 @@ export default function registerConversationsRoutes(
     const id = req.params.id;
     const content = String(req.body?.content ?? '');
     if (!content.trim()) throw new ValidationError('Message content is required');
-    const conversations = await repos.getConversations(req as any as ReqLike);
+    const context = requireContext(req);
+    const conversations = await repos.getConversations(context);
     const exists = conversations.some((c) => c.id === id);
     if (!exists) throw new NotFoundError('Conversation not found');
     const msg: PromptMessage = { id: newId(), role: 'user', content };
-    await repoAppendMessage(repos, req as any as ReqLike, id, msg);
+    await repoAppendMessage(repos, context, id, msg);
     logger.info('POST /api/conversations/:id/messages appended user message', { id, length: content.length });
     return res.json({ success: true });
   }));
@@ -173,9 +178,9 @@ export default function registerConversationsRoutes(
   // POST /api/conversations/:id/assistant
   app.post('/api/conversations/:id/assistant', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const reqLike = req as any as ReqLike;
+    const context = requireContext(req);
     
-    const { thread } = await validateConversationRequest(id, reqLike, repos);
+    const { thread } = await validateConversationRequest(id, context, repos);
 
     let result: ConversationResult;
     // Use a single orchestrator instance for both branches
@@ -183,14 +188,14 @@ export default function registerConversationsRoutes(
     const accountId = (thread as any).accountId as string;
     if (!accountId) throw new ValidationError('accountId missing on conversation thread');
     const runId = newId();
-    const orchestrator = new ConversationOrchestrator(reqLike, runId, accountId);
-    const userReq = createUserRequest(req as any, repos);
+    const orchestrator = new ConversationOrchestrator(context, runId, accountId);
+    const userReq = createUserRequest(context, repos);
     if (thread.kind === 'director') {
       // Delegate director orchestration to ConversationOrchestrator to ensure contract adherence
-      const agents = await repos.getAgents(reqLike);
-      const directors = await repos.getDirectors(reqLike);
-      const prompts = await repos.getPrompts(reqLike);
-      const settings = await repos.getSettings(reqLike);
+      const agents = await repos.getAgents(context);
+      const directors = await repos.getDirectors(context);
+      const prompts = await repos.getPrompts(context);
+      const settings = await repos.getSettings(context);
       const director = directors.find((d: any) => d.id === thread.directorId);
       if (!director) throw new NotFoundError('Director not found for thread');
 
@@ -233,8 +238,8 @@ export default function registerConversationsRoutes(
   // DELETE single conversation by id
   app.delete('/api/conversations/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const id = req.params.id;
-    const ureq = requireReq(req as any as ReqLike);
-    const removed = await repos.deleteConversation(ureq, id);
+    const context = requireContext(req);
+    const removed = await repos.deleteConversation(context, id);
     if (!removed) throw new NotFoundError('Conversation not found');
     return res.json({ success: true, deleted: 1, message: 'Deleted 1 conversations' });
   }));
@@ -243,13 +248,13 @@ export default function registerConversationsRoutes(
   app.delete('/api/conversations', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const ids = Array.isArray(req.body?.ids) ? (req.body.ids as string[]) : [];
     if (!ids.length) throw new ValidationError('No ids provided');
-    const ureq = requireReq(req as any as ReqLike);
+    const context = requireContext(req);
     let deleted = 0;
     for (const conversationId of ids) {
       if (typeof conversationId !== 'string' || !conversationId.trim()) {
         throw new ValidationError('Conversation id missing during bulk delete', 'CONVERSATION_ID_MISSING');
       }
-      const removed = await repos.deleteConversation(ureq, conversationId);
+      const removed = await repos.deleteConversation(context, conversationId);
       if (removed) deleted += 1;
     }
     return res.json({ success: true, deleted, message: `Deleted ${deleted} conversations` });

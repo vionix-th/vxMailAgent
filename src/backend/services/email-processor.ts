@@ -3,7 +3,7 @@ import { LiveRepos } from '../liveRepos';
 import { evaluateFilters, selectDirectorTriggers } from './orchestration-director';
 import { ConversationOrchestrator, createUserRequest } from './conversation-orchestrator';
 import { repoFinalizeThreadStatus } from './conversation-mutations';
-import type { ReqLike } from '../interfaces';
+import type { ContextInput } from '../utils/repo-access';
 import { newId } from '../utils/id';
 import { beginSpan, endSpan } from './logging';
 import { ValidationError } from './error-handler';
@@ -42,7 +42,7 @@ export class EmailProcessor {
    */
   async processEmail(
     context: EmailProcessingContext,
-    userReq: ReqLike
+    userReq: ContextInput
   ): Promise<ProcessingResult> {
     const { envelope, account, traceId, filters, directors } = context;
     const result: ProcessingResult = {
@@ -113,7 +113,7 @@ export class EmailProcessor {
     envelope: EmailEnvelope,
     filters: Filter[],
     traceId: string,
-    userReq: ReqLike
+    userReq: ContextInput
   ): Promise<any[]> {
     this.ensureFilterContext(envelope);
 
@@ -172,7 +172,7 @@ export class EmailProcessor {
   private async selectTriggeredDirectors(
     filterEvaluations: any[],
     traceId: string,
-    userReq: ReqLike
+    userReq: ContextInput
   ): Promise<string[]> {
     const sSelect = beginSpan(traceId, {
       type: 'director_select',
@@ -198,7 +198,7 @@ export class EmailProcessor {
     envelope: EmailEnvelope,
     context: EmailProcessingContext,
     traceId: string,
-    userReq: ReqLike
+    userReq: ContextInput
   ): Promise<string | null> {
     // Validate director configuration
     const validation = this.validateDirectorConfig(director, context);
@@ -280,7 +280,7 @@ snippet: ${envelope.snippet}`;
   private async persistDirectorThread(
     thread: ConversationThread,
     traceId: string,
-    userReq: ReqLike
+    userReq: ContextInput
   ): Promise<ConversationThread> {
     const persistedThread = await this.repos.appendConversation(userReq, thread);
 
@@ -329,7 +329,7 @@ snippet: ${envelope.snippet}`;
     thread: ConversationThread,
     director: Director,
     context: EmailProcessingContext,
-    userReq: ReqLike
+    userReq: ContextInput
   ): void {
     const orchestratorUserReq = createUserRequest(userReq, this.repos);
     const orchestrator = new ConversationOrchestrator(userReq, context.runId, context.account.id);
@@ -351,7 +351,7 @@ snippet: ${envelope.snippet}`;
         try {
           await repoFinalizeThreadStatus(
             orchestratorUserReq.repos,
-            orchestratorUserReq.reqLike,
+            orchestratorUserReq.context,
             thread.id,
             'failed'
           );

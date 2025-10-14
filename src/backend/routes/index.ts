@@ -1,5 +1,5 @@
 import express from 'express';
-import { ReqLike, requireReq, getPromptsRepo } from '../utils/repo-access';
+import { ContextInput, requireContext, getPromptsRepo } from '../utils/repo-access';
 import registerAuthSessionRoutes from './auth-session';
 import registerTestRoutes from './test';
 import registerMemoryRoutes from './memory';
@@ -28,10 +28,10 @@ export default function registerRoutes(
   repos: LiveRepos,
   fetcherManager: FetcherManager,
   _services: {
-    setOrchestrationLog: (next: any[], req?: ReqLike) => Promise<void>;
-    getTraces: (req?: ReqLike) => Promise<any[]>;
-    setTraces: (req: ReqLike, next: any[]) => Promise<void>;
-    getProviderEvents: (req?: ReqLike) => Promise<any[]>;
+    setOrchestrationLog: (next: any[], req?: ContextInput) => Promise<void>;
+    getTraces: (req?: ContextInput) => Promise<any[]>;
+    setTraces: (req: ContextInput, next: any[]) => Promise<void>;
+    getProviderEvents: (req?: ContextInput) => Promise<any[]>;
   }
 ) {
   registerAuthSessionRoutes(app);
@@ -49,24 +49,24 @@ export default function registerRoutes(
   registerFiltersRoutes(app, repos);
   registerDirectorsRoutes(app, repos);
   registerPromptsRoutes(app, {
-    listPrompts: async (req?: ReqLike) => {
-      const repo = getPromptsRepo(requireReq(req));
+    listPrompts: async (req?: ContextInput) => {
+      const repo = getPromptsRepo(requireContext(req));
       return await repo.list();
     },
-    getPrompt: async (req: ReqLike, id: string) => {
-      const repo = getPromptsRepo(requireReq(req));
+    getPrompt: async (req: ContextInput, id: string) => {
+      const repo = getPromptsRepo(requireContext(req));
       return await repo.getById(id);
     },
-    createPrompt: async (req: ReqLike, item: Prompt) => {
-      const repo = getPromptsRepo(requireReq(req));
+    createPrompt: async (req: ContextInput, item: Prompt) => {
+      const repo = getPromptsRepo(requireContext(req));
       await repo.insert(item);
     },
-    updatePrompt: async (req: ReqLike, item: Prompt) => {
-      const repo = getPromptsRepo(requireReq(req));
+    updatePrompt: async (req: ContextInput, item: Prompt) => {
+      const repo = getPromptsRepo(requireContext(req));
       await repo.update(item);
     },
-    deletePrompt: async (req: ReqLike, id: string) => {
-      const repo = getPromptsRepo(requireReq(req));
+    deletePrompt: async (req: ContextInput, id: string) => {
+      const repo = getPromptsRepo(requireContext(req));
       return await repo.delete(id);
     },
     getSettings: repos.getSettings,
@@ -81,7 +81,7 @@ export default function registerRoutes(
   // Legacy diagnostics endpoints removed
   registerFetcherRoutes(app, fetcherManager, repos);
   registerCleanupRoutes(app, repos, {
-    getFetcherManager: (req: ReqLike) => fetcherManager.getFetcher(req)
+    getFetcherManager: (req: ContextInput) => fetcherManager.getFetcher(req)
   });
   
   // Enhanced diagnostics routes

@@ -1,5 +1,5 @@
 import { initFetcher } from './fetcher';
-import { ReqLike, requireReq, requireUid } from '../utils/repo-access';
+import { ContextInput, requireContext, requireUid } from '../utils/repo-access';
 import { FETCHER_MANAGER_TTL_MINUTES, FETCHER_MANAGER_MAX_FETCHERS } from '../config';
 import { LiveRepos } from '../liveRepos';
 import logger from './logger';
@@ -31,8 +31,8 @@ export class FetcherManager {
   /**
    * Get or create fetcher for user
    */
-  getFetcher(req: ReqLike): ReturnType<typeof initFetcher> {
-    const ureq = requireReq(req);
+  getFetcher(req: ContextInput): ReturnType<typeof initFetcher> {
+    const ureq = requireContext(req);
     const uid = requireUid(ureq);
     let entry = this.fetchers.get(uid);
     if (!entry) {
@@ -53,25 +53,25 @@ export class FetcherManager {
   /**
    * Start fetcher loop for user or global
    */
-  startFetcherLoop(req: ReqLike): void {
+  startFetcherLoop(req: ContextInput): void {
     const fetcher = this.getFetcher(req);
     fetcher.startFetcherLoop();
   }
 
   /**
    * Start fetcher loop for a specific uid without requiring a request-like object.
-   * Avoids ad-hoc mock request construction by building a proper ReqLike internally.
+   * Avoids ad-hoc mock request construction by building a proper ContextInput internally.
    */
   async startForUid(uid: string): Promise<void> {
     const repos = await getUserRepoBundle(uid);
-    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const req: ContextInput = { userContext: { uid, repos } };
     this.startFetcherLoop(req);
   }
 
   /**
    * Stop fetcher loop for user or global
    */
-  stopFetcherLoop(req: ReqLike): void {
+  stopFetcherLoop(req: ContextInput): void {
     const fetcher = this.getFetcher(req);
     fetcher.stopFetcherLoop();
   }
@@ -79,7 +79,7 @@ export class FetcherManager {
   /**
    * Get fetcher status for user or global
    */
-  getStatus(req: ReqLike) {
+  getStatus(req: ContextInput) {
     const fetcher = this.getFetcher(req);
     return fetcher.getStatus();
   }
@@ -87,7 +87,7 @@ export class FetcherManager {
   /**
    * Fetch emails for user or global
    */
-  async fetchEmails(req: ReqLike): Promise<void> {
+  async fetchEmails(req: ContextInput): Promise<void> {
     const fetcher = this.getFetcher(req);
     await fetcher.fetchEmails();
   }
@@ -95,7 +95,7 @@ export class FetcherManager {
   /**
    * Get fetcher log for user or global
    */
-  getFetcherLog(req: ReqLike) {
+  getFetcherLog(req: ContextInput) {
     const fetcher = this.getFetcher(req);
     return fetcher.getFetcherLog();
   }
@@ -103,72 +103,72 @@ export class FetcherManager {
   /**
    * Set fetcher log for user or global
    */
-  async setFetcherLog(req: ReqLike, next: any[]): Promise<void> {
+  async setFetcherLog(req: ContextInput, next: any[]): Promise<void> {
     const fetcher = this.getFetcher(req);
     await fetcher.setFetcherLog(next);
   }
 
-  async appendFetcherLog(req: ReqLike, entry: FetcherLogEntry): Promise<void> {
+  async appendFetcherLog(req: ContextInput, entry: FetcherLogEntry): Promise<void> {
     const fetcher = this.getFetcher(req);
     await fetcher.appendFetcherLog(entry);
   }
 
-  async deleteFetcherLog(req: ReqLike, id: string): Promise<boolean> {
+  async deleteFetcherLog(req: ContextInput, id: string): Promise<boolean> {
     const fetcher = this.getFetcher(req);
     return await fetcher.deleteFetcherLog(id);
   }
 
-  async deleteFetcherLogs(req: ReqLike, ids: readonly string[]): Promise<number> {
+  async deleteFetcherLogs(req: ContextInput, ids: readonly string[]): Promise<number> {
     const fetcher = this.getFetcher(req);
     return await fetcher.deleteFetcherLogs(ids);
   }
 
-  async clearFetcherLog(req: ReqLike): Promise<void> {
+  async clearFetcherLog(req: ContextInput): Promise<void> {
     const fetcher = this.getFetcher(req);
     await fetcher.clearFetcherLog();
   }
 
   /**
-   * Convenience helpers to get/set fetcher log by uid without constructing ReqLike externally.
+   * Convenience helpers to get/set fetcher log by uid without constructing ContextInput externally.
    */
   async getFetcherLogForUid(uid: string): Promise<FetcherLogEntry[]> {
     const repos = await getUserRepoBundle(uid);
-    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const req: ContextInput = { userContext: { uid, repos } };
     const fetcher = this.getFetcher(req);
     return fetcher.getFetcherLog();
   }
 
   async setFetcherLogForUid(uid: string, next: FetcherLogEntry[]): Promise<void> {
     const repos = await getUserRepoBundle(uid);
-    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const req: ContextInput = { userContext: { uid, repos } };
     const fetcher = this.getFetcher(req);
     await fetcher.setFetcherLog(next);
   }
 
   async appendFetcherLogForUid(uid: string, entry: FetcherLogEntry): Promise<void> {
     const repos = await getUserRepoBundle(uid);
-    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const req: ContextInput = { userContext: { uid, repos } };
     const fetcher = this.getFetcher(req);
     await fetcher.appendFetcherLog(entry);
   }
 
   async deleteFetcherLogForUid(uid: string, id: string): Promise<boolean> {
     const repos = await getUserRepoBundle(uid);
-    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const req: ContextInput = { userContext: { uid, repos } };
     const fetcher = this.getFetcher(req);
     return await fetcher.deleteFetcherLog(id);
   }
 
   async deleteFetcherLogsForUid(uid: string, ids: readonly string[]): Promise<number> {
     const repos = await getUserRepoBundle(uid);
-    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const req: ContextInput = { userContext: { uid, repos } };
     const fetcher = this.getFetcher(req);
     return await fetcher.deleteFetcherLogs(ids);
   }
 
   async clearFetcherLogForUid(uid: string): Promise<void> {
     const repos = await getUserRepoBundle(uid);
-    const req: ReqLike = { userContext: { uid, repos } } as ReqLike;
+    const req: ContextInput = { userContext: { uid, repos } };
     const fetcher = this.getFetcher(req);
     await fetcher.clearFetcherLog();
   }

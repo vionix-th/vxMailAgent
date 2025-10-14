@@ -1,6 +1,6 @@
 import { Account, Filter, Director, Agent, Prompt, Imprint, OrchestrationEvent, ConversationThread, PromptMessage, EmailEnvelope, ProviderEvent, WorkspaceItem, FetcherLogEntry } from '../shared/types';
 import {
-  requireReq,
+  ensureContext,
   requireRepos,
   getPromptsRepo,
   getAgentsRepo,
@@ -14,56 +14,57 @@ import {
   getOrchestrationLogRepo,
   getConversationsRepo,
   getWorkspaceItemsRepo,
-  getEmailsRepo
+  getEmailsRepo,
+  ContextInput,
+  UserScopedContext
 } from './utils/repo-access';
 import { loadSettings } from './services/settings';
 import { ValidationError, NotFoundError } from './services/error-handler';
 import { assertThreadTimestamps } from './services/conversation-mutations';
-import type { ReqLike } from './utils/repo-access';
-
 export interface LiveRepos {
-  getPrompts(req?: ReqLike): Promise<Prompt[]>;
-  getAgents(req?: ReqLike): Promise<Agent[]>;
-  getDirectors(req?: ReqLike): Promise<Director[]>;
-  getFilters(req?: ReqLike): Promise<Filter[]>;
-  getImprints(req?: ReqLike): Promise<Imprint[]>;
-  insertImprint(req: ReqLike, imprint: Imprint): Promise<void>;
-  updateImprint(req: ReqLike, imprint: Imprint): Promise<void>;
-  deleteImprint(req: ReqLike, id: string): Promise<boolean>;
-  getOrchestrationLog(req?: ReqLike): Promise<OrchestrationEvent[]>;
-  getConversations(req?: ReqLike): Promise<ConversationThread[]>;
-  appendConversation(req: ReqLike, thread: ConversationThread): Promise<ConversationThread>;
-  updateConversation(req: ReqLike, thread: ConversationThread): Promise<ConversationThread>;
-  deleteConversation(req: ReqLike, id: string): Promise<boolean>;
+  getPrompts(context?: ContextInput): Promise<Prompt[]>;
+  getAgents(context?: ContextInput): Promise<Agent[]>;
+  getDirectors(context?: ContextInput): Promise<Director[]>;
+  getFilters(context?: ContextInput): Promise<Filter[]>;
+  getImprints(context?: ContextInput): Promise<Imprint[]>;
+  insertImprint(context: ContextInput, imprint: Imprint): Promise<void>;
+  updateImprint(context: ContextInput, imprint: Imprint): Promise<void>;
+  deleteImprint(context: ContextInput, id: string): Promise<boolean>;
+  getOrchestrationLog(context?: ContextInput): Promise<OrchestrationEvent[]>;
+  getConversations(context?: ContextInput): Promise<ConversationThread[]>;
+  appendConversation(context: ContextInput, thread: ConversationThread): Promise<ConversationThread>;
+  updateConversation(context: ContextInput, thread: ConversationThread): Promise<ConversationThread>;
+  deleteConversation(context: ContextInput, id: string): Promise<boolean>;
   /** Append one or more messages to a thread atomically. */
-  appendMessagesToConversation(req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread>;
+  appendMessagesToConversation(context: ContextInput, threadId: string, messages: any[]): Promise<ConversationThread>;
   /** Finalize a thread's status atomically. */
-  finalizeThreadStatusAtomic(req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null>;
-  getEmails(req?: ReqLike): Promise<EmailEnvelope[]>;
-  upsertEmails(req: ReqLike, next: EmailEnvelope[]): Promise<void>;
-  deleteEmail(req: ReqLike, id: string): Promise<boolean>;
-  clearEmails(req: ReqLike): Promise<void>;
-  getProviderEvents(req?: ReqLike): Promise<ProviderEvent[]>;
-  getProviderEventsByConversation(req: ReqLike, conversationId: string): Promise<ProviderEvent[]>;
-  getConversationById(req: ReqLike, id: string): Promise<ConversationThread | null>;
-  getOrchestrationLogByConversation(req: ReqLike, conversationId: string): Promise<OrchestrationEvent[]>;
-  getWorkspaceItemsByConversation(req: ReqLike, conversationId: string): Promise<WorkspaceItem[]>;
-  getSettings(req?: ReqLike): Promise<any>;
-  getProviderRepo(req?: ReqLike): any;
-  getTracesRepo(req?: ReqLike): any;
-  getAccounts(req?: ReqLike): Promise<any[]>;
-  updateAccountTokens(req: ReqLike, id: string, tokens: Account['tokens']): Promise<Account>;
-  getFetcherLog(req?: ReqLike): Promise<any[]>;
-  appendFetcherLog(req: ReqLike, entry: FetcherLogEntry): Promise<void>;
-  replaceFetcherLog(req: ReqLike, next: FetcherLogEntry[]): Promise<void>;
-  clearFetcherLog(req: ReqLike): Promise<void>;
-  deleteFetcherLog(req: ReqLike, id: string): Promise<boolean>;
-  deleteFetcherLogs(req: ReqLike, ids: readonly string[]): Promise<number>;
+  finalizeThreadStatusAtomic(context: ContextInput, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null>;
+  getEmails(context?: ContextInput): Promise<EmailEnvelope[]>;
+  upsertEmails(context: ContextInput, next: EmailEnvelope[]): Promise<void>;
+  deleteEmail(context: ContextInput, id: string): Promise<boolean>;
+  clearEmails(context: ContextInput): Promise<void>;
+  getProviderEvents(context?: ContextInput): Promise<ProviderEvent[]>;
+  getProviderEventsByConversation(context: ContextInput, conversationId: string): Promise<ProviderEvent[]>;
+  getConversationById(context: ContextInput, id: string): Promise<ConversationThread | null>;
+  getOrchestrationLogByConversation(context: ContextInput, conversationId: string): Promise<OrchestrationEvent[]>;
+  getWorkspaceItemsByConversation(context: ContextInput, conversationId: string): Promise<WorkspaceItem[]>;
+  getSettings(context?: ContextInput): Promise<any>;
+  getProviderRepo(context?: ContextInput): any;
+  getTracesRepo(context?: ContextInput): any;
+  getAccounts(context?: ContextInput): Promise<any[]>;
+  updateAccountTokens(context: ContextInput, id: string, tokens: Account['tokens']): Promise<Account>;
+  getFetcherLog(context?: ContextInput): Promise<any[]>;
+  appendFetcherLog(context: ContextInput, entry: FetcherLogEntry): Promise<void>;
+  replaceFetcherLog(context: ContextInput, next: FetcherLogEntry[]): Promise<void>;
+  clearFetcherLog(context: ContextInput): Promise<void>;
+  deleteFetcherLog(context: ContextInput, id: string): Promise<boolean>;
+  deleteFetcherLogs(context: ContextInput, ids: readonly string[]): Promise<number>;
 }
 
 export function createLiveRepos(): LiveRepos {
-  const get = <T>(fn: (req: ReqLike) => any) => async (req?: ReqLike): Promise<T[]> => {
-    const repo = fn(requireReq(req));
+  const get = <T>(fn: (ctx: UserScopedContext) => any) => async (context?: ContextInput): Promise<T[]> => {
+    const scoped = ensureContext(context);
+    const repo = fn(scoped);
     if (typeof repo.list === 'function') {
       const items = await repo.list();
       return Array.isArray(items) ? items.slice() : Array.from(items);
@@ -73,9 +74,9 @@ export function createLiveRepos(): LiveRepos {
     }
     throw new Error('LiveRepos: repository does not support list/getAll');
   };
-  const requireConversationRepo = (req: ReqLike) => {
-    const r = requireReq(req);
-    const bundle = requireRepos(r);
+  const requireConversationRepo = (context: ContextInput) => {
+    const scoped = ensureContext(context);
+    const bundle = requireRepos(scoped);
     const repo = bundle.conversations;
     if (
       !repo ||
@@ -93,28 +94,28 @@ export function createLiveRepos(): LiveRepos {
   };
 
   return {
-    getPrompts: get<Prompt>((req) => getPromptsRepo(req)),
-    getAgents: get<Agent>((req) => getAgentsRepo(req)),
-    getDirectors: get<Director>((req) => getDirectorsRepo(req)),
-    getFilters: get<Filter>((req) => getFiltersRepo(req)),
-    getImprints: get<Imprint>((req) => getImprintsRepo(req)),
-    insertImprint: async (req: ReqLike, imprint: Imprint) => {
-      const repo = getImprintsRepo(requireReq(req));
+    getPrompts: get<Prompt>((ctx) => getPromptsRepo(ctx)),
+    getAgents: get<Agent>((ctx) => getAgentsRepo(ctx)),
+    getDirectors: get<Director>((ctx) => getDirectorsRepo(ctx)),
+    getFilters: get<Filter>((ctx) => getFiltersRepo(ctx)),
+    getImprints: get<Imprint>((ctx) => getImprintsRepo(ctx)),
+    insertImprint: async (context: ContextInput, imprint: Imprint) => {
+      const repo = getImprintsRepo(ensureContext(context));
       await repo.insert(imprint);
     },
-    updateImprint: async (req: ReqLike, imprint: Imprint) => {
-      const repo = getImprintsRepo(requireReq(req));
+    updateImprint: async (context: ContextInput, imprint: Imprint) => {
+      const repo = getImprintsRepo(ensureContext(context));
       await repo.update(imprint);
     },
-    deleteImprint: async (req: ReqLike, id: string) => {
-      const repo = getImprintsRepo(requireReq(req));
+    deleteImprint: async (context: ContextInput, id: string) => {
+      const repo = getImprintsRepo(ensureContext(context));
       return await repo.delete(id);
     },
-    getOrchestrationLog: get<OrchestrationEvent>((req) => getOrchestrationLogRepo(req)),
-    getConversations: get<ConversationThread>((req) => getConversationsRepo(req)),
-    appendConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
+    getOrchestrationLog: get<OrchestrationEvent>((ctx) => getOrchestrationLogRepo(ctx)),
+    getConversations: get<ConversationThread>((ctx) => getConversationsRepo(ctx)),
+    appendConversation: async (context: ContextInput, thread: ConversationThread): Promise<ConversationThread> => {
       assertThreadTimestamps(thread, 'appendConversation');
-      const repo = requireConversationRepo(req);
+      const repo = requireConversationRepo(context);
       await repo.insert(thread);
       const appended = await repo.getById(thread.id);
       if (!appended) {
@@ -122,9 +123,9 @@ export function createLiveRepos(): LiveRepos {
       }
       return appended;
     },
-    updateConversation: async (req: ReqLike, thread: ConversationThread): Promise<ConversationThread> => {
+    updateConversation: async (context: ContextInput, thread: ConversationThread): Promise<ConversationThread> => {
       assertThreadTimestamps(thread, 'updateConversation');
-      const repo = requireConversationRepo(req);
+      const repo = requireConversationRepo(context);
       await repo.update(thread);
       const updated = await repo.getById(thread.id);
       if (!updated) {
@@ -132,15 +133,15 @@ export function createLiveRepos(): LiveRepos {
       }
       return updated;
     },
-    deleteConversation: async (req: ReqLike, id: string): Promise<boolean> => {
-      const repo = requireConversationRepo(req);
+    deleteConversation: async (context: ContextInput, id: string): Promise<boolean> => {
+      const repo = requireConversationRepo(context);
       return await repo.delete(id);
     },
-    appendMessagesToConversation: async (req: ReqLike, threadId: string, messages: any[]): Promise<ConversationThread> => {
+    appendMessagesToConversation: async (context: ContextInput, threadId: string, messages: any[]): Promise<ConversationThread> => {
       if (!Array.isArray(messages) || messages.length === 0) {
         throw new ValidationError('appendMessagesToConversation requires non-empty messages array', 'CONVERSATION_APPEND_EMPTY');
       }
-      const repo = requireConversationRepo(req);
+      const repo = requireConversationRepo(context);
       try {
         const updated = await repo.appendMessages(threadId, messages as PromptMessage[]);
         assertThreadTimestamps(updated, 'appendMessagesToConversation');
@@ -152,80 +153,80 @@ export function createLiveRepos(): LiveRepos {
         throw error;
       }
     },
-    finalizeThreadStatusAtomic: async (req: ReqLike, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null> => {
-      const repo = requireConversationRepo(req);
+    finalizeThreadStatusAtomic: async (context: ContextInput, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null> => {
+      const repo = requireConversationRepo(context);
       return await repo.finalizeStatus(threadId, status, new Date().toISOString());
     },
-    getSettings: async (req?: ReqLike) => {
-      const r = requireReq(req);
-      return await loadSettings(r);
+    getSettings: async (context?: ContextInput) => {
+      const scoped = ensureContext(context);
+      return await loadSettings(scoped);
     },
-    getProviderRepo: (req?: ReqLike) => getProviderEventsRepo(requireReq(req)),
-    getTracesRepo: (req?: ReqLike) => resolveTracesRepo(requireReq(req)),
-    getAccounts: async (req?: ReqLike) => {
-      const repo = getAccountsRepo(requireReq(req));
+    getProviderRepo: (context?: ContextInput) => getProviderEventsRepo(ensureContext(context)),
+    getTracesRepo: (context?: ContextInput) => resolveTracesRepo(ensureContext(context)),
+    getAccounts: async (context?: ContextInput) => {
+      const repo = getAccountsRepo(ensureContext(context));
       const rows = await repo.list();
       return [...rows];
     },
-    updateAccountTokens: async (req: ReqLike, id: string, tokens: Account['tokens']) => {
-      const repo = getAccountsRepo(requireReq(req));
+    updateAccountTokens: async (context: ContextInput, id: string, tokens: Account['tokens']) => {
+      const repo = getAccountsRepo(ensureContext(context));
       return await repo.updateTokens(id, tokens);
     },
-    getFetcherLog: async (req?: ReqLike) => {
-      const repo = getFetcherLogRepo(requireReq(req));
+    getFetcherLog: async (context?: ContextInput) => {
+      const repo = getFetcherLogRepo(ensureContext(context));
       return await repo.list();
     },
-    appendFetcherLog: async (req: ReqLike, entry: FetcherLogEntry) => {
-      const repo = getFetcherLogRepo(requireReq(req));
+    appendFetcherLog: async (context: ContextInput, entry: FetcherLogEntry) => {
+      const repo = getFetcherLogRepo(ensureContext(context));
       await repo.append(entry);
     },
-    replaceFetcherLog: async (req: ReqLike, next: FetcherLogEntry[]) => {
-      const repo = getFetcherLogRepo(requireReq(req));
+    replaceFetcherLog: async (context: ContextInput, next: FetcherLogEntry[]) => {
+      const repo = getFetcherLogRepo(ensureContext(context));
       await repo.replace(Array.isArray(next) ? next : []);
     },
-    clearFetcherLog: async (req: ReqLike) => {
-      const repo = getFetcherLogRepo(requireReq(req));
+    clearFetcherLog: async (context: ContextInput) => {
+      const repo = getFetcherLogRepo(ensureContext(context));
       await repo.clear();
     },
-    deleteFetcherLog: async (req: ReqLike, id: string) => {
-      const repo = getFetcherLogRepo(requireReq(req));
+    deleteFetcherLog: async (context: ContextInput, id: string) => {
+      const repo = getFetcherLogRepo(ensureContext(context));
       return await repo.delete(id);
     },
-    deleteFetcherLogs: async (req: ReqLike, ids: readonly string[]) => {
-      const repo = getFetcherLogRepo(requireReq(req));
+    deleteFetcherLogs: async (context: ContextInput, ids: readonly string[]) => {
+      const repo = getFetcherLogRepo(ensureContext(context));
       return await repo.deleteMany(ids);
     },
-    getEmails: get<EmailEnvelope>((req) => getEmailsRepo(req)),
-    upsertEmails: async (req: ReqLike, next: EmailEnvelope[]) => {
-      const repo = getEmailsRepo(requireReq(req));
+    getEmails: get<EmailEnvelope>((ctx) => getEmailsRepo(ctx)),
+    upsertEmails: async (context: ContextInput, next: EmailEnvelope[]) => {
+      const repo = getEmailsRepo(ensureContext(context));
       await repo.upsertMany(Array.isArray(next) ? next : []);
     },
-    deleteEmail: async (req: ReqLike, id: string) => {
-      const repo = getEmailsRepo(requireReq(req));
+    deleteEmail: async (context: ContextInput, id: string) => {
+      const repo = getEmailsRepo(ensureContext(context));
       return await repo.delete(id);
     },
-    clearEmails: async (req: ReqLike) => {
-      const repo = getEmailsRepo(requireReq(req));
+    clearEmails: async (context: ContextInput) => {
+      const repo = getEmailsRepo(ensureContext(context));
       await repo.clear();
     },
-    getProviderEvents: async (req?: ReqLike) => {
-      const repo = getProviderEventsRepo(requireReq(req));
+    getProviderEvents: async (context?: ContextInput) => {
+      const repo = getProviderEventsRepo(ensureContext(context));
       return await repo.list();
     },
-    getProviderEventsByConversation: async (req: ReqLike, conversationId: string) => {
-      const repo = getProviderEventsRepo(requireReq(req));
+    getProviderEventsByConversation: async (context: ContextInput, conversationId: string) => {
+      const repo = getProviderEventsRepo(ensureContext(context));
       return await repo.getByConversation(conversationId);
     },
-    getConversationById: async (req: ReqLike, id: string) => {
-      const repo = getConversationsRepo(requireReq(req));
+    getConversationById: async (context: ContextInput, id: string) => {
+      const repo = getConversationsRepo(ensureContext(context));
       return await repo.getById(id);
     },
-    getOrchestrationLogByConversation: async (req: ReqLike, conversationId: string) => {
-      const repo = getOrchestrationLogRepo(requireReq(req));
+    getOrchestrationLogByConversation: async (context: ContextInput, conversationId: string) => {
+      const repo = getOrchestrationLogRepo(ensureContext(context));
       return await repo.getByConversation(conversationId);
     },
-    getWorkspaceItemsByConversation: async (req: ReqLike, conversationId: string) => {
-      const repo = getWorkspaceItemsRepo(requireReq(req));
+    getWorkspaceItemsByConversation: async (context: ContextInput, conversationId: string) => {
+      const repo = getWorkspaceItemsRepo(ensureContext(context));
       const items = await repo.listByConversation(conversationId);
       return Array.isArray(items) ? items.slice() : Array.from(items);
     },

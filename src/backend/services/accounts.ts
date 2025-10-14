@@ -4,22 +4,22 @@ import { ValidationError } from './error-handler';
 import { getGoogleOAuthConfig, getOutlookOAuthConfig } from '../config';
 import { ensureValidGoogleAccessToken } from '../oauth/google';
 import { ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outlook';
-import { requireReq, requireUid, getAccountsRepo } from '../utils/repo-access';
-import type { ReqLike } from '../interfaces';
+import { toUserScopedContext, requireUid, getAccountsRepo } from '../utils/repo-access';
+import type { UserScopedContext, AppRequest } from '../interfaces';
 import type { Account } from '../../shared/types';
 import { revokeGoogleToken } from '../oauth/google';
 
 // Data access helpers
-export async function listAccounts(req: ReqLike): Promise<Account[]> {
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
+export async function listAccounts(source: AppRequest | UserScopedContext): Promise<Account[]> {
+  const ctx = toUserScopedContext(source);
+  const repo = getAccountsRepo(ctx);
   const rows = await repo.list();
   return [...rows];
 }
 
-export async function upsertAccount(req: ReqLike, next: Account): Promise<void> {
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
+export async function upsertAccount(source: AppRequest | UserScopedContext, next: Account): Promise<void> {
+  const ctx = toUserScopedContext(source);
+  const repo = getAccountsRepo(ctx);
   if (typeof next?.id !== 'string' || !next.id.trim()) {
     throw new ValidationError('Account id required');
   }
@@ -29,12 +29,12 @@ export async function upsertAccount(req: ReqLike, next: Account): Promise<void> 
   } else {
     await repo.insert(next);
   }
-  logger.info('Saved account', { id: next.id, uid: requireUid(ureq) });
+  logger.info('Saved account', { id: next.id, uid: requireUid(ctx) });
 }
 
-export async function updateAccount(req: ReqLike, id: string, next: Account): Promise<void> {
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
+export async function updateAccount(source: AppRequest | UserScopedContext, id: string, next: Account): Promise<void> {
+  const ctx = toUserScopedContext(source);
+  const repo = getAccountsRepo(ctx);
   const current = await repo.getById(id);
   if (!current) throw new Error('Account not found');
 
@@ -52,12 +52,11 @@ export async function updateAccount(req: ReqLike, id: string, next: Account): Pr
  * Currently supports updating `signature`.
  */
 export async function updateAccountPartial(
-  req: ReqLike,
+  req: UserScopedContext,
   id: string,
   patch: { signature?: string }
 ): Promise<void> {
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
+  const repo = getAccountsRepo(req);
   const current = await repo.getById(id);
   if (!current) throw new Error('Account not found');
 
@@ -68,9 +67,9 @@ export async function updateAccountPartial(
   logger.info('Updated account (partial)', { id, fields: Object.keys(patch).filter(k => (patch as any)[k] !== undefined) });
 }
 
-export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeStatus?: boolean; revokeError?: string }> {
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
+export async function deleteAccount(source: AppRequest | UserScopedContext, id: string): Promise<{ revokeStatus?: boolean; revokeError?: string }> {
+  const ctx = toUserScopedContext(source);
+  const repo = getAccountsRepo(ctx);
   const account = await repo.getById(id);
   if (!account) throw new Error('Account not found');
 
@@ -105,9 +104,9 @@ export async function deleteAccount(req: ReqLike, id: string): Promise<{ revokeS
 // Legacy OAuth functions removed - now handled by auth/oidc/flows.ts
 
 // Refresh tokens and provider tests
-export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
+export async function refreshAccount(source: AppRequest | UserScopedContext, id: string): Promise<any> {
+  const ctx = toUserScopedContext(source);
+  const repo = getAccountsRepo(ctx);
   const account = await repo.getById(id);
   if (!account) throw new Error('account not found');
 
@@ -173,10 +172,10 @@ export async function refreshAccount(req: ReqLike, id: string): Promise<any> {
   }
 }
 
-export async function outlookTest(req: ReqLike, id: string): Promise<any> {
+export async function outlookTest(source: AppRequest | UserScopedContext, id: string): Promise<any> {
   const cfg = getOutlookOAuthConfig();
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
+  const ctx = toUserScopedContext(source);
+  const repo = getAccountsRepo(ctx);
   const account = await repo.getById(id);
   if (!account) throw new Error('account not found');
   if (account.provider !== 'outlook') throw new Error('Only outlook supported for this test');
@@ -234,10 +233,10 @@ export async function outlookTest(req: ReqLike, id: string): Promise<any> {
   };
 }
 
-export async function gmailTest(req: ReqLike, id: string): Promise<any> {
+export async function gmailTest(source: AppRequest | UserScopedContext, id: string): Promise<any> {
   const cfg = getGoogleOAuthConfig();
-  const ureq = requireReq(req);
-  const repo = getAccountsRepo(ureq);
+  const ctx = toUserScopedContext(source);
+  const repo = getAccountsRepo(ctx);
   const account = await repo.getById(id);
   if (!account) throw new Error('account not found');
   if (account.provider !== 'gmail') throw new Error('Only gmail supported for this test');

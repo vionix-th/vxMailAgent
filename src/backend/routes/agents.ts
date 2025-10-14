@@ -4,28 +4,28 @@ import { Agent } from '../../shared/types';
 import { createCrudRoutes } from './helpers';
 import { sanitizeEnabledOptionalTools } from '../utils/sanitizeToolCalls';
 import { validateAgentToolConfig } from '../services/tool-config-service';
-import { getAgentsRepo, requireReq, ReqLike } from '../utils/repo-access';
+import { getAgentsRepo, requireContext, ContextInput } from '../utils/repo-access';
 
 export default function registerAgentsRoutes(app: express.Express, _repos: LiveRepos) {
   const repoFns = {
-    list: async (req?: ReqLike) => {
-      const repo = getAgentsRepo(requireReq(req));
+    list: async (req?: ContextInput) => {
+      const repo = getAgentsRepo(requireContext(req));
       return await repo.list();
     },
-    getById: async (req: ReqLike, id: string) => {
-      const repo = getAgentsRepo(requireReq(req));
+    getById: async (req: ContextInput, id: string) => {
+      const repo = getAgentsRepo(requireContext(req));
       return await repo.getById(id);
     },
-    create: async (req: ReqLike, item: Agent) => {
-      const repo = getAgentsRepo(requireReq(req));
+    create: async (req: ContextInput, item: Agent) => {
+      const repo = getAgentsRepo(requireContext(req));
       await repo.insert(item);
     },
-    update: async (req: ReqLike, item: Agent) => {
-      const repo = getAgentsRepo(requireReq(req));
+    update: async (req: ContextInput, item: Agent) => {
+      const repo = getAgentsRepo(requireContext(req));
       await repo.update(item);
     },
-    delete: async (req: ReqLike, id: string) => {
-      const repo = getAgentsRepo(requireReq(req));
+    delete: async (req: ContextInput, id: string) => {
+      const repo = getAgentsRepo(requireContext(req));
       return await repo.delete(id);
     },
   };

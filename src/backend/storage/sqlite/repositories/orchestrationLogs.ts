@@ -24,6 +24,14 @@ function pruneOrchestration(db: any) {
   }
 }
 
+function requireConversationId(event: OrchestrationEvent): string {
+  const id = (event as any)?.context?.conversationId;
+  if (typeof id !== 'string' || id.length === 0) {
+    throw new Error(`orchestration log ${event.id}: context.conversationId missing`);
+  }
+  return id;
+}
+
 export class OrchestrationLogRepository extends SqliteRepository {
   constructor(handle: StorageHandle) {
     super(handle);
@@ -34,13 +42,19 @@ export class OrchestrationLogRepository extends SqliteRepository {
       const rows = db.prepare(
         'SELECT id, conversation_id, timestamp, phase, outcome_json, context_json FROM orchestration_logs WHERE conversation_id = ? ORDER BY timestamp'
       ).all(conversationId);
-      return rows.map((row: any) => ({
-        id: row.id,
-        timestamp: row.timestamp,
-        phase: row.phase,
-        outcome: JSON.parse(row.outcome_json),
-        context: JSON.parse(row.context_json),
-      }));
+      return rows.map((row: any) => {
+        const context = JSON.parse(row.context_json);
+        if (typeof context === 'object' && context) {
+          context.conversationId = row.conversation_id;
+        }
+        return {
+          id: row.id,
+          timestamp: row.timestamp,
+          phase: row.phase,
+          outcome: JSON.parse(row.outcome_json),
+          context,
+        };
+      });
     });
   }
 
@@ -49,13 +63,19 @@ export class OrchestrationLogRepository extends SqliteRepository {
       const rows = db.prepare(
         'SELECT id, conversation_id, timestamp, phase, outcome_json, context_json FROM orchestration_logs ORDER BY timestamp'
       ).all();
-      return rows.map((row: any) => ({
-        id: row.id,
-        timestamp: row.timestamp,
-        phase: row.phase,
-        outcome: JSON.parse(row.outcome_json),
-        context: JSON.parse(row.context_json),
-      })) as OrchestrationEvent[];
+      return rows.map((row: any) => {
+        const context = JSON.parse(row.context_json);
+        if (typeof context === 'object' && context) {
+          context.conversationId = row.conversation_id;
+        }
+        return {
+          id: row.id,
+          timestamp: row.timestamp,
+          phase: row.phase,
+          outcome: JSON.parse(row.outcome_json),
+          context,
+        } as OrchestrationEvent;
+      });
     });
   }
 
@@ -66,9 +86,10 @@ export class OrchestrationLogRepository extends SqliteRepository {
         'INSERT INTO orchestration_logs (id, conversation_id, timestamp, phase, outcome_json, context_json) VALUES (@id, @conversation_id, @timestamp, @phase, @outcome_json, @context_json)'
       );
       for (const event of events) {
+        const conversationId = requireConversationId(event);
         insert.run({
           id: event.id,
-          conversation_id: (event as any).context?.conversationId ?? null,
+          conversation_id: conversationId,
           timestamp: event.timestamp,
           phase: event.phase,
           outcome_json: stringify(event.outcome),
@@ -82,11 +103,12 @@ export class OrchestrationLogRepository extends SqliteRepository {
 
   async append(event: OrchestrationEvent): Promise<void> {
     await this.transaction((db) => {
+      const conversationId = requireConversationId(event);
       db.prepare(
         'INSERT INTO orchestration_logs (id, conversation_id, timestamp, phase, outcome_json, context_json) VALUES (@id, @conversation_id, @timestamp, @phase, @outcome_json, @context_json)'
       ).run({
         id: event.id,
-        conversation_id: (event as any).context?.conversationId ?? null,
+        conversation_id: conversationId,
         timestamp: event.timestamp,
         phase: event.phase,
         outcome_json: stringify(event.outcome),

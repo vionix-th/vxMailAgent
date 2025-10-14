@@ -3,7 +3,7 @@ import { requireUserContext } from '../middleware/user-context';
 import { errorHandler } from '../services/error-handler';
 import { securityAudit } from '../services/security-audit';
 import logger from '../services/logger';
-import { requireReq, requireUid, ReqLike } from '../utils/repo-access';
+import { requireContext, requireUid } from '../utils/repo-access';
 import { loadSettings, updateSettingsPartial, createApiConfig, updateApiConfig, deleteApiConfig } from '../services/settings';
 import { serializeApiConfig } from '../services/apiConfigSerializer';
 
@@ -13,8 +13,8 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
 
   // GET /api/settings (per-user)
   app.get('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as any as ReqLike);
-    const uid = requireUid(ureq);
+    const context = requireContext(req);
+    const uid = requireUid(context);
     
     securityAudit.logDataAccess(uid, {
       resource: 'settings',
@@ -22,7 +22,7 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
       success: true
     }, req);
     
-    const settings = await loadSettings(ureq);
+    const settings = await loadSettings(context);
     logger.info('GET /api/settings', { uid });
     const apiConfigsPublic = Array.isArray(settings.apiConfigs)
       ? settings.apiConfigs.map(serializeApiConfig)
@@ -38,12 +38,12 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
 
   // PUT /api/settings (per-user)
   app.put('/api/settings', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as any as ReqLike);
-    const uid = requireUid(ureq);
+    const context = requireContext(req);
+    const uid = requireUid(context);
 
     errorHandler.validateInput(typeof req.body === 'object', 'Request body must be an object');
 
-    const updated = await updateSettingsPartial(ureq, req.body);
+    const updated = await updateSettingsPartial(context, req.body);
 
     securityAudit.logDataAccess(uid, {
       resource: 'settings',
@@ -65,11 +65,11 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
 
   app.post('/api/settings/api-configs', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     errorHandler.validateInput(typeof req.body === 'object' && req.body !== null, 'Request body must be an object');
-    const ureq = requireReq(req as any as ReqLike);
-    const uid = requireUid(ureq);
+    const context = requireContext(req);
+    const uid = requireUid(context);
 
     const payload = req.body as any;
-    const created = await createApiConfig(ureq, {
+    const created = await createApiConfig(context, {
       id: typeof payload.id === 'string' ? payload.id : undefined,
       name: payload.name,
       model: payload.model,
@@ -89,12 +89,12 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
 
   app.put('/api/settings/api-configs/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     errorHandler.validateInput(typeof req.body === 'object' && req.body !== null, 'Request body must be an object');
-    const ureq = requireReq(req as any as ReqLike);
-    const uid = requireUid(ureq);
+    const context = requireContext(req);
+    const uid = requireUid(context);
     const id = String(req.params.id);
 
     const payload = req.body as any;
-    const updated = await updateApiConfig(ureq, id, {
+    const updated = await updateApiConfig(context, id, {
       ...(Object.prototype.hasOwnProperty.call(payload, 'name') ? { name: payload.name } : {}),
       ...(Object.prototype.hasOwnProperty.call(payload, 'model') ? { model: payload.model } : {}),
       ...(Object.prototype.hasOwnProperty.call(payload, 'apiKey') ? { apiKey: payload.apiKey } : {}),
@@ -112,11 +112,11 @@ export default function registerSettingsRoutes(app: express.Express, _deps: Sett
   }));
 
   app.delete('/api/settings/api-configs/:id', requireUserContext as any, errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
-    const ureq = requireReq(req as any as ReqLike);
-    const uid = requireUid(ureq);
+    const context = requireContext(req);
+    const uid = requireUid(context);
     const id = String(req.params.id);
 
-    await deleteApiConfig(ureq, id);
+    await deleteApiConfig(context, id);
 
     securityAudit.logDataAccess(uid, {
       resource: 'settings.apiConfigs',

@@ -1,17 +1,17 @@
 import express from 'express';
 import { WorkspaceItem, ConversationThread } from '../../shared/types.js';
 import logger from '../services/logger';
-import { requireReq, getWorkspaceItemsRepo, ReqLike } from '../utils/repo-access';
+import { requireContext, getWorkspaceItemsRepo, ContextInput } from '../utils/repo-access';
 import { errorHandler, NotFoundError, ValidationError } from '../services/error-handler';
 import { WorkspaceService } from '../services/workspace-service';
 
 export interface WorkspacesRoutesDeps {
-  getConversations: (req?: ReqLike) => Promise<ConversationThread[]>;
+  getConversations: (req?: ContextInput) => Promise<ConversationThread[]>;
 }
 
 function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDeps): WorkspaceService {
-  const ureq = requireReq(req as ReqLike);
-  const repo = getWorkspaceItemsRepo(ureq);
+  const context = requireContext(req);
+  const repo = getWorkspaceItemsRepo(context);
   const conversationId = typeof req.params?.id === 'string' ? req.params.id.trim() : '';
   if (!conversationId) {
     throw new ValidationError('workspace id (conversation scope) is required');
@@ -21,7 +21,7 @@ function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDep
     conversationId,
     ...(deps
       ? {
-          getConversations: async () => await deps.getConversations(ureq),
+          getConversations: async () => await deps.getConversations(context),
         }
       : {}),
   });
