@@ -39,6 +39,24 @@ export class ProviderEventsRepository extends SqliteRepository {
     });
   }
 
+  async getByConversationIds(conversationIds: readonly string[]): Promise<ProviderEvent[]> {
+    if (!Array.isArray(conversationIds) || conversationIds.length === 0) {
+      return [];
+    }
+    return this.withConnection((db) => {
+      const placeholders = conversationIds.map(() => '?').join(',');
+      const rows = db
+        .prepare(
+          `SELECT id, conversation_id, provider, type, timestamp, latency_ms, usage_json, payload_json, error
+           FROM provider_events
+           WHERE conversation_id IN (${placeholders})
+           ORDER BY timestamp`
+        )
+        .all(...conversationIds);
+      return rows.map((row: any) => this.mapRow(row));
+    });
+  }
+
   async list(): Promise<ProviderEvent[]> {
     return this.withConnection((db) => {
       const rows = db.prepare(

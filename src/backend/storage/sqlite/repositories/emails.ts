@@ -14,6 +14,22 @@ export class EmailsRepository extends SqliteRepository {
     });
   }
 
+  async listPage(offset: number, limit: number): Promise<readonly EmailEnvelope[]> {
+    return this.withConnection((db) => {
+      const rows = db
+        .prepare('SELECT envelope_json FROM emails ORDER BY date_iso LIMIT ? OFFSET ?')
+        .all(limit, offset) as Array<{ envelope_json: string }>;
+      return rows.map((row) => this.deserialize(row.envelope_json));
+    });
+  }
+
+  async count(): Promise<number> {
+    return this.withConnection((db) => {
+      const row = db.prepare('SELECT COUNT(*) AS c FROM emails').get() as { c?: number } | undefined;
+      return typeof row?.c === 'number' ? row.c : 0;
+    });
+  }
+
   async getById(id: string): Promise<EmailEnvelope | null> {
     this.assertId(id);
     return this.withConnection((db) => {

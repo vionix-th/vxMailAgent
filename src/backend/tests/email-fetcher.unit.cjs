@@ -69,3 +69,55 @@ test('email-fetcher: processes one envelope via mock provider (no orchestration 
     epMod.EmailProcessor.prototype.startDirectorOrchestration = origStart;
   }
 });
+
+test('email-fetcher: clears timeout to avoid unhandled rejection when provider resolves', async () => {
+  process.env.DISABLE_DOTENV = 'true';
+  process.env.TRACE_PERSIST = 'false';
+  process.env.VX_TEST_MOCK_PROVIDER = 'true';
+
+  const efCandidates = [
+    path.join(__dirname, '..', 'dist', 'backend', 'services', 'email-fetcher.js'),
+    path.join(__dirname, '..', 'dist', 'services', 'email-fetcher.js'),
+  ];
+  const efPath = efCandidates.find((p) => { try { require.resolve(p); return true; } catch { return false; } });
+  if (!efPath) throw new Error('EmailFetcher compiled module not found');
+  const { EmailFetcher } = require(efPath);
+
+  let emails = [];
+  const repos = {
+    getEmails: async () => emails.slice(),
+    upsertEmails: async (_req, next) => { emails = next.slice(); },
+    getSettings: async () => ({ apiConfigs: [{ id: 'cfg', name: 'Mock', apiKey: 'k', model: 'gpt-4o-2024-08-06' }] }),
+    getDirectors: async () => [],
+    getAgents: async () => [],
+    getPrompts: async () => [],
+    getConversations: async () => [],
+    getOrchestrationLog: async () => [],
+    getProviderEvents: async () => [],
+  };
+  const req = { userContext: { uid: 'u1' } };
+  const log = [];
+  const fetcher = new EmailFetcher(repos, (entry) => log.push(entry));
+
+  const fc = {
+    userReq: req,
+    settings: await repos.getSettings(req),
+    filters: [],
+    directors: [],
+    agents: [],
+    accounts: [{ id: 'acc1', provider: 'gmail', tokens: {} }],
+  };
+
+  const unhandled = [];
+  const onUnhandled = (reason) => { unhandled.push(reason); };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    await fetcher.fetchEmails(fc);
+    // allow pending microtasks/next tick to trigger if a dangling rejection existed
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.strictEqual(unhandled.length, 0, 'no unhandled rejections expected');
+    assert.ok(log.some((e) => e.event === 'messages_listed'));
+  } finally {
+    process.removeListener('unhandledRejection', onUnhandled);
+  }
+});

@@ -40,13 +40,17 @@ export interface LiveRepos {
   /** Finalize a thread's status atomically. */
   finalizeThreadStatusAtomic(context: ContextInput, threadId: string, status: 'completed' | 'failed'): Promise<ConversationThread | null>;
   getEmails(context?: ContextInput): Promise<EmailEnvelope[]>;
+  getEmailsPage(context: ContextInput, params: { offset: number; limit: number; totalHint?: number }): Promise<{ total: number; items: EmailEnvelope[] }>;
   upsertEmails(context: ContextInput, next: EmailEnvelope[]): Promise<void>;
   deleteEmail(context: ContextInput, id: string): Promise<boolean>;
   clearEmails(context: ContextInput): Promise<void>;
   getProviderEvents(context?: ContextInput): Promise<ProviderEvent[]>;
   getProviderEventsByConversation(context: ContextInput, conversationId: string): Promise<ProviderEvent[]>;
+  getProviderEventsByConversationIds(context: ContextInput, conversationIds: readonly string[]): Promise<ProviderEvent[]>;
   getConversationById(context: ContextInput, id: string): Promise<ConversationThread | null>;
+  getConversationsByEmailIds(context: ContextInput, emailIds: readonly string[]): Promise<ConversationThread[]>;
   getOrchestrationLogByConversation(context: ContextInput, conversationId: string): Promise<OrchestrationEvent[]>;
+  getOrchestrationLogByConversationIds(context: ContextInput, conversationIds: readonly string[]): Promise<OrchestrationEvent[]>;
   getWorkspaceItemsByConversation(context: ContextInput, conversationId: string): Promise<WorkspaceItem[]>;
   getSettings(context?: ContextInput): Promise<any>;
   getProviderRepo(context?: ContextInput): any;
@@ -197,6 +201,16 @@ export function createLiveRepos(): LiveRepos {
       return await repo.deleteMany(ids);
     },
     getEmails: get<EmailEnvelope>((ctx) => getEmailsRepo(ctx)),
+    getEmailsPage: async (context: ContextInput, params: { offset: number; limit: number; totalHint?: number }) => {
+      const scoped = ensureContext(context);
+      const repo = getEmailsRepo(scoped);
+      const total = typeof params.totalHint === 'number' ? params.totalHint : await repo.count();
+      const items = await repo.listPage(Math.max(0, params.offset), Math.max(0, params.limit));
+      return {
+        total,
+        items: Array.isArray(items) ? items.slice() : Array.from(items),
+      };
+    },
     upsertEmails: async (context: ContextInput, next: EmailEnvelope[]) => {
       const repo = getEmailsRepo(ensureContext(context));
       await repo.upsertMany(Array.isArray(next) ? next : []);
@@ -217,13 +231,25 @@ export function createLiveRepos(): LiveRepos {
       const repo = getProviderEventsRepo(ensureContext(context));
       return await repo.getByConversation(conversationId);
     },
+    getProviderEventsByConversationIds: async (context: ContextInput, conversationIds: readonly string[]) => {
+      const repo = getProviderEventsRepo(ensureContext(context));
+      return await repo.getByConversationIds(Array.isArray(conversationIds) ? conversationIds : []);
+    },
     getConversationById: async (context: ContextInput, id: string) => {
       const repo = getConversationsRepo(ensureContext(context));
       return await repo.getById(id);
     },
+    getConversationsByEmailIds: async (context: ContextInput, emailIds: readonly string[]) => {
+      const repo = getConversationsRepo(ensureContext(context));
+      return await repo.listByEmailIds(Array.isArray(emailIds) ? emailIds : []);
+    },
     getOrchestrationLogByConversation: async (context: ContextInput, conversationId: string) => {
       const repo = getOrchestrationLogRepo(ensureContext(context));
       return await repo.getByConversation(conversationId);
+    },
+    getOrchestrationLogByConversationIds: async (context: ContextInput, conversationIds: readonly string[]) => {
+      const repo = getOrchestrationLogRepo(ensureContext(context));
+      return await repo.getByConversationIds(Array.isArray(conversationIds) ? conversationIds : []);
     },
     getWorkspaceItemsByConversation: async (context: ContextInput, conversationId: string) => {
       const repo = getWorkspaceItemsRepo(ensureContext(context));

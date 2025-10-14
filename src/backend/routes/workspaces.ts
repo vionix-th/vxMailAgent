@@ -6,7 +6,7 @@ import { errorHandler, NotFoundError, ValidationError } from '../services/error-
 import { WorkspaceService } from '../services/workspace-service';
 
 export interface WorkspacesRoutesDeps {
-  getConversations: (req?: ContextInput) => Promise<ConversationThread[]>;
+  getConversationById: (req: ContextInput, id: string) => Promise<ConversationThread | null>;
 }
 
 function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDeps): WorkspaceService {
@@ -19,11 +19,13 @@ function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDep
   return new WorkspaceService({
     repo,
     conversationId,
-    ...(deps
-      ? {
-          getConversations: async () => await deps.getConversations(context),
-        }
-      : {}),
+    ensureConversation: async () => {
+      if (!deps) return;
+      const thread = await deps.getConversationById(context, conversationId);
+      if (!thread) {
+        throw new NotFoundError('Conversation not found');
+      }
+    },
   });
 }
 

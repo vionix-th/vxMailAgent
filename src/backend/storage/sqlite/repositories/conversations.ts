@@ -94,6 +94,13 @@ export class ConversationsRepository extends SqliteRepository {
     return this.withConnection((db) => this.loadAll(db));
   }
 
+  async listByEmailIds(emailIds: readonly string[]): Promise<ConversationThread[]> {
+    if (!Array.isArray(emailIds) || emailIds.length === 0) {
+      return [];
+    }
+    return this.withConnection((db) => this.loadByEmailIds(db, emailIds));
+  }
+
   async getById(id: string): Promise<ConversationThread | null> {
     this.assertId(id);
     return this.withConnection((db) => this.loadOne(db, id));
@@ -186,6 +193,31 @@ export class ConversationsRepository extends SqliteRepository {
       "SELECT id, kind, parent_id, director_id, agent_id, account_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json FROM conversation_threads ORDER BY last_active_at DESC, id ASC"
     ).all() as any[];
     return threads.map((row: any) => mapThread(row, messageMap));
+  }
+
+  private loadByEmailIds(db: BetterSqliteDatabase, emailIds: readonly string[]): ConversationThread[] {
+    const emailPlaceholders = emailIds.map(() => '?').join(',');
+    const rows = db.prepare(
+      `SELECT id, kind, parent_id, director_id, agent_id, account_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json
+       FROM conversation_threads
+       WHERE json_extract(email_json, '$.id') IN (${emailPlaceholders})
+       ORDER BY last_active_at DESC, id ASC`
+    ).all(...emailIds) as any[];
+    if (!rows.length) return [];
+    const threadIds = rows.map((row) => row.id);
+    const threadPlaceholders = threadIds.map(() => '?').join(',');
+    const messageRows = db
+      .prepare(
+        `SELECT thread_id, message_json FROM conversation_messages WHERE thread_id IN (${threadPlaceholders}) ORDER BY thread_id, seq`
+      )
+      .all(...threadIds) as any[];
+    const messageMap = new Map<string, PromptMessage[]>();
+    for (const row of messageRows) {
+      const list = messageMap.get(row.thread_id) ?? [];
+      list.push(JSON.parse(row.message_json) as PromptMessage);
+      messageMap.set(row.thread_id, list);
+    }
+    return rows.map((row) => mapThread(row, messageMap));
   }
 
   private loadOne(db: BetterSqliteDatabase, id: string): ConversationThread | null {

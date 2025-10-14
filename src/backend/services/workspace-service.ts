@@ -7,11 +7,13 @@ import type { WorkspaceItemsRepoInstance } from '../repository/wrappers';
 export interface WorkspaceServiceDeps {
   repo: WorkspaceItemsRepoInstance;
   conversationId: string;
+  ensureConversation?: () => Promise<void>;
 }
 
 export class WorkspaceService {
   private readonly repo: WorkspaceItemsRepoInstance;
   private readonly conversationId: string;
+  private readonly ensureConversationExists: () => Promise<void>;
 
   constructor(deps: WorkspaceServiceDeps) {
     if (!deps || typeof deps !== 'object') {
@@ -19,10 +21,14 @@ export class WorkspaceService {
     }
     this.repo = deps.repo;
     this.conversationId = deps.conversationId;
+    this.ensureConversationExists = typeof deps.ensureConversation === 'function'
+      ? deps.ensureConversation
+      : async () => {};
   }
 
   async listItems(includeDeleted: boolean = false): Promise<WorkspaceItem[]> {
     const conversationId = this.requireConversationId();
+    await this.ensureConversationExists();
     const items = await this.repo.listByConversation(conversationId);
     const list = Array.isArray(items) ? items : Array.from(items);
     return includeDeleted ? list : list.filter((i) => !i.lifecycle.deleted);
@@ -31,6 +37,7 @@ export class WorkspaceService {
   async getItem(id: string): Promise<WorkspaceItem | null> {
     this.assertId(id, 'workspace item');
     const conversationId = this.requireConversationId();
+    await this.ensureConversationExists();
     const item = await this.repo.getById(id);
     if (!item) return null;
     return item.provenance?.conversationId === conversationId ? item : null;
@@ -38,6 +45,7 @@ export class WorkspaceService {
 
   async addItem(input: WorkspaceItemInput): Promise<WorkspaceItem> {
     const conversationId = this.requireConversationId();
+    await this.ensureConversationExists();
     this.validateContent(input.content);
     if (!input.metadata || typeof input.metadata !== 'object') {
       throw new ValidationError('metadata is required');
@@ -87,6 +95,7 @@ export class WorkspaceService {
 
   async updateItem(id: string, patch: Partial<WorkspaceItem>, expectedRevision?: number): Promise<WorkspaceItem> {
     this.assertId(id, 'workspace item');
+    await this.ensureConversationExists();
     const current = await this.getItemOrThrow(id);
 
     const pTags = (patch as any)?.metadata?.tags;
@@ -136,6 +145,7 @@ export class WorkspaceService {
 
   async softDeleteItem(id: string): Promise<WorkspaceItem> {
     this.assertId(id, 'workspace item');
+    await this.ensureConversationExists();
     const current = await this.getItemOrThrow(id);
     const updated: WorkspaceItem = {
       ...current,
@@ -152,12 +162,14 @@ export class WorkspaceService {
 
   async hardDeleteItem(id: string): Promise<void> {
     this.assertId(id, 'workspace item');
+    await this.ensureConversationExists();
     const removed = await this.repo.delete(id);
     if (!removed) throw new NotFoundError('Item not found');
   }
 
   async purgeAll(): Promise<number> {
     const conversationId = this.requireConversationId();
+    await this.ensureConversationExists();
     return await this.repo.deleteByConversation(conversationId);
   }
 

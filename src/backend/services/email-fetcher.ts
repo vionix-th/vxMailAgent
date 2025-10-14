@@ -238,14 +238,19 @@ export class EmailFetcher {
       provider: account.provider
     }, userReq);
 
+    let timeoutId: NodeJS.Timeout | undefined;
     try {
       const fetchPromise = provider.fetchUnread(account, { max: 10, unreadOnly: true });
+      const timeoutMs = Math.max(1, PROVIDER_REQUEST_TIMEOUT_MS || 0);
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`provider_fetch_timeout_${PROVIDER_REQUEST_TIMEOUT_MS}ms`)),
-          Math.max(1, PROVIDER_REQUEST_TIMEOUT_MS || 0));
+        timeoutId = setTimeout(() => reject(new Error(`provider_fetch_timeout_${PROVIDER_REQUEST_TIMEOUT_MS}ms`)), timeoutMs);
       });
 
       const providerEnvelopes = await Promise.race([fetchPromise, timeoutPromise]);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
 
       endSpan(traceId, sList, { status: 'ok', response: { count: providerEnvelopes.length } }, userReq);
 
@@ -299,6 +304,10 @@ export class EmailFetcher {
 
     } catch (error: any) {
       endSpan(traceId, sList, { status: 'error', error: error.message }, userReq);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
       
       this.logFetch({
         id: newId(),

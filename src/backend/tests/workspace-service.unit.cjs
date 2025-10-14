@@ -6,7 +6,7 @@ test('workspace-service: add, update, soft/hard delete, revision guard', async (
   const { WorkspaceService } = require(path.join(__dirname, '..', 'dist', 'backend', 'services', 'workspace-service.js'));
   const items = [];
   const repo = createMockWorkspaceRepo(items);
-  const svc = new WorkspaceService({ repo, conversationId: 'c1' });
+  const svc = new WorkspaceService({ repo, conversationId: 'c1', ensureConversation: async () => {} });
   // Add
   const added = await svc.addItem({
     content: { mimeType: 'text/plain', encoding: 'utf8', data: 'hello' },
@@ -34,12 +34,28 @@ test('workspace-service: encoding validation', async () => {
   const { WorkspaceService } = require(path.join(__dirname, '..', 'dist', 'backend', 'services', 'workspace-service.js'));
   const items = [];
   const repo = createMockWorkspaceRepo(items);
-  const svc = new WorkspaceService({ repo, conversationId: 'cx' });
+  const svc = new WorkspaceService({ repo, conversationId: 'cx', ensureConversation: async () => {} });
   await assert.rejects(() => svc.addItem({
     content: { mimeType: 'text/plain', encoding: 'bogus', data: 'x' },
     metadata: { tags: [] },
     provenance: { emailId: 'e', conversationId: 'c', createdBy: 'director', creatorId: 'd' }
   }), /Invalid encoding/);
+});
+
+test('workspace-service: rejects when backing conversation is missing', async () => {
+  const { WorkspaceService } = require(path.join(__dirname, '..', 'dist', 'backend', 'services', 'workspace-service.js'));
+  const repo = createMockWorkspaceRepo([]);
+  const svc = new WorkspaceService({
+    repo,
+    conversationId: 'missing',
+    ensureConversation: async () => { throw new Error('conversation missing'); },
+  });
+  await assert.rejects(() => svc.listItems(), /conversation missing/);
+  await assert.rejects(() => svc.addItem({
+    content: { mimeType: 'text/plain', encoding: 'utf8', data: 'x' },
+    metadata: { tags: [] },
+    provenance: { emailId: 'e', conversationId: 'missing', createdBy: 'director', creatorId: 'd' }
+  }), /conversation missing/);
 });
 
 function createMockWorkspaceRepo(store) {

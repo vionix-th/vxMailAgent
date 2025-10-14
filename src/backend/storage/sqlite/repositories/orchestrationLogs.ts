@@ -58,6 +58,36 @@ export class OrchestrationLogRepository extends SqliteRepository {
     });
   }
 
+  async getByConversationIds(conversationIds: readonly string[]): Promise<OrchestrationEvent[]> {
+    if (!Array.isArray(conversationIds) || conversationIds.length === 0) {
+      return [];
+    }
+    return this.withConnection((db) => {
+      const placeholders = conversationIds.map(() => '?').join(',');
+      const rows = db
+        .prepare(
+          `SELECT id, conversation_id, timestamp, phase, outcome_json, context_json
+           FROM orchestration_logs
+           WHERE conversation_id IN (${placeholders})
+           ORDER BY timestamp`
+        )
+        .all(...conversationIds);
+      return rows.map((row: any) => {
+        const context = JSON.parse(row.context_json);
+        if (typeof context === 'object' && context) {
+          context.conversationId = row.conversation_id;
+        }
+        return {
+          id: row.id,
+          timestamp: row.timestamp,
+          phase: row.phase,
+          outcome: JSON.parse(row.outcome_json),
+          context,
+        } as OrchestrationEvent;
+      });
+    });
+  }
+
   async list(): Promise<OrchestrationEvent[]> {
     return this.withConnection((db) => {
       const rows = db.prepare(
