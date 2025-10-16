@@ -47,7 +47,7 @@
     Example (generate and call a protected route):
     `(cd src/backend && TOKEN=$(node -e "console.log(require('jsonwebtoken').sign({uid: process.env.VX_TEST_USER_ID || 'test-user'}, process.env.JWT_SECRET || 'dev-insecure-jwt'))")) && \\
      curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/agents`
-- Live env: set `BACKEND_URL`, `JWT_SECRET`, `VX_TEST_USER_ID`; optional `OPENAI_API_KEY` for provider tests. Live tests auto-sign a JWT and pass it as Bearer.
+- Live env: set `BACKEND_URL`, `JWT_SECRET`, `VX_TEST_USER_ID`. Live tests auto-sign a JWT and pass it as Bearer.
 
 ### Backend Test Strategy & Invariants (Authoritative)
 - Scope: Unit tests must validate core invariants without HTTP, network, or OAuth. Use compiled modules in `dist/` and minimal in‑memory repos.
