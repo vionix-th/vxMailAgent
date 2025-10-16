@@ -5,8 +5,8 @@ import { SqliteRepository, stringify } from './base';
 
 function pruneOrchestration(db: any) {
   if (ORCHESTRATION_TTL_DAYS > 0) {
-    db.prepare('DELETE FROM orchestration_logs WHERE timestamp < datetime("now", ?)')
-      .run(`-${ORCHESTRATION_TTL_DAYS} days`);
+    db.prepare('DELETE FROM orchestration_logs WHERE timestamp < datetime(?, ?)')
+      .run('now', `-${ORCHESTRATION_TTL_DAYS} days`);
   }
   if (USER_MAX_LOGS_PER_TYPE > 0) {
     const total = db.prepare('SELECT COUNT(*) AS c FROM orchestration_logs').get()?.c as number;

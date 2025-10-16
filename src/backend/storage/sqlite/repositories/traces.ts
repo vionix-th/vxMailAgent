@@ -5,7 +5,7 @@ import { SqliteRepository, stringify } from './base';
 
 function pruneTraces(db: any) {
   if (TRACE_TTL_DAYS > 0) {
-    db.prepare('DELETE FROM traces WHERE created_at < datetime("now", ?)').run(`-${TRACE_TTL_DAYS} days`);
+    db.prepare('DELETE FROM traces WHERE created_at < datetime(?, ?)').run('now', `-${TRACE_TTL_DAYS} days`);
   }
 }
 
