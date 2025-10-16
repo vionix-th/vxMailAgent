@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const os = require('os');
 const dotenv = require('dotenv');
 
 if (!process.env.NODE_ENV) {
@@ -44,6 +45,21 @@ async function startBackend() {
   const originalCwd = process.cwd();
   process.chdir(backendRoot);
   dotenv.config({ path: path.join(backendRoot, '.env') });
+  const { resolveDataDir } = requireBackend('utils/paths.js');
+  const { SQLITE_SHARED_FILENAME } = requireBackend('storage/sqlite/paths.js');
+  const dataDir = resolveDataDir();
+  const sharedDbPath = path.join(dataDir, SQLITE_SHARED_FILENAME);
+  if (!fs.existsSync(sharedDbPath)) {
+    throw new Error(`Shared database missing at ${sharedDbPath}`);
+  }
+  const usersDir = path.join(dataDir, 'users');
+  if (!fs.existsSync(usersDir) || !fs.statSync(usersDir).isDirectory()) {
+    throw new Error(`Users directory missing at ${usersDir}`);
+  }
+  const snapshotRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vxmail-pipeline-'));
+  const snapshotDir = path.join(snapshotRoot, 'data');
+  fs.mkdirSync(snapshotDir);
+  fs.cpSync(dataDir, snapshotDir, { recursive: true, errorOnExist: false });
   const { createServer } = requireBackend('server.js');
   const { shutdownRepos } = requireBackend('initRepos.js');
   const { app, fetcherManager } = createServer();
@@ -62,21 +78,53 @@ async function startBackend() {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   const stop = async () => {
-    await new Promise((resolve) => server.close(() => resolve()));
-    if (fetcherManager?.cleanupTimer) {
-      try {
-        clearInterval(fetcherManager.cleanupTimer);
-      } catch (error) {
-        console.warn('[harness] failed to clear fetcher cleanup timer', error);
-      }
-    }
+    let primaryError = null;
     try {
-      await shutdownRepos();
+      await new Promise((resolve) => server.close(() => resolve()));
+      if (fetcherManager?.cleanupTimer) {
+        try {
+          clearInterval(fetcherManager.cleanupTimer);
+        } catch (error) {
+          console.warn('[harness] failed to clear fetcher cleanup timer', error);
+        }
+      }
+      try {
+        await shutdownRepos();
+      } catch (error) {
+        console.warn('[harness] shutdownRepos failed', error);
+      }
+      try {
+        if (!fs.existsSync(snapshotDir)) {
+          throw new Error(`Snapshot directory missing at ${snapshotDir}`);
+        }
+        fs.rmSync(dataDir, { recursive: true, force: true });
+        fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+        const snapshotEntries = fs.readdirSync(snapshotDir);
+        for (const entry of snapshotEntries) {
+          const source = path.join(snapshotDir, entry);
+          const target = path.join(dataDir, entry);
+          fs.cpSync(source, target, { recursive: true, errorOnExist: false });
+        }
+      } catch (error) {
+        primaryError = error instanceof Error ? error : new Error(String(error));
+      }
     } catch (error) {
-      console.warn('[harness] shutdownRepos failed', error);
+      primaryError = error instanceof Error ? error : new Error(String(error));
+    } finally {
+      try {
+        fs.rmSync(snapshotRoot, { recursive: true, force: true });
+      } catch (error) {
+        console.warn('[harness] failed to remove snapshot root', error);
+        if (!primaryError) {
+          primaryError = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+      dotenv.config({ path: path.join(backendRoot, '.env') });
+      process.chdir(originalCwd);
     }
-    dotenv.config({ path: path.join(backendRoot, '.env') });
-    process.chdir(originalCwd);
+    if (primaryError) {
+      throw primaryError;
+    }
   };
 
   return { baseUrl, stop, fetcherManager };
