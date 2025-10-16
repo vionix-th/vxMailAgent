@@ -33,8 +33,13 @@ export interface UserRequest {
 
 export function createUserRequest(middlewareReq: ContextInput, repos: LiveRepos): UserRequest {
   const scoped = ensureContext(middlewareReq);
+  // Prefer traceId from ensured context (set by middleware),
+  // fall back to header when an Express request is passed directly.
   const traceHeader = (middlewareReq as any)?.headers?.['x-trace-id'];
-  const traceId = typeof traceHeader === 'string' ? traceHeader : undefined;
+  const traceFromHeader = Array.isArray(traceHeader) ? traceHeader[0] : traceHeader;
+  const traceId = typeof scoped.traceId === 'string' && scoped.traceId.trim()
+    ? scoped.traceId
+    : (typeof traceFromHeader === 'string' ? traceFromHeader : undefined);
   return {
     repos,
     context: scoped,
@@ -174,6 +179,30 @@ export class ConversationOrchestrator {
       };
 
     } catch (error: any) {
+      const failureDuration = Date.now() - startTime;
+      const meta: Record<string, unknown> = {
+        runId: this.runId,
+        accountId: this.accountId,
+        conversationId: threadId,
+        directorId: context.thread.directorId,
+        stepType,
+        durationMs: failureDuration,
+        emailId,
+      };
+      if (context.thread.kind === 'agent') {
+        meta.agentId = (context.thread as AgentThread).agentId;
+      }
+      if (userReq.traceId) {
+        meta.traceId = userReq.traceId;
+      }
+      if (error instanceof Error) {
+        meta.error = error.message;
+        if (error.stack) meta.stack = error.stack;
+        meta.errorName = error.name;
+      } else {
+        meta.error = String(error);
+      }
+      logger.error('Conversation step failed', meta);
       await this.stepLogger.logStepError(threadId, stepType, Date.now() - startTime, error?.message || String(error), emailId, context.thread.directorId);
       return {
         updatedThread: context.thread,

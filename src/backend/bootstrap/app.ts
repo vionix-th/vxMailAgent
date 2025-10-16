@@ -45,6 +45,11 @@ export function configureParsersAndRequestLogging(app: express.Application): voi
   app.use((req, res, next) => {
     const started = process.hrtime.bigint();
     let completed = false;
+    // Capture trace id early for downstream consumers (AppRequest.traceId)
+    const headerTrace = req.headers?.['x-trace-id'];
+    const traceId = Array.isArray(headerTrace) ? headerTrace[0] : headerTrace;
+    (req as any).traceId = typeof traceId === 'string' ? traceId : undefined;
+
     const finish = (event: 'finish' | 'close') => {
       if (completed) return;
       completed = true;
@@ -54,8 +59,8 @@ export function configureParsersAndRequestLogging(app: express.Application): voi
       const method = req.method;
       const url = req.originalUrl ?? req.url;
       const uid = (req as any)?.auth?.uid;
-      const headerTrace = req.headers?.['x-trace-id'];
-      const traceId = Array.isArray(headerTrace) ? headerTrace[0] : headerTrace;
+      // Use captured trace id (set above) for consistent logging
+      const traceId = (req as any).traceId;
       const contentLength = res.getHeader('content-length');
       const logFn = status >= 500 ? logger.error : status >= 400 ? logger.warn : logger.info;
       logFn('HTTP request completed', {
