@@ -6,8 +6,6 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { runSerial } = require('./lib/serial');
-
 const { uid } = discoverTestUser();
 
 function authHeaders(sessionHeaders, extra = {}) {
@@ -15,20 +13,19 @@ function authHeaders(sessionHeaders, extra = {}) {
 }
 
 test('integration: account lifecycle enforces invariants', { concurrency: false, timeout: 20000 }, async () => {
-  await runSerial(async () => {
-    const { baseUrl, stop } = await startBackend();
-    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
-    const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+  const { baseUrl, stop } = await startBackend();
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 
-    const accountId = `int-account-${Date.now()}`;
+  const accountId = `int-account-${Date.now()}`;
 
-    try {
+  try {
       const invalidBody = await fetch(`${baseUrl}/api/accounts`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ id: 'bad-account', provider: 'test', email: 'bad@example.com' }),
-    });
-    assert.strictEqual(invalidBody.status, 400, 'missing tokens should trigger validation error');
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify({ id: 'bad-account', provider: 'test', email: 'bad@example.com' }),
+      });
+      assert.strictEqual(invalidBody.status, 400, 'missing tokens should trigger validation error');
 
     const createAccountRes = await fetchJson(baseUrl, '/api/accounts', {
       method: 'POST',
@@ -77,12 +74,11 @@ test('integration: account lifecycle enforces invariants', { concurrency: false,
     assert.strictEqual(refreshRes.ok, true, 'refresh request should complete');
     assert.strictEqual(refreshRes.status, 200, 'refresh responds with 200 even on failure');
     assert.ok(typeof refreshRes.data === 'object' && refreshRes.data !== null, 'refresh should respond with payload');
-    } finally {
-      await fetch(`${baseUrl}/api/accounts/${encodeURIComponent(accountId)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch((error) => console.warn('[integration] account cleanup failed', error));
-      await stop();
-    }
-  });
+  } finally {
+    await fetch(`${baseUrl}/api/accounts/${encodeURIComponent(accountId)}`, {
+      method: 'DELETE',
+      headers: sessionHeaders,
+    }).catch((error) => console.warn('[integration] account cleanup failed', error));
+    await stop();
+  }
 });

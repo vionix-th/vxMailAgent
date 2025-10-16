@@ -6,8 +6,6 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { runSerial } = require('./lib/serial');
-
 // Acceptance: requires `.testuser` profile with at least one linked account and API config.
 const { uid } = discoverTestUser();
 
@@ -23,16 +21,15 @@ function ensureNonEmpty(array, label, remediation) {
 }
 
 test('integration: session bootstrap and account visibility', { concurrency: false, timeout: 15000 }, async () => {
-  await runSerial(async () => {
-    const { baseUrl, stop } = await startBackend();
-    let sessionHeaders;
+  const { baseUrl, stop } = await startBackend();
+  let sessionHeaders;
 
-    try {
-      const badRes = await fetch(`${baseUrl}/api/test/session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: '' }),
-      });
+  try {
+    const badRes = await fetch(`${baseUrl}/api/test/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: '' }),
+    });
     assert.strictEqual(badRes.status, 400, 'blank uid must be rejected with 400');
     const badPayload = await badRes.json().catch(() => null);
     const errorMessage = typeof badPayload?.error === 'string'
@@ -71,15 +68,14 @@ test('integration: session bootstrap and account visibility', { concurrency: fal
     assert.strictEqual(accountsRes.ok, true, `/api/accounts failed: ${JSON.stringify(accountsRes.data)}`);
     const accounts = Array.isArray(accountsRes.data) ? accountsRes.data : [];
     ensureNonEmpty(accounts, 'Linked mail account', 'connect at least one mailbox for the integration user');
-    } finally {
-      if (sessionHeaders) {
-        try {
-          await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders(sessionHeaders, { 'Content-Type': 'application/json' }) });
-        } catch (error) {
-          console.warn('[integration] fetcher stop during harness cleanup failed', error);
-        }
+  } finally {
+    if (sessionHeaders) {
+      try {
+        await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders(sessionHeaders, { 'Content-Type': 'application/json' }) });
+      } catch (error) {
+        console.warn('[integration] fetcher stop during harness cleanup failed', error);
       }
-      await stop();
     }
-  });
+    await stop();
+  }
 });

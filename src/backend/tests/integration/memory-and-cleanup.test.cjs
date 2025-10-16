@@ -6,8 +6,6 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { runSerial } = require('./lib/serial');
-
 const { uid } = discoverTestUser();
 
 function authHeaders(sessionHeaders, extra = {}) {
@@ -15,14 +13,13 @@ function authHeaders(sessionHeaders, extra = {}) {
 }
 
 test('integration: memory entries and cleanup routes', { concurrency: false, timeout: 20000 }, async () => {
-  await runSerial(async () => {
-    const { baseUrl, stop } = await startBackend();
-    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
-    const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+  const { baseUrl, stop } = await startBackend();
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 
-    const memoryIds = [];
+  const memoryIds = [];
 
-    try {
+  try {
     const createEntry = await fetchJson(baseUrl, '/api/memory', {
       method: 'POST',
       headers: jsonHeaders,
@@ -75,14 +72,13 @@ test('integration: memory entries and cleanup routes', { concurrency: false, tim
       headers: jsonHeaders,
     });
     assert.strictEqual(cleanupRes.ok, true, '/api/cleanup/fetcher-logs should succeed');
-    } finally {
-      for (const id of memoryIds) {
-        await fetch(`${baseUrl}/api/memory/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-          headers: sessionHeaders,
-        }).catch(() => {});
-      }
-      await stop();
+  } finally {
+    for (const id of memoryIds) {
+      await fetch(`${baseUrl}/api/memory/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: sessionHeaders,
+      }).catch(() => {});
     }
-  });
+    await stop();
+  }
 });

@@ -7,7 +7,6 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
-const { runSerial } = require('../integration/lib/serial');
 
 const { uid } = discoverTestUser();
 
@@ -27,17 +26,16 @@ function ensureNonEmpty(collection, label, instruction) {
 }
 
 test('pipeline uses pre-seeded configuration to complete director and agent flow', { concurrency: false, timeout: 15000 }, async () => {
-  await runSerial(async () => {
-    const startTimestamp = Date.now();
-    const { baseUrl, stop } = await startBackend();
-    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
-    const authHeaders = (extra = {}) => ({ ...sessionHeaders, ...extra });
+  const startTimestamp = Date.now();
+  const { baseUrl, stop } = await startBackend();
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const authHeaders = (extra = {}) => ({ ...sessionHeaders, ...extra });
 
-    let fetcherTriggered = false;
+  let fetcherTriggered = false;
 
-    try {
-      const [settingsRes, directorsRes, agentsRes, filtersRes, accountsRes] = await Promise.all([
-        fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders }),
+  try {
+    const [settingsRes, directorsRes, agentsRes, filtersRes, accountsRes] = await Promise.all([
+      fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders }),
       fetchJson(baseUrl, '/api/directors', { headers: sessionHeaders }),
       fetchJson(baseUrl, '/api/agents', { headers: sessionHeaders }),
       fetchJson(baseUrl, '/api/filters', { headers: sessionHeaders }),
@@ -126,18 +124,14 @@ test('pipeline uses pre-seeded configuration to complete director and agent flow
     const events = Array.isArray(providerEvents.data) ? providerEvents.data : [];
     assert.ok(events.length > 0, 'Expected provider events for pipeline run');
     assert.ok(events.some((event) => event.type === 'request'), 'Expected at least one provider request event');
-
-    } catch (error) {
-      throw error;
-    } finally {
-      if (fetcherTriggered) {
-        try {
-          await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }) });
-        } catch (error) {
-          console.warn('[pipeline] failed to stop fetcher during cleanup', error);
-        }
+  } finally {
+    if (fetcherTriggered) {
+      try {
+        await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }) });
+      } catch (error) {
+        console.warn('[pipeline] failed to stop fetcher during cleanup', error);
       }
-      await stop();
     }
-  });
+    await stop();
+  }
 });

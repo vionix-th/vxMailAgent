@@ -6,8 +6,6 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { runSerial } = require('./lib/serial');
-
 const { uid } = discoverTestUser();
 
 function authHeaders(sessionHeaders, extra = {}) {
@@ -15,21 +13,20 @@ function authHeaders(sessionHeaders, extra = {}) {
 }
 
 test('integration: directors, agents, and filters enforce update guards', { concurrency: false, timeout: 20000 }, async () => {
-  await runSerial(async () => {
-    const { baseUrl, stop } = await startBackend();
-    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
-    const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+  const { baseUrl, stop } = await startBackend();
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 
-    const ids = {
-      agent: `int-agent-guard-${Date.now()}`,
-      director: `int-director-guard-${Date.now()}`,
-      filterA: `int-filter-guard-a-${Date.now()}`,
-      filterB: `int-filter-guard-b-${Date.now()}`,
-    };
+  const ids = {
+    agent: `int-agent-guard-${Date.now()}`,
+    director: `int-director-guard-${Date.now()}`,
+    filterA: `int-filter-guard-a-${Date.now()}`,
+    filterB: `int-filter-guard-b-${Date.now()}`,
+  };
 
-    try {
+  try {
       const settingsRes = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
-    assert.strictEqual(settingsRes.ok, true, '/api/settings failed');
+      assert.strictEqual(settingsRes.ok, true, '/api/settings failed');
     const apiConfigId = settingsRes.data.apiConfigs[0]?.id;
     assert.ok(apiConfigId, 'integration user must have at least one api config');
 
@@ -121,23 +118,22 @@ test('integration: directors, agents, and filters enforce update guards', { conc
       ? listFilters.data.filter((entry) => entry.id === ids.filterA || entry.id === ids.filterB)
       : [];
     assert.strictEqual(ownedFilters.length, 2, 'expected integration filters to exist');
-    } finally {
-      const cleanupIds = [ids.filterA, ids.filterB];
-      for (const filterId of cleanupIds) {
-        await fetch(`${baseUrl}/api/filters/${encodeURIComponent(filterId)}`, {
-          method: 'DELETE',
-          headers: sessionHeaders,
-        }).catch(() => {});
-      }
-      await fetch(`${baseUrl}/api/directors/${encodeURIComponent(ids.director)}`, {
+  } finally {
+    const cleanupIds = [ids.filterA, ids.filterB];
+    for (const filterId of cleanupIds) {
+      await fetch(`${baseUrl}/api/filters/${encodeURIComponent(filterId)}`, {
         method: 'DELETE',
         headers: sessionHeaders,
       }).catch(() => {});
-      await fetch(`${baseUrl}/api/agents/${encodeURIComponent(ids.agent)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch(() => {});
-      await stop();
     }
-  });
+    await fetch(`${baseUrl}/api/directors/${encodeURIComponent(ids.director)}`, {
+      method: 'DELETE',
+      headers: sessionHeaders,
+    }).catch(() => {});
+    await fetch(`${baseUrl}/api/agents/${encodeURIComponent(ids.agent)}`, {
+      method: 'DELETE',
+      headers: sessionHeaders,
+    }).catch(() => {});
+    await stop();
+  }
 });

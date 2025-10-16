@@ -6,8 +6,6 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { runSerial } = require('./lib/serial');
-
 const { uid } = discoverTestUser();
 
 function authHeaders(sessionHeaders, extra = {}) {
@@ -15,18 +13,17 @@ function authHeaders(sessionHeaders, extra = {}) {
 }
 
 test('integration: prompts and templates lifecycle', { concurrency: false, timeout: 20000 }, async () => {
-  await runSerial(async () => {
-    const { baseUrl, stop } = await startBackend();
-    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
-    const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+  const { baseUrl, stop } = await startBackend();
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 
-    const resources = {
-      promptId: `int-prompt-${Date.now()}`,
-      templateId: `int-template-${Date.now()}`,
-      imprintId: `int-imprint-${Date.now()}`,
-    };
+  const resources = {
+    promptId: `int-prompt-${Date.now()}`,
+    templateId: `int-template-${Date.now()}`,
+    imprintId: `int-imprint-${Date.now()}`,
+  };
 
-    try {
+  try {
       const promptPayload = {
         id: resources.promptId,
         name: 'Integration Prompt',
@@ -120,20 +117,19 @@ test('integration: prompts and templates lifecycle', { concurrency: false, timeo
         headers: sessionHeaders,
       });
       assert.strictEqual(deleteImprint.status, 204, 'imprint delete must return 204');
-    } finally {
-      await fetch(`${baseUrl}/api/prompts/${encodeURIComponent(resources.promptId)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch((error) => console.warn('[integration] prompt cleanup failed', error));
-      await fetch(`${baseUrl}/api/prompt-templates/${encodeURIComponent(resources.templateId)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch((error) => console.warn('[integration] template cleanup failed', error));
-      await fetch(`${baseUrl}/api/imprints/${encodeURIComponent(resources.imprintId)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch((error) => console.warn('[integration] imprint cleanup failed', error));
-      await stop();
-    }
-  });
+  } finally {
+    await fetch(`${baseUrl}/api/prompts/${encodeURIComponent(resources.promptId)}`, {
+      method: 'DELETE',
+      headers: sessionHeaders,
+    }).catch((error) => console.warn('[integration] prompt cleanup failed', error));
+    await fetch(`${baseUrl}/api/prompt-templates/${encodeURIComponent(resources.templateId)}`, {
+      method: 'DELETE',
+      headers: sessionHeaders,
+    }).catch((error) => console.warn('[integration] template cleanup failed', error));
+    await fetch(`${baseUrl}/api/imprints/${encodeURIComponent(resources.imprintId)}`, {
+      method: 'DELETE',
+      headers: sessionHeaders,
+    }).catch((error) => console.warn('[integration] imprint cleanup failed', error));
+    await stop();
+  }
 });

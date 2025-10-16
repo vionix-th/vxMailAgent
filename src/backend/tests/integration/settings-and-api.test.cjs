@@ -6,8 +6,6 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { runSerial } = require('./lib/serial');
-
 const { uid, fsPath } = discoverTestUser();
 
 function authHeaders(sessionHeaders, extra = {}) {
@@ -15,15 +13,14 @@ function authHeaders(sessionHeaders, extra = {}) {
 }
 
 test('integration: settings and api-config management', { concurrency: false, timeout: 20000 }, async () => {
-  await runSerial(async () => {
-    const { baseUrl, stop } = await startBackend();
-    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
-    const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+  const { baseUrl, stop } = await startBackend();
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 
-    const createdConfigIds = [];
-    let originalSettings;
+  const createdConfigIds = [];
+  let originalSettings;
 
-    try {
+  try {
       const settingsRes = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
       assert.strictEqual(settingsRes.ok, true, `/api/settings failed: ${JSON.stringify(settingsRes.data)}`);
       originalSettings = settingsRes.data;
@@ -76,25 +73,24 @@ test('integration: settings and api-config management', { concurrency: false, ti
         body: JSON.stringify({ name: 'Unauthorized', model: 'gpt-4o', apiKey: 'sk-unauth' }),
       });
       assert.strictEqual(unauthorizedRes.status, 401, 'unauthenticated request must be rejected');
-    } finally {
-      for (const id of createdConfigIds) {
-        await fetch(`${baseUrl}/api/settings/api-configs/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-          headers: sessionHeaders,
-        }).catch((error) => console.warn('[integration] cleanup delete api-config failed', id, error));
-      }
-      if (originalSettings) {
-        try {
-          await fetchJson(baseUrl, '/api/settings', {
-            method: 'PUT',
-            headers: jsonHeaders,
-            body: JSON.stringify({ sessionTimeoutMinutes: originalSettings.sessionTimeoutMinutes }),
-          });
-        } catch (error) {
-          console.warn('[integration] failed to restore sessionTimeoutMinutes', error);
-        }
-      }
-      await stop();
+  } finally {
+    for (const id of createdConfigIds) {
+      await fetch(`${baseUrl}/api/settings/api-configs/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: sessionHeaders,
+      }).catch((error) => console.warn('[integration] cleanup delete api-config failed', id, error));
     }
-  });
+    if (originalSettings) {
+      try {
+        await fetchJson(baseUrl, '/api/settings', {
+          method: 'PUT',
+          headers: jsonHeaders,
+          body: JSON.stringify({ sessionTimeoutMinutes: originalSettings.sessionTimeoutMinutes }),
+        });
+      } catch (error) {
+        console.warn('[integration] failed to restore sessionTimeoutMinutes', error);
+      }
+    }
+    await stop();
+  }
 });

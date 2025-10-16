@@ -46,21 +46,16 @@ async function startBackend() {
   process.chdir(backendRoot);
   dotenv.config({ path: path.join(backendRoot, '.env') });
   const { resolveDataDir } = requireBackend('utils/paths.js');
-  const { SQLITE_SHARED_FILENAME } = requireBackend('storage/sqlite/paths.js');
-  const dataDir = resolveDataDir();
-  const sharedDbPath = path.join(dataDir, SQLITE_SHARED_FILENAME);
-  if (!fs.existsSync(sharedDbPath)) {
-    throw new Error(`Shared database missing at ${sharedDbPath}`);
+  const sourceDataDir = resolveDataDir();
+  if (!fs.existsSync(sourceDataDir) || !fs.statSync(sourceDataDir).isDirectory()) {
+    throw new Error(`Resolved data directory missing at ${sourceDataDir}`);
   }
-  const usersDir = path.join(dataDir, 'users');
-  if (!fs.existsSync(usersDir) || !fs.statSync(usersDir).isDirectory()) {
-    throw new Error(`Users directory missing at ${usersDir}`);
-  }
-  const snapshotRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vxmail-pipeline-'));
-  const snapshotDbFile = path.join(snapshotRoot, 'system.sqlite3');
-  const snapshotUsersDir = path.join(snapshotRoot, 'users');
-  fs.copyFileSync(sharedDbPath, snapshotDbFile);
-  fs.cpSync(usersDir, snapshotUsersDir, { recursive: true, errorOnExist: false });
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vxmail-data-'));
+  const tempDataDir = path.join(tempRoot, 'data');
+  fs.cpSync(sourceDataDir, tempDataDir, { recursive: true, errorOnExist: false });
+
+  const previousDataDir = process.env.VX_MAILAGENT_DATA_DIR;
+  process.env.VX_MAILAGENT_DATA_DIR = tempDataDir;
   const { createServer } = requireBackend('server.js');
   const { shutdownRepos } = requireBackend('initRepos.js');
   const { app, fetcherManager } = createServer();
@@ -94,23 +89,18 @@ async function startBackend() {
       } catch (error) {
         console.warn('[harness] shutdownRepos failed', error);
       }
-      try {
-        if (!fs.existsSync(snapshotDbFile) || !fs.existsSync(snapshotUsersDir)) {
-          throw new Error(`Snapshot artifacts missing at ${snapshotRoot}`);
-        }
-        fs.copyFileSync(snapshotDbFile, sharedDbPath);
-        fs.rmSync(usersDir, { recursive: true, force: true });
-        fs.cpSync(snapshotUsersDir, usersDir, { recursive: true, errorOnExist: false });
-      } catch (error) {
-        primaryError = error instanceof Error ? error : new Error(String(error));
-      }
     } catch (error) {
       primaryError = error instanceof Error ? error : new Error(String(error));
     } finally {
       try {
-        fs.rmSync(snapshotRoot, { recursive: true, force: true });
+        if (previousDataDir === undefined) {
+          delete process.env.VX_MAILAGENT_DATA_DIR;
+        } else {
+          process.env.VX_MAILAGENT_DATA_DIR = previousDataDir;
+        }
+        fs.rmSync(tempRoot, { recursive: true, force: true });
       } catch (error) {
-        console.warn('[harness] failed to remove snapshot root', error);
+        console.warn('[harness] failed to remove temp data root', error);
         if (!primaryError) {
           primaryError = error instanceof Error ? error : new Error(String(error));
         }
