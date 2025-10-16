@@ -143,6 +143,11 @@ Explicit exclusions
 - Approvals: Some actions (writes, network access, destructive operations) may require approval depending on sandbox mode. Request escalation only when necessary and explain why.
 - Sandbox: Prefer fast, read‑only commands (`rg`) for search. Read files in ≤250 line chunks.
 
+Test harness usage (when modifying tests)
+- Prefer `withServer(async ({ baseUrl }) => { ... })` over manual `startBackend/stop`.
+- Keep per‑test cleanup and `logCapture.stop()` inside the wrapper’s `finally`.
+- Do not add new harness layers or shims; extend `tests/lib/harness/*` minimally.
+
 ## 6) Error Handling & Validation (LLM‑side)
 
 - Validate inputs at boundaries and surface precise errors; never mask or silently default.

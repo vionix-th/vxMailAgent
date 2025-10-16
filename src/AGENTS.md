@@ -6,14 +6,14 @@
 - Backend: `src/backend/` (Express, TypeScript). Routes in `routes/`, services in `services/`, utils in `utils/`, config in `config.ts`.
 - Frontend: `src/frontend/` (React + Vite). App code in `src/frontend/src/`.
 - Shared: `src/shared/` (cross‑cutting types and assets like `site-logo.png`).
-- Tests: `src/backend/tests/` with live (`*.live.cjs`), unit (`*.unit.cjs`), mock (`*.mock.cjs`).
+- Tests: `src/backend/tests/` with integration suites under `integration/*.cjs` driven via the test harness.
 
 ## Build, Test, and Development Commands
 - Backend dev: `npm --prefix src/backend run dev` (starts Express via ts-node).
 - Backend build: `npm --prefix src/backend run build` → `dist/`; start: `npm --prefix src/backend run start`.
-- Backend quality: `npm --prefix src/backend run lint` • `typecheck` • `typecheck:strict` • `check`.
+- Backend quality: `npm --prefix src/backend run lint` • `typecheck` • `check`.
 - Frontend dev: `npm --prefix src/frontend run dev` • build: `npm --prefix src/frontend run build` • preview: `npm --prefix src/frontend run preview`.
-- Tests: `npm --prefix src/backend test` (per-file hard runner). Live-only: `node --test src/backend/tests/*.live.cjs`.
+- Integration tests: `node --test --test-reporter=spec src/backend/tests/integration/*.cjs` (requires prior backend build).
 
 ## Coding Style & Naming Conventions
 - Language: TypeScript strict. Use `??` only for truly optional, typed fields; never default invariants with `||` or `??`.
@@ -39,18 +39,14 @@
 - Public route DTOs exclude secret fields (settings/accounts). Review `routes/settings.ts` and similar.
 
 ## Testing Guidelines
-- Framework: Node’s test runner (`node --test`) with CJS helpers.
-- Conventions: `*.live.cjs`, `*.unit.cjs`, `*.mock.cjs`. Prefer covering routes (CRUD, diagnostics, OAuth) and orchestration flows.
-- Authentication: Most `/api/**` routes require auth (health/auth are public). Authenticate via:
-  - OAuth (browser): start backend, open `/api/auth/google/initiate`, complete login; cookie `vx.session` is set and reused.
-  - Test JWT: sign HS256 JWT with payload `{ uid: '<user-id>' }` using `JWT_SECRET` (default `dev-insecure-jwt`). Send `Authorization: Bearer <token>` or `Cookie: vx.session=<token>`.
-    Example (generate and call a protected route):
-    `(cd src/backend && TOKEN=$(node -e "console.log(require('jsonwebtoken').sign({uid: process.env.VX_TEST_USER_ID || 'test-user'}, process.env.JWT_SECRET || 'dev-insecure-jwt'))")) && \\
-     curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/agents`
-- Live env: set `BACKEND_URL`, `JWT_SECRET`, `VX_TEST_USER_ID`. Live tests auto-sign a JWT and pass it as Bearer.
+- Framework: Node’s test runner (`node --test`) with the backend test harness (`src/backend/tests/lib`).
+- Conventions: Use integration suites under `src/backend/tests/integration/*.cjs` to cover HTTP surfaces and orchestration flows.
+- Harness usage: Prefer `withServer(async ({ baseUrl }) => { ... })` over manual lifecycle. Use `createSession()` to authenticate and `createLogCapture()` to assert structured logs.
+- Auth: Avoid hand‑rolled JWTs in tests; the harness discovers a `.testuser` and creates a session via `/api/test/session`.
+- Deterministic env switches are applied by the harness (see its README): mock mail provider, disabled orchestrator during ingestion, and OpenAI stub for prompt‑assist.
 
 ### Backend Test Strategy & Invariants (Authoritative)
-- Scope: Unit tests must validate core invariants without HTTP, network, or OAuth. Use compiled modules in `dist/` and minimal in‑memory repos.
+- Scope: Integration suites validate core invariants through HTTP against the compiled server (`dist/`).
 - Orchestrator Contract:
   - For every assistant `tool_calls[]`, there MUST be exactly one `tool` reply per `tool_call_id` in the same cycle.
   - Dynamic agent delegation uses the `agent__<id>` naming convention; missing/unknown agents must produce a `tool` error reply and log a contract‑violation event.
@@ -65,10 +61,9 @@
   - Required OAuth/env must use fail‑fast helpers (e.g., `getGoogleOAuthConfig()`); tests cover both failure and success paths.
 
 ### Test Commands & Environment
-- Deterministic env for tests:
-  - `VX_TEST_MOCK_OPENAI=true` to avoid network calls and make the engine deterministic.
-  - `TRACE_PERSIST=false` for unit tests (enable selectively when testing traces).
-  - Optionally set `VX_MAILAGENT_DATA_DIR` to a temp dir for FS-backed tests.
+- Build first: `cd src/backend && npm run build`.
+- Run: `node --test --test-reporter=spec src/backend/tests/integration/*.cjs`.
+- The harness sets test‑only env toggles internally; no manual env required.
 
 ## Commit & Pull Request Guidelines
 - Commits: Conventional Commits (e.g., `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `security:`). Keep scope focused.

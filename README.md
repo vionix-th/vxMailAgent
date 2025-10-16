@@ -23,6 +23,29 @@ Frontend (`src/frontend`)
 
 Note: The Vite dev server is configured for port `3000` in `src/frontend/vite.config.ts`.
 
+## Testing (Integration)
+
+The backend ships a lightweight test harness that boots the compiled server and drives HTTP against it. Tests live under `src/backend/tests/**` and use Node’s built‑in test runner.
+
+- Build backend: `cd src/backend && npm run build`
+- Run all integration suites: `node --test --test-reporter=spec src/backend/tests/integration/*.cjs`
+
+Harness highlights (`src/backend/tests/lib/`):
+- `withServer(async ({ baseUrl }))` — starts/stops the backend around your test body (preferred over manual `startBackend/stop`).
+- `createSession(baseUrl, uid)` — opens an authenticated session for the discovered test user.
+- `fetchJson(baseUrl, path, init?, { timeoutMs }?)` — typed JSON fetch with timeouts and helpful errors.
+- `createLogCapture()` — subscribes to backend logs for assertions; call `.stop()` in `finally`.
+- `assertMetaFields(entry, fields)` — asserts required structured fields exist in a captured log entry.
+
+Deterministic switches (auto‑applied by the harness):
+- `VX_TEST_MOCK_PROVIDER=true` — mock mail provider; no external network for email fetch.
+- `VX_TEST_DISABLE_ORCHESTRATOR=true` — disables orchestrator side‑effects during email ingestion tests.
+- `VX_TEST_OPENAI_STUB=true` — OpenAI chat calls return deterministic stub responses in “prompt assist” paths.
+
+OpenAI stub behavior:
+- Default: returns `assistant.content = "stubbed-response"`.
+- When a workspace tool is exposed, emits a `workspace_add_item` tool call targeting `agent_id = process.env.VX_TEST_WORKSPACE_AGENT_ID || 'int-workspace-agent'` for workspace flow coverage.
+
 ## Project Structure
 
 - `src/backend`: Express API (OAuth, persistence, orchestration). Entry: `index.ts`
@@ -214,6 +237,12 @@ See `docs/DEVELOPER.md` for details.
 - **Diagnostics visibility**: Provider/orchestration logs may contain sensitive content; surface only in admin views.
 - **Production hardening**: Enforce HTTPS, HSTS, strict CORS. Note: CSRF protection and rate limiting are not implemented in the backend; enforce them at a reverse proxy/API gateway or add Express middleware per deployment needs. Session cookies use `HttpOnly`, `SameSite=Lax`, and `Secure` (prod), which mitigates CSRF for same-site deployments.
 - **Request validation**: No global validation middleware. A minimal JSON Schema subset validator exists in `src/backend/validation.ts` and is used only by tool-call handlers in `src/backend/toolCalls.ts` to validate tool parameters. Other routes rely on path safety and user-context checks. See `docs/DEVELOPER.md` and `docs/DESIGN.md` for details.
+
+## Test Authoring Notes
+
+- Prefer `withServer(...)` over `startBackend()`; keep per‑test cleanup inside the callback `finally`.
+- Build the backend before running tests (`npm run build`); the harness loads compiled modules from `dist/backend/**`.
+- Do not add unit tests without direction; integration tests are the main coverage path for now.
 
 ## Troubleshooting
 

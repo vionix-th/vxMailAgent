@@ -238,6 +238,15 @@ Lint command (backend): `npm run lint` from `src/backend/`.
 ## Terminology (Authoritative)
 
 - Thread — Canonical API object representing the persisted chat transcript and metadata. This repository uses `ConversationThread` for the same concept.
+
+## Account Deletion Tests
+
+Deleting accounts via `/api/accounts/:id` can trigger provider OAuth revocation side effects in some environments. Integration suites intentionally avoid testing this route until provider mocks are present. Do not add deletion tests unless both are true:
+
+- A provider‑level mock or sandbox is wired for OAuth flows, and
+- The test environment confirms no external revocation calls are made.
+
+When re‑introducing coverage, gate with an explicit env switch and document the mock’s behavior alongside the test.
 - Conversation — Informal synonym for Thread in docs.
 - Session — Transient usage window (not a persisted API object). We create Threads, not Sessions.
 - Turn — A single exchange: one user message and the assistant’s reply. In this codebase, a Director step may include tool execution followed by the subsequent assistant turn.
