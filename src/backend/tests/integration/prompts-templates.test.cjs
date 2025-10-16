@@ -118,18 +118,6 @@ test('integration: prompts and templates lifecycle', { concurrency: false, timeo
       });
       assert.strictEqual(deleteImprint.status, 204, 'imprint delete must return 204');
   } finally {
-    await fetch(`${baseUrl}/api/prompts/${encodeURIComponent(resources.promptId)}`, {
-      method: 'DELETE',
-      headers: sessionHeaders,
-    }).catch((error) => console.warn('[integration] prompt cleanup failed', error));
-    await fetch(`${baseUrl}/api/prompt-templates/${encodeURIComponent(resources.templateId)}`, {
-      method: 'DELETE',
-      headers: sessionHeaders,
-    }).catch((error) => console.warn('[integration] template cleanup failed', error));
-    await fetch(`${baseUrl}/api/imprints/${encodeURIComponent(resources.imprintId)}`, {
-      method: 'DELETE',
-      headers: sessionHeaders,
-    }).catch((error) => console.warn('[integration] imprint cleanup failed', error));
     await stop();
   }
 });

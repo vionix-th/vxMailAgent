@@ -75,10 +75,9 @@ test('integration: account lifecycle enforces invariants', { concurrency: false,
     assert.strictEqual(refreshRes.status, 200, 'refresh responds with 200 even on failure');
     assert.ok(typeof refreshRes.data === 'object' && refreshRes.data !== null, 'refresh should respond with payload');
   } finally {
-    await fetch(`${baseUrl}/api/accounts/${encodeURIComponent(accountId)}`, {
-      method: 'DELETE',
-      headers: sessionHeaders,
-    }).catch((error) => console.warn('[integration] account cleanup failed', error));
+    // Account lives inside the per-test temp data dir; explicit deletion is optional and
+    // would attempt to revoke refresh tokens against the real provider. Skip it to avoid
+    // lengthy external calls while keeping the test self-contained.
     await stop();
   }
 });

@@ -73,12 +73,6 @@ test('integration: memory entries and cleanup routes', { concurrency: false, tim
     });
     assert.strictEqual(cleanupRes.ok, true, '/api/cleanup/fetcher-logs should succeed');
   } finally {
-    for (const id of memoryIds) {
-      await fetch(`${baseUrl}/api/memory/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch(() => {});
-    }
     await stop();
   }
 });

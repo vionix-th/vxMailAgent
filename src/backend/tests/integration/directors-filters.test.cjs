@@ -119,21 +119,6 @@ test('integration: directors, agents, and filters enforce update guards', { conc
       : [];
     assert.strictEqual(ownedFilters.length, 2, 'expected integration filters to exist');
   } finally {
-    const cleanupIds = [ids.filterA, ids.filterB];
-    for (const filterId of cleanupIds) {
-      await fetch(`${baseUrl}/api/filters/${encodeURIComponent(filterId)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch(() => {});
-    }
-    await fetch(`${baseUrl}/api/directors/${encodeURIComponent(ids.director)}`, {
-      method: 'DELETE',
-      headers: sessionHeaders,
-    }).catch(() => {});
-    await fetch(`${baseUrl}/api/agents/${encodeURIComponent(ids.agent)}`, {
-      method: 'DELETE',
-      headers: sessionHeaders,
-    }).catch(() => {});
     await stop();
   }
 });
