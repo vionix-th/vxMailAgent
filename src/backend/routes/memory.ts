@@ -17,6 +17,12 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
     const tag = normalizeOptionalString(params.tag, 'query.tag');
     const query = normalizeOptionalString(params.query ?? params.q, 'query.query');
 
+    const logContext = Object.entries({ scope, owner, tag, query }).reduce<Record<string, string>>((acc, [key, value]) => {
+      if (typeof value === 'string') acc[key] = value;
+      return acc;
+    }, {});
+    logger.info('GET /api/memory query', { ...logContext, includeDeleted: false });
+
     const context = requireContext(req);
     const repo = getMemoryRepo(context);
     let result = Array.from(await repo.list());
@@ -109,7 +115,8 @@ export default function registerMemoryRoutes(app: express.Express, _deps: Memory
         }
       }
       if (Object.prototype.hasOwnProperty.call(patch, 'metadata')) {
-        if (typeof patch.metadata === 'undefined') {
+        // Allow null to remove metadata since JSON cannot represent undefined
+        if (patch.metadata === null || typeof patch.metadata === 'undefined') {
           delete (entry as any).metadata;
         } else {
           entry.metadata = patch.metadata as any;
