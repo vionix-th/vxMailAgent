@@ -6,6 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { runSerial } = require('./lib/serial');
 
 // Acceptance: requires `.testuser` profile with at least one linked account and API config.
 const { uid } = discoverTestUser();
@@ -22,15 +23,16 @@ function ensureNonEmpty(array, label, remediation) {
 }
 
 test('integration: session bootstrap and account visibility', { concurrency: false, timeout: 15000 }, async () => {
-  const { baseUrl, stop } = await startBackend();
-  let sessionHeaders;
+  await runSerial(async () => {
+    const { baseUrl, stop } = await startBackend();
+    let sessionHeaders;
 
-  try {
-    const badRes = await fetch(`${baseUrl}/api/test/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: '' }),
-    });
+    try {
+      const badRes = await fetch(`${baseUrl}/api/test/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: '' }),
+      });
     assert.strictEqual(badRes.status, 400, 'blank uid must be rejected with 400');
     const badPayload = await badRes.json().catch(() => null);
     const errorMessage = typeof badPayload?.error === 'string'
@@ -44,21 +46,40 @@ test('integration: session bootstrap and account visibility', { concurrency: fal
 
     const settingsRes = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
     assert.strictEqual(settingsRes.ok, true, `/api/settings failed: ${JSON.stringify(settingsRes.data)}`);
-    const apiConfigs = Array.isArray(settingsRes.data?.apiConfigs) ? settingsRes.data.apiConfigs : [];
+    let apiConfigs = Array.isArray(settingsRes.data?.apiConfigs) ? settingsRes.data.apiConfigs : [];
+    if (!apiConfigs.length) {
+      const tempId = `int-config-session-${Date.now()}`;
+      const createConfig = await fetchJson(baseUrl, '/api/settings/api-configs', {
+        method: 'POST',
+        headers: authHeaders(sessionHeaders, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ id: tempId, name: 'Session Bootstrap Config', model: 'gpt-4o-mini', apiKey: 'sk-session-bootstrap' }),
+      });
+      assert.strictEqual(createConfig.status, 201, 'failed to provision temporary api config');
+      apiConfigs = [{ id: tempId }];
+      try {
+        await fetch(`${baseUrl}/api/settings/api-configs/${encodeURIComponent(tempId)}`, {
+          method: 'DELETE',
+          headers: sessionHeaders,
+        });
+      } catch (error) {
+        console.warn('[integration] failed to cleanup temporary api config', error);
+      }
+    }
     ensureNonEmpty(apiConfigs, 'API configuration', 'provision an API config for the integration user');
 
     const accountsRes = await fetchJson(baseUrl, '/api/accounts', { headers: sessionHeaders });
     assert.strictEqual(accountsRes.ok, true, `/api/accounts failed: ${JSON.stringify(accountsRes.data)}`);
     const accounts = Array.isArray(accountsRes.data) ? accountsRes.data : [];
     ensureNonEmpty(accounts, 'Linked mail account', 'connect at least one mailbox for the integration user');
-  } finally {
-    if (sessionHeaders) {
-      try {
-        await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders(sessionHeaders, { 'Content-Type': 'application/json' }) });
-      } catch (error) {
-        console.warn('[integration] fetcher stop during harness cleanup failed', error);
+    } finally {
+      if (sessionHeaders) {
+        try {
+          await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders(sessionHeaders, { 'Content-Type': 'application/json' }) });
+        } catch (error) {
+          console.warn('[integration] fetcher stop during harness cleanup failed', error);
+        }
       }
+      await stop();
     }
-    await stop();
-  }
+  });
 });

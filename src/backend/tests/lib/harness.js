@@ -57,9 +57,10 @@ async function startBackend() {
     throw new Error(`Users directory missing at ${usersDir}`);
   }
   const snapshotRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vxmail-pipeline-'));
-  const snapshotDir = path.join(snapshotRoot, 'data');
-  fs.mkdirSync(snapshotDir);
-  fs.cpSync(dataDir, snapshotDir, { recursive: true, errorOnExist: false });
+  const snapshotDbFile = path.join(snapshotRoot, 'system.sqlite3');
+  const snapshotUsersDir = path.join(snapshotRoot, 'users');
+  fs.copyFileSync(sharedDbPath, snapshotDbFile);
+  fs.cpSync(usersDir, snapshotUsersDir, { recursive: true, errorOnExist: false });
   const { createServer } = requireBackend('server.js');
   const { shutdownRepos } = requireBackend('initRepos.js');
   const { app, fetcherManager } = createServer();
@@ -94,17 +95,12 @@ async function startBackend() {
         console.warn('[harness] shutdownRepos failed', error);
       }
       try {
-        if (!fs.existsSync(snapshotDir)) {
-          throw new Error(`Snapshot directory missing at ${snapshotDir}`);
+        if (!fs.existsSync(snapshotDbFile) || !fs.existsSync(snapshotUsersDir)) {
+          throw new Error(`Snapshot artifacts missing at ${snapshotRoot}`);
         }
-        fs.rmSync(dataDir, { recursive: true, force: true });
-        fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-        const snapshotEntries = fs.readdirSync(snapshotDir);
-        for (const entry of snapshotEntries) {
-          const source = path.join(snapshotDir, entry);
-          const target = path.join(dataDir, entry);
-          fs.cpSync(source, target, { recursive: true, errorOnExist: false });
-        }
+        fs.copyFileSync(snapshotDbFile, sharedDbPath);
+        fs.rmSync(usersDir, { recursive: true, force: true });
+        fs.cpSync(snapshotUsersDir, usersDir, { recursive: true, errorOnExist: false });
       } catch (error) {
         primaryError = error instanceof Error ? error : new Error(String(error));
       }

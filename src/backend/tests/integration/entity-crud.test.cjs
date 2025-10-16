@@ -6,6 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { runSerial } = require('./lib/serial');
 
 // Acceptance: requires seeded prompt templates and API configs for the discovered `.testuser`.
 const { uid } = discoverTestUser();
@@ -15,14 +16,15 @@ function authHeaders(sessionHeaders, extra = {}) {
 }
 
 test('integration: agent/director/filter lifecycle enforces invariants', { concurrency: false, timeout: 20000 }, async () => {
-  const { baseUrl, stop } = await startBackend();
-  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
-  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+  await runSerial(async () => {
+    const { baseUrl, stop } = await startBackend();
+    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+    const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 
-  const created = { agent: null, director: null, filter: null };
+    const created = { agent: null, director: null, filter: null };
 
-  try {
-    const settingsRes = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
+    try {
+      const settingsRes = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
     assert.strictEqual(settingsRes.ok, true, `/api/settings failed: ${JSON.stringify(settingsRes.data)}`);
     const apiConfig = Array.isArray(settingsRes.data?.apiConfigs) && settingsRes.data.apiConfigs[0];
     if (!apiConfig) {
@@ -133,30 +135,31 @@ test('integration: agent/director/filter lifecycle enforces invariants', { concu
     assert.strictEqual(listFilters.ok, true, '/api/filters list must succeed');
     const found = Array.isArray(listFilters.data) && listFilters.data.some((entry) => entry.id === filterId);
     assert.ok(found, 'newly created filter must appear in list response');
-  } finally {
-    if (created.filter) {
-      await fetch(`${baseUrl}/api/filters/${encodeURIComponent(created.filter)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch((error) => console.warn('[integration] failed to delete filter during cleanup', error));
+    } finally {
+      if (created.filter) {
+        await fetch(`${baseUrl}/api/filters/${encodeURIComponent(created.filter)}`, {
+          method: 'DELETE',
+          headers: sessionHeaders,
+        }).catch((error) => console.warn('[integration] failed to delete filter during cleanup', error));
+      }
+      if (created.director) {
+        await fetch(`${baseUrl}/api/directors/${encodeURIComponent(created.director)}`, {
+          method: 'DELETE',
+          headers: sessionHeaders,
+        }).catch((error) => console.warn('[integration] failed to delete director during cleanup', error));
+      }
+      if (created.agent) {
+        await fetch(`${baseUrl}/api/agents/${encodeURIComponent(created.agent)}`, {
+          method: 'DELETE',
+          headers: sessionHeaders,
+        }).catch((error) => console.warn('[integration] failed to delete agent during cleanup', error));
+      }
+      try {
+        await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders(sessionHeaders, { 'Content-Type': 'application/json' }) });
+      } catch (error) {
+        console.warn('[integration] fetcher stop during CRUD cleanup failed', error);
+      }
+      await stop();
     }
-    if (created.director) {
-      await fetch(`${baseUrl}/api/directors/${encodeURIComponent(created.director)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch((error) => console.warn('[integration] failed to delete director during cleanup', error));
-    }
-    if (created.agent) {
-      await fetch(`${baseUrl}/api/agents/${encodeURIComponent(created.agent)}`, {
-        method: 'DELETE',
-        headers: sessionHeaders,
-      }).catch((error) => console.warn('[integration] failed to delete agent during cleanup', error));
-    }
-    try {
-      await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders(sessionHeaders, { 'Content-Type': 'application/json' }) });
-    } catch (error) {
-      console.warn('[integration] fetcher stop during CRUD cleanup failed', error);
-    }
-    await stop();
-  }
+  });
 });

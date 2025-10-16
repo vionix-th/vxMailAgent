@@ -6,6 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { runSerial } = require('../integration/lib/serial');
 
 const { uid } = discoverTestUser();
 
@@ -27,17 +28,18 @@ async function cleanup(baseUrl, headers, { directorId, filterId }) {
 }
 
 test('misconfigured director surfaces a single fetcher log error', { concurrency: false, timeout: 15000 }, async () => {
-  const { baseUrl, stop } = await startBackend();
-  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
-  const authHeaders = (extra = {}) => ({ ...sessionHeaders, ...extra });
-  const directorId = `test-director-${Date.now()}`;
-  const filterId = `test-filter-${Date.now()}`;
-  let fetcherTriggered = false;
-  let directorCreated = false;
-  let filterCreated = false;
+  await runSerial(async () => {
+    const { baseUrl, stop } = await startBackend();
+    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+    const authHeaders = (extra = {}) => ({ ...sessionHeaders, ...extra });
+    const directorId = `test-director-${Date.now()}`;
+    const filterId = `test-filter-${Date.now()}`;
+    let fetcherTriggered = false;
+    let directorCreated = false;
+    let filterCreated = false;
 
-  try {
-    const accounts = await fetchJson(baseUrl, '/api/accounts', { headers: sessionHeaders });
+    try {
+      const accounts = await fetchJson(baseUrl, '/api/accounts', { headers: sessionHeaders });
     if (!accounts.ok) {
       throw new Error(`/api/accounts failed: ${JSON.stringify(accounts.data)}`);
     }
@@ -94,17 +96,18 @@ test('misconfigured director surfaces a single fetcher log error', { concurrency
     const entries = Array.isArray(logsRes.data) ? logsRes.data : [];
     const match = entries.find((entry) => entry.event === 'director_config_missing' && entry.directorId === directorId);
     assert.ok(match, 'Expected director_config_missing log entry for misconfigured director');
-  } finally {
-    if (filterCreated || directorCreated) {
-      await cleanup(baseUrl, authHeaders({ 'Content-Type': 'application/json' }), { directorId: directorCreated ? directorId : undefined, filterId: filterCreated ? filterId : undefined });
-    }
-    if (fetcherTriggered) {
-      try {
-        await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }) });
-      } catch (error) {
-        console.warn('[misconfigured-director] failed to stop fetcher during cleanup', error);
+    } finally {
+      if (filterCreated || directorCreated) {
+        await cleanup(baseUrl, authHeaders({ 'Content-Type': 'application/json' }), { directorId: directorCreated ? directorId : undefined, filterId: filterCreated ? filterId : undefined });
       }
+      if (fetcherTriggered) {
+        try {
+          await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }) });
+        } catch (error) {
+          console.warn('[misconfigured-director] failed to stop fetcher during cleanup', error);
+        }
+      }
+      await stop();
     }
-    await stop();
-  }
+  });
 });
