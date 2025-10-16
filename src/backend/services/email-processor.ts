@@ -331,6 +331,9 @@ snippet: ${envelope.snippet}`;
     context: EmailProcessingContext,
     userReq: ContextInput
   ): void {
+    if (String(process.env.VX_TEST_DISABLE_ORCHESTRATOR || '').toLowerCase() === 'true') {
+      return;
+    }
     const orchestratorUserReq = createUserRequest(userReq, this.repos);
     const orchestrator = new ConversationOrchestrator(userReq, context.runId, context.account.id);
     

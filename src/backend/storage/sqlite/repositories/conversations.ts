@@ -259,17 +259,16 @@ export class ConversationsRepository extends SqliteRepository {
       directorId = ensureString(agentThread.directorId, 'directorId', `thread ${agentThread.id}`);
     }
 
-    ensureString((thread as any).email?.id, 'email.id', `thread ${thread.id}`);
-
     db.prepare(
-      `INSERT INTO conversation_threads (id, kind, parent_id, director_id, agent_id, account_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json)
-       VALUES (@id, @kind, @parent_id, @director_id, @agent_id, @account_id, @email_json, @prompt_id, @api_config_id, @status, @started_at, @last_active_at, @ended_at, @result_json, @errors_json)
+      `INSERT INTO conversation_threads (id, kind, parent_id, director_id, agent_id, account_id, email_id, email_json, prompt_id, api_config_id, status, started_at, last_active_at, ended_at, result_json, errors_json)
+       VALUES (@id, @kind, @parent_id, @director_id, @agent_id, @account_id, @email_id, @email_json, @prompt_id, @api_config_id, @status, @started_at, @last_active_at, @ended_at, @result_json, @errors_json)
        ON CONFLICT(id) DO UPDATE SET
          kind = excluded.kind,
          parent_id = excluded.parent_id,
          director_id = excluded.director_id,
          agent_id = excluded.agent_id,
          account_id = excluded.account_id,
+         email_id = excluded.email_id,
          email_json = excluded.email_json,
          prompt_id = excluded.prompt_id,
          api_config_id = excluded.api_config_id,
@@ -286,6 +285,7 @@ export class ConversationsRepository extends SqliteRepository {
       director_id: directorId,
       agent_id: agentId,
       account_id: thread.accountId,
+      email_id: ensureString((thread as any).email?.id, 'email.id', `thread ${thread.id}`),
       email_json: stringify(thread.email),
       prompt_id: thread.promptId,
       api_config_id: thread.apiConfigId,

@@ -16,6 +16,51 @@ export async function chatCompletion(
   messages: ChatCompletionMessageParam[],
   options?: { tools?: any[]; tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } }; max_completion_tokens?: number }
 ): Promise<ChatCompletionResult> {
+  if (String(process.env.VX_TEST_OPENAI_STUB || '').toLowerCase() === 'true') {
+    const includeTools = Array.isArray((options as any)?.tools) ? (options as any).tools : [];
+    // Debug: surface tool names when stubbed
+    try {
+      const names = includeTools.map((t: any) => (t?.function || {}).name).filter(Boolean);
+      if (names.length) {
+        // eslint-disable-next-line no-console
+        console.debug('[OPENAI_STUB] tools:', names.join(','));
+      }
+    } catch {}
+    const supportsWorkspace = includeTools.some((t: any) => String((t?.function || {}).name) === 'workspace_add_item');
+    const agentId = process.env.VX_TEST_WORKSPACE_AGENT_ID || 'int-workspace-agent';
+    if (supportsWorkspace || String(process.env.VX_TEST_FORCE_WORKSPACE_TOOLCALL || '').toLowerCase() === 'true') {
+      const tc = {
+        id: 'tc_workspace_add_item',
+        type: 'function',
+        function: {
+          name: 'workspace_add_item',
+          arguments: JSON.stringify({
+            agent_id: agentId,
+            mimeType: 'text/plain',
+            encoding: 'utf8',
+            data: 'hello from stub',
+            label: 'stub-note',
+            tags: ['stub'],
+          }),
+        },
+      } as any;
+      const assistantMessage: ChatCompletionMessageParam = {
+        role: 'assistant',
+        content: null as any,
+        tool_calls: [tc],
+      } as any;
+      return {
+        content: null,
+        request: { provider: 'openai', endpoint: 'chat.completions', model, messages, tools: includeTools },
+        response: { id: 'stubbed', choices: [{ message: assistantMessage }] },
+        toolCalls: [{ id: tc.id, name: tc.function.name, arguments: tc.function.arguments }],
+        assistantMessage,
+      };
+    }
+    // Default simple stubbed response
+    const assistantMessage: ChatCompletionMessageParam = { role: 'assistant', content: 'stubbed-response' } as any;
+    return { content: 'stubbed-response', request: { provider: 'openai', endpoint: 'chat.completions', model, messages }, response: { id: 'stubbed', choices: [{ message: assistantMessage }] }, toolCalls: undefined, assistantMessage };
+  }
   const openai = new OpenAI({ apiKey });
   const payload: any = {
     model,
