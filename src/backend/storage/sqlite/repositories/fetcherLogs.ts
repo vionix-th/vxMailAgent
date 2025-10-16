@@ -32,7 +32,7 @@ function normalizeEmailId(value: unknown, id: string): string | null {
 
 function pruneFetcherLogs(db: any) {
   if (FETCHER_TTL_DAYS > 0) {
-    db.prepare('DELETE FROM fetcher_logs WHERE timestamp < datetime("now", ?)')
+    db.prepare("DELETE FROM fetcher_logs WHERE timestamp < datetime('now', ?)")
       .run(`-${FETCHER_TTL_DAYS} days`);
   }
   if (USER_MAX_LOGS_PER_TYPE > 0) {

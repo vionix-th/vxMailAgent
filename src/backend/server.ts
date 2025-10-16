@@ -10,6 +10,8 @@ import { attachUserContext } from './middleware/user-context';
 import { ContextInput } from './utils/repo-access';
 import { initRepos } from './initRepos';
 import registerRoutes from './routes';
+import registerTestSessionRoute from './routes/test-session';
+import { isProd, ENABLE_TEST_ROUTES } from './config';
 import { errorHandler, NotFoundError } from './services/error-handler';
 import {
   configureSecurityHeaders,
@@ -32,6 +34,10 @@ export function createServer() {
 
   // Public health check (unauthenticated)
   registerHealthRoutes(app);
+
+  if (!isProd || ENABLE_TEST_ROUTES) {
+    registerTestSessionRoute(app);
+  }
 
   app.use(requireAuth);
   app.use(attachUserContext);
