@@ -4,10 +4,11 @@
 - **Authority:** Follow global interaction policy in `AGENTS.md`; backend contracts live in `docs/DEVELOPER.md`.
 
 ## Run & Build
-- **Install:** `cd src/frontend && npm install`
-- **Dev Server:** `cd src/frontend && npm run dev`
-- **Build:** `cd src/frontend && npm run build`
-- **Preview:** `cd src/frontend && npm run preview`
+- **Package location:** The repo root has no `package.json`; set your working directory to `src/frontend` or use `npm --prefix src/frontend ...` for every command.
+- **Install (from anywhere):** `npm --prefix src/frontend install`
+- **Dev Server:** `npm --prefix src/frontend run dev`
+- **Build:** `npm --prefix src/frontend run build`
+- **Preview:** `npm --prefix src/frontend run preview`
 
 ## UI Discipline
 - **Strict Types:** Enforce TypeScript strict mode; no implicit `any` or optional identifiers without justification.
