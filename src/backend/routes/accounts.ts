@@ -174,11 +174,19 @@ export default function registerAccountsRoutes(app: express.Express) {
     logger.info('POST /api/accounts/:id/refresh invoked', { id });
     const svcResult = await refreshAccount(requireContext(req), id);
     if (!svcResult.ok) {
-      // Map known errors to validation; others bubble as generic errors
-      if (svcResult.error === 'missing_refresh_token' || svcResult.error === 'invalid_grant') {
-        throw new ValidationError(`Refresh failed: ${svcResult.error}`);
+      const payload: any = {
+        ok: false,
+        error: svcResult.error ?? 'refresh_failed',
+        provider: svcResult.provider
+      };
+      if (svcResult.reauthRequired) {
+        payload.reauthRequired = true;
+        payload.reauth = {
+          provider: svcResult.provider,
+          accountId: id
+        };
       }
-      throw new Error(svcResult.error ?? 'Refresh failed');
+      return res.json(payload);
     }
     const result = svcResult && svcResult.tokens
       ? {

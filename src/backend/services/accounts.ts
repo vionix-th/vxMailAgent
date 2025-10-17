@@ -1,6 +1,7 @@
 import https from 'https';
 import logger from './logger';
 import { ValidationError } from './error-handler';
+import { enforceOAuthTokenInvariants, isReauthTokenValidationError } from './account-manager';
 import { getGoogleOAuthConfig, getOutlookOAuthConfig } from '../config';
 import { ensureValidGoogleAccessToken } from '../oauth/google';
 import { ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outlook';
@@ -117,29 +118,50 @@ export async function refreshAccount(source: AppRequest | UserScopedContext, id:
   if (account.provider === 'gmail') {
     const cfg = getGoogleOAuthConfig();
     try {
+      const persisted = enforceOAuthTokenInvariants('persisted', account.tokens);
+      account.tokens = persisted;
+
       const result = await ensureValidGoogleAccessToken(
         account.tokens,
         cfg
       );
+      const refreshed = enforceOAuthTokenInvariants('refreshed', result);
+      account.tokens = refreshed;
       if (result.updated) {
-        account.tokens.accessToken = result.accessToken;
-        account.tokens.expiry = result.expiry;
-        account.tokens.refreshToken = result.refreshToken;
         await repo.update(account);
         logger.info('Refreshed + persisted Gmail access token', { id });
       }
-      return { ok: true, updated: result.updated, tokens: account.tokens };
+      return { ok: true, updated: result.updated, tokens: account.tokens, provider: account.provider };
     } catch (e: any) {
       const errTxt = String(e?.message || e);
-      const missing = /missing refresh token/i.test(errTxt) || /OAUTH_MISSING_REFRESH_TOKEN/i.test(errTxt);
+      const errCode = typeof e?.code === 'string' ? e.code : undefined;
       const invalidGrant = /invalid_grant/i.test(errTxt) || /expired or revoked/i.test(errTxt);
       const network = /(ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network)/i.test(errTxt);
-      const category = missing ? 'missing_refresh_token' : invalidGrant ? 'invalid_grant' : network ? 'network' : 'other';
-      logger.error('Google refresh failed', { area: 'oauth', provider: 'google', op: 'refresh', accountId: id, email: account.email, category, error: errTxt });
-      if (missing || invalidGrant) {
-        return { ok: false, error: category, reauthRequired: true };
+      const requiresReauth = invalidGrant || isReauthTokenValidationError(e);
+      const category = invalidGrant
+        ? 'invalid_grant'
+        : requiresReauth ? 'missing_refresh_token'
+        : network ? 'network'
+        : 'other';
+
+      logger.error('Google refresh failed', {
+        area: 'oauth',
+        provider: 'google',
+        op: 'refresh',
+        accountId: id,
+        email: account.email,
+        category,
+        error: errTxt,
+        code: errCode
+      });
+
+      if (requiresReauth) {
+        return { ok: false, error: category, reauthRequired: true, provider: account.provider };
       }
-      return { ok: false, error: errTxt };
+      if (network) {
+        return { ok: false, error: category, provider: account.provider };
+      }
+      return { ok: false, error: errTxt, provider: account.provider };
     }
   } else if (account.provider === 'outlook') {
     let cfg;
@@ -147,29 +169,53 @@ export async function refreshAccount(source: AppRequest | UserScopedContext, id:
       cfg = getOutlookOAuthConfig();
     } catch (e: any) {
       const errTxt = String(e?.message || e);
-      logger.error('Outlook refresh failed to load config', { id, error: errTxt });
-      return { ok: false, error: errTxt };
+      logger.error('Outlook refresh failed to load config', { id, error: errTxt, code: e?.code });
+      return { ok: false, error: errTxt, provider: account.provider };
     }
     try {
+      const persisted = enforceOAuthTokenInvariants('persisted', account.tokens);
+      account.tokens = persisted;
       const result = await ensureValidOutlookAccessToken(
         account.tokens,
         cfg
       );
+      const refreshed = enforceOAuthTokenInvariants('refreshed', result);
+      account.tokens = refreshed;
       if (result.updated) {
-        account.tokens.accessToken = result.accessToken;
-        account.tokens.expiry = result.expiry;
-        account.tokens.refreshToken = result.refreshToken;
         await repo.update(account);
         logger.info('Refreshed + persisted Outlook access token', { id });
       }
-      return { ok: true, updated: result.updated, tokens: account.tokens };
+      return { ok: true, updated: result.updated, tokens: account.tokens, provider: account.provider };
     } catch (e: any) {
       const errTxt = String(e?.message || e);
-      if (/missing refresh token/i.test(errTxt) || /OAUTH_MISSING_REFRESH_TOKEN/i.test(errTxt)) {
-        return { ok: false, error: 'missing_refresh_token', reauthRequired: true };
+      const errCode = typeof e?.code === 'string' ? e.code : undefined;
+      const invalidGrant = /invalid_grant/i.test(errTxt) || /expired or revoked/i.test(errTxt);
+      const requiresReauth = invalidGrant || isReauthTokenValidationError(e);
+      const network = /(ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network)/i.test(errTxt);
+      const category = invalidGrant
+        ? 'invalid_grant'
+        : requiresReauth ? 'missing_refresh_token'
+        : network ? 'network'
+        : 'other';
+
+      logger.error('Outlook refresh failed', {
+        area: 'oauth',
+        provider: 'outlook',
+        op: 'refresh',
+        accountId: id,
+        email: account.email,
+        category,
+        error: errTxt,
+        code: errCode
+      });
+
+      if (requiresReauth) {
+        return { ok: false, error: category, reauthRequired: true, provider: account.provider };
       }
-      logger.error('Outlook refresh failed', { id, error: errTxt });
-      return { ok: false, error: errTxt };
+      if (network) {
+        return { ok: false, error: category, provider: account.provider };
+      }
+      return { ok: false, error: errTxt, provider: account.provider };
     }
   } else {
     return { ok: false, error: 'Unknown provider' };
@@ -186,23 +232,30 @@ export async function outlookTest(source: AppRequest | UserScopedContext, id: st
 
   let result: { accessToken: string; expiry: string; refreshToken: string; updated: boolean };
   try {
+    const persisted = enforceOAuthTokenInvariants('persisted', account.tokens);
+    account.tokens = persisted;
+
     result = await ensureValidOutlookAccessToken(
       account.tokens,
       cfg
     );
+
+    const refreshed = enforceOAuthTokenInvariants('refreshed', result);
+    account.tokens = refreshed;
+
+    if (result.updated) {
+      await repo.update(account);
+      logger.info('Refreshed + persisted during outlook-test', { id });
+    }
   } catch (e: any) {
     const errTxt = String(e?.message || e);
-    if (/missing refresh token/i.test(errTxt) || /OAUTH_MISSING_REFRESH_TOKEN/i.test(errTxt)) {
-      return { ok: false, error: 'missing_refresh_token', reauthRequired: true };
+    const invalidGrant = /invalid_grant/i.test(errTxt) || /expired or revoked/i.test(errTxt);
+    const requiresReauth = invalidGrant || isReauthTokenValidationError(e);
+    const category = invalidGrant ? 'invalid_grant' : 'missing_refresh_token';
+    if (requiresReauth) {
+      return { ok: false, error: category, reauthRequired: true, provider: account.provider };
     }
     throw new Error(errTxt);
-  }
-  if (result.updated) {
-    account.tokens.accessToken = result.accessToken;
-    account.tokens.expiry = result.expiry;
-    account.tokens.refreshToken = result.refreshToken;
-    await repo.update(account);
-    logger.info('Refreshed + persisted during outlook-test', { id });
   }
 
   const doGet = (path: string) => new Promise<any>((resolve, reject) => {
@@ -245,30 +298,52 @@ export async function gmailTest(source: AppRequest | UserScopedContext, id: stri
   if (!account) throw new Error('account not found');
   if (account.provider !== 'gmail') throw new Error('Only gmail supported for this test');
 
-  let result: { accessToken: string; expiry: string; refreshToken: string; updated: boolean };
   try {
-    result = await ensureValidGoogleAccessToken(
+    const persisted = enforceOAuthTokenInvariants('persisted', account.tokens);
+    account.tokens = persisted;
+
+    const result = await ensureValidGoogleAccessToken(
       account.tokens,
       cfg
     );
+
+    const refreshed = enforceOAuthTokenInvariants('refreshed', result);
+    account.tokens = refreshed;
+
+    if (result.updated) {
+      await repo.update(account);
+      logger.info('Refreshed + persisted during gmail-test', { id });
+    }
   } catch (e: any) {
     const errTxt = String(e?.message || e);
-    const missing = /missing refresh token/i.test(errTxt) || /OAUTH_MISSING_REFRESH_TOKEN/i.test(errTxt);
+    const errCode = typeof e?.code === 'string' ? e.code : undefined;
     const invalidGrant = /invalid_grant/i.test(errTxt) || /expired or revoked/i.test(errTxt);
     const network = /(ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network)/i.test(errTxt);
-    const category = missing ? 'missing_refresh_token' : invalidGrant ? 'invalid_grant' : network ? 'network' : 'other';
-    logger.error('Gmail test failed', { area: 'oauth', provider: 'google', op: 'gmail-test', accountId: id, email: account.email, category, error: errTxt });
-    if (missing || invalidGrant) {
-      return { ok: false, error: category, reauthRequired: true };
+    const requiresReauth = invalidGrant || isReauthTokenValidationError(e);
+    const category = invalidGrant
+      ? 'invalid_grant'
+      : requiresReauth ? 'missing_refresh_token'
+      : network ? 'network'
+      : 'other';
+
+    logger.error('Gmail test failed', {
+      area: 'oauth',
+      provider: 'google',
+      op: 'gmail-test',
+      accountId: id,
+      email: account.email,
+      category,
+      error: errTxt,
+      code: errCode
+    });
+
+    if (requiresReauth) {
+      return { ok: false, error: category, reauthRequired: true, provider: account.provider };
+    }
+    if (network) {
+      return { ok: false, error: category };
     }
     throw new Error(errTxt);
-  }
-  if (result.updated) {
-    account.tokens.accessToken = result.accessToken;
-    account.tokens.expiry = result.expiry;
-    account.tokens.refreshToken = result.refreshToken;
-    await repo.update(account);
-    logger.info('Refreshed + persisted during gmail-test', { id });
   }
 
   // External dependency (googleapis) is already used in routes; reusing here would require passing client, so keep test lightweight here
