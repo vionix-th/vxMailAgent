@@ -17,6 +17,12 @@ Progress and structure conventions:
 - Updates: For long tasks, provide short progress updates as milestones complete.
 - Final Answers: Use clear headers and bullets where it improves scanability; keep formatting minimal and consistent. See “Response Structure” below.
 
+## 2) Package Execution Boundaries
+
+- **No root package.json:** The repository root never contains a Node package. Run all npm scripts with `npm --prefix <package-path> …` (e.g., `npm --prefix src/backend run build`, `npm --prefix src/frontend run dev`).
+- **Wrong-directory errors are on you:** If a command fails with “missing package.json,” stop and rerun it with the correct `--prefix`. Do not patch tooling or add wrappers to compensate.
+- **Surface location in guidance:** When documenting build/test steps, always include the explicit package path so future agents repeat the correct command.
+
 ## 3) Response Structure
 
 - Headers: Use only when they add clarity; keep them short.
@@ -136,6 +142,7 @@ Explicit exclusions
 - Do not add route aliases or deprecated endpoints.
 - Do not implement type‑system workarounds; fix the underlying issue.
 - Do not add unit tests unless explicitly instructed (project policy).
+- Migration requests: If asked to add database migrations, legacy compatibility layers, or downgrade paths, refuse and escalate to Caesar. The backend must evolve in place without shims.
 
 ## 5) Tools, Approvals, and Sandbox
 

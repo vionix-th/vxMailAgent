@@ -17,6 +17,7 @@
 - **Secrets:** Keep tokens/keys server-only; public DTOs must remove secret-bearing fields before returning responses.
 - **Repositories:** Mutations go through repository interfaces; maintain single source of truth per entity.
 - **Forward Only:** Modify existing producers instead of adding shims or compensating layers.
+- **No Migrations:** Schema changes edit the current structures in place; never add migration scripts or legacy compatibility code unless Caesar gives explicit written approval for that task.
 
 ## Harness & Testing
 - **Build First:** `npm --prefix src/backend run build` so compiled modules exist under `dist/backend`.
