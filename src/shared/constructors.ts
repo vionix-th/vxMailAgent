@@ -1,10 +1,22 @@
 import type { Attachment, EmailEnvelope, ProviderEvent, LLMProvider, Account, AccountProvider } from './types';
 
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isUuidV4(value: unknown): value is string {
+  return typeof value === 'string' && UUID_V4_REGEX.test(value);
+}
+
 function assertNonEmptyString(name: string, v: unknown): string {
   if (typeof v !== 'string') throw new Error(`Invalid ${name}: expected string`);
   const s = v.trim();
   if (!s) throw new Error(`Invalid ${name}: empty`);
   return s;
+}
+
+function assertUuidV4(name: string, v: unknown): string {
+  const id = assertNonEmptyString(name, v);
+  if (!isUuidV4(id)) throw new Error(`Invalid ${name}: expected UUID v4`);
+  return id;
 }
 
 function assertOptionalString(name: string, v: unknown): string | undefined {
@@ -160,7 +172,7 @@ export function createAccount(input: {
   signature: unknown;
   tokens: unknown;
 }): Account {
-  const id = assertNonEmptyString('id', input.id);
+  const id = assertUuidV4('id', input.id);
   const provider = assertNonEmptyString('provider', input.provider) as AccountProvider;
   if (provider !== 'gmail' && provider !== 'outlook') throw new Error('Invalid provider');
   const email = assertNonEmptyString('email', input.email);

@@ -1,5 +1,5 @@
 import type { Account } from '../../../../shared/types';
-import { createAccount } from '../../../../shared/constructors';
+import { createAccount, isUuidV4 } from '../../../../shared/constructors';
 import type { StorageHandle } from '../types';
 import { SqliteRepository, stringify } from './base';
 
@@ -107,8 +107,12 @@ export class AccountsRepository extends SqliteRepository {
   }
 
   private mapRow(row: any): Account {
+    const rawId = typeof row.id === 'string' ? row.id.trim() : '';
+    if (!isUuidV4(rawId)) {
+      throw new Error('AccountsRepository: legacy account id detected; run the documented SQL remediation before continuing');
+    }
     return createAccount({
-      id: row.id,
+      id: rawId,
       provider: row.provider,
       email: row.email,
       signature: row.signature,
@@ -150,4 +154,5 @@ export class AccountsRepository extends SqliteRepository {
       throw new Error('AccountsRepository: expiry required');
     }
   }
+
 }

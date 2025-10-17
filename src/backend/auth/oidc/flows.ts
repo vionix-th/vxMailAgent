@@ -10,6 +10,7 @@ import { ensureContext } from '../../utils/repo-access';
 import type { ContextInput } from '../../utils/repo-access';
 import { AuthenticationError, ValidationError } from '../../services/error-handler';
 import logger from '../../services/logger';
+import { newId } from '../../utils/id';
 
 export async function initiateGoogleLogin(): Promise<{ url: string; loginCookie: string }> {
   const gen: any = (oidc as any).generators;
@@ -120,7 +121,7 @@ export async function handleGoogleAccountCallback(code: string, stateToken: stri
     throw new ValidationError('Google response missing expires_in');
   }
   const account: Account = createAccount({
-    id: email,
+    id: newId(),
     provider: 'gmail',
     email,
     signature: '',

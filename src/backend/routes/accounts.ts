@@ -3,8 +3,9 @@ import logger from '../services/logger';
 import { requireContext, requireUid } from '../utils/repo-access';
 import { CORS_ORIGIN } from '../config';
 import type { Account, AccountPublic } from '../../shared/types';
-import { createAccount } from '../../shared/constructors';
+import { createAccount, isUuidV4 } from '../../shared/constructors';
 import { errorHandler, ValidationError, NotFoundError } from '../services/error-handler';
+import { newId } from '../utils/id';
 import {
   listAccounts,
   upsertAccount,
@@ -68,9 +69,6 @@ export default function registerAccountsRoutes(app: express.Express) {
     res.redirect(location);
   }));
 
-  // OAuth (Connect account) - Outlook - DISABLED: Legacy implementation removed
-  // TODO: Implement Outlook account onboarding using OIDC+PKCE pattern
-
   app.get('/api/accounts', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const context = requireContext(req);
     const accounts = await listAccounts(context);
@@ -91,11 +89,15 @@ export default function registerAccountsRoutes(app: express.Express) {
       throw new ValidationError('Request body must be a JSON object', 'ACCOUNT_BODY_MISSING');
     }
     const payload = req.body as Record<string, unknown>;
-    const hasId = typeof payload.id === 'string' && payload.id.trim().length > 0;
-    const hasProvider = typeof payload.provider === 'string' && payload.provider.trim().length > 0;
-    const hasEmail = typeof payload.email === 'string' && payload.email.trim().length > 0;
-    if (!hasId || !hasProvider || !hasEmail) {
-      throw new ValidationError('id, provider, and email are required', 'ACCOUNT_FIELDS_MISSING');
+
+    const rawId = typeof payload.id === 'string' ? payload.id.trim() : '';
+    if (rawId && !isUuidV4(rawId)) {
+      throw new ValidationError('id must be a UUID v4 when provided', 'ACCOUNT_ID_INVALID');
+    }
+    const provider = typeof payload.provider === 'string' ? payload.provider.trim() : '';
+    const email = typeof payload.email === 'string' ? payload.email.trim() : '';
+    if (!provider || !email) {
+      throw new ValidationError('provider and email are required', 'ACCOUNT_FIELDS_MISSING');
     }
     if (payload.signature == null || typeof payload.signature !== 'string') {
       throw new ValidationError('signature is required', 'ACCOUNT_SIGNATURE_MISSING');
@@ -112,12 +114,15 @@ export default function registerAccountsRoutes(app: express.Express) {
       }
     }
 
+    const id = rawId || newId();
+    payload.id = id;
+
     const newAccount: Account = createAccount(payload as any);
     const context = requireContext(req);
     await upsertAccount(context, newAccount);
     const source = `user ${requireUid(context)}`;
-    logger.info('Saved accounts to store', { source });
-    res.json({ success: true });
+    logger.info('Saved accounts to store', { source, id: newAccount.id, provider: newAccount.provider });
+    res.json({ success: true, id: newAccount.id });
   }));
 
   app.put('/api/accounts/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {

@@ -17,8 +17,6 @@ test('integration: account lifecycle enforces invariants', { concurrency: false,
   const { headers: sessionHeaders } = await createSession(baseUrl, uid);
   const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 
-  const accountId = `int-account-${Date.now()}`;
-
   try {
       const invalidBody = await fetch(`${baseUrl}/api/accounts`, {
         method: 'POST',
@@ -31,7 +29,6 @@ test('integration: account lifecycle enforces invariants', { concurrency: false,
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({
-        id: accountId,
         provider: 'gmail',
         email: 'integration@example.com',
         signature: 'Original Signature',
@@ -43,6 +40,10 @@ test('integration: account lifecycle enforces invariants', { concurrency: false,
       }),
     });
     assert.strictEqual(createAccountRes.ok, true, 'account creation failed');
+    assert.ok(createAccountRes.data && typeof createAccountRes.data.id === 'string', 'account id missing from response');
+    const accountId = createAccountRes.data.id;
+    const uuidV4Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    assert.ok(uuidV4Pattern.test(accountId), 'account id must be a UUID v4');
 
     const listRes = await fetchJson(baseUrl, '/api/accounts', { headers: sessionHeaders });
     assert.strictEqual(listRes.ok, true, '/api/accounts list failed');

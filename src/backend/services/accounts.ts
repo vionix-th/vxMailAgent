@@ -7,6 +7,7 @@ import { ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outl
 import { toUserScopedContext, requireUid, getAccountsRepo } from '../utils/repo-access';
 import type { UserScopedContext, AppRequest } from '../interfaces';
 import type { Account } from '../../shared/types';
+import { isUuidV4 } from '../../shared/constructors';
 import { revokeGoogleToken } from '../oauth/google';
 
 // Data access helpers
@@ -20,31 +21,34 @@ export async function listAccounts(source: AppRequest | UserScopedContext): Prom
 export async function upsertAccount(source: AppRequest | UserScopedContext, next: Account): Promise<void> {
   const ctx = toUserScopedContext(source);
   const repo = getAccountsRepo(ctx);
-  if (typeof next?.id !== 'string' || !next.id.trim()) {
-    throw new ValidationError('Account id required');
+  if (!isUuidV4(next?.id)) {
+    throw new ValidationError('Account id must be a UUID v4');
   }
-  const existing = await repo.getById(next.id);
-  if (existing) {
-    await repo.update(next);
+
+  const canonical: Account = { ...next };
+  const uid = requireUid(ctx);
+
+  const existingById = await repo.getById(canonical.id);
+  let operation: 'update' | 'insert' = 'insert';
+
+  if (existingById) {
+    operation = 'update';
   } else {
-    await repo.insert(next);
+    const accounts = await repo.list();
+    const target = accounts.find((account) => account.provider === canonical.provider && account.email.toLowerCase() === canonical.email.toLowerCase());
+    if (target) {
+      canonical.id = target.id;
+      operation = 'update';
+    }
   }
-  logger.info('Saved account', { id: next.id, uid: requireUid(ctx) });
-}
 
-export async function updateAccount(source: AppRequest | UserScopedContext, id: string, next: Account): Promise<void> {
-  const ctx = toUserScopedContext(source);
-  const repo = getAccountsRepo(ctx);
-  const current = await repo.getById(id);
-  if (!current) throw new Error('Account not found');
-
-  if (next.id && next.id !== id) {
-    throw new ValidationError('Account id mismatch');
+  if (operation === 'update') {
+    await repo.update(canonical);
+  } else {
+    await repo.insert(canonical);
   }
-  next.id = id;
 
-  await repo.update(next);
-  logger.info('Updated account', { id });
+  logger.info('Saved account', { id: canonical.id, uid, operation });
 }
 
 /**
