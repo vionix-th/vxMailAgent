@@ -1,6 +1,6 @@
 # Pipeline Test Charter
 
-Read `tests/AGENTS.md` first. This appendix governs pipeline suites only.
+Read `../AGENTS.md` and `tests/AGENTS.md` first. This appendix governs pipeline suites only.
 
 ## Required Coverage
 1. **Pipeline E2E** – Authenticate with a real JWT, verify the pre-seeded director/agent/filter/API config for the `.testuser` profile, trigger exactly one fetch cycle, and assert director + agent completion using the live provider path.

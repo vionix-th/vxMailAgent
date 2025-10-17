@@ -1,6 +1,6 @@
 # Integration Test Charter
 
-Read `tests/AGENTS.md` first. This appendix defines integration-suite expectations.
+Read `../AGENTS.md` and `tests/AGENTS.md` first. This appendix defines integration-suite expectations.
 
 ## Scope
 Integration tests validate HTTP contracts, CRUD invariants, and guard-rails without orchestrating the full pipeline. They run against the compiled backend through the shared harness.

@@ -3,6 +3,7 @@
 Read this before touching any test. Violations revert to zero-trust immediately.
 
 ## Document Map
+- `../AGENTS.md`: backend execution commands, harness usage, and runtime invariants.
 - `tests/AGENTS.md` (this file): core rules binding every suite.
 - `tests/pipeline/AGENTS.md`: pipeline-specific guidance and coverage.
 - `tests/integration/AGENTS.md`: integration-specific guidance and coverage.
