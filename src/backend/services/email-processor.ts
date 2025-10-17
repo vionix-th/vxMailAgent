@@ -208,6 +208,8 @@ export class EmailProcessor {
     }
 
     // Create and persist thread
+    // AUDIT-DEFER: Idempotent thread reuse not yet implemented; see docs/AUDIT.MD ("Duplicate orchestration loops per unread email").
+    // Auditors skip duplicate-thread findings until the idempotency redesign ships.
     const thread = this.buildDirectorThread(director, envelope, context);
     const persistedThread = await this.persistDirectorThread(thread, traceId, userReq);
 

@@ -177,6 +177,8 @@ export class EmailFetcher {
   /** Upsert email envelopes by id into the per-user email store. */
   private async upsertEmails(envelopes: EmailEnvelope[], userReq: ContextInput): Promise<void> {
     if (!Array.isArray(envelopes) || envelopes.length === 0) return;
+    // AUDIT-DEFER: Retention policy intentionally pending; see docs/AUDIT.MD ("Email store grows unbounded").
+    // Auditors skip pruning enforcement until the scheduled retention work lands.
     const existing = await this.repos.getEmails(userReq);
     const byId = new Map<string, EmailEnvelope>(existing.map(e => [e.id, e] as const));
     const toPersist: EmailEnvelope[] = [];
