@@ -57,11 +57,16 @@ export default function Accounts() {
     setTestResult(null);
     try {
       const data = await apiFetch(`/api/accounts/${id}/gmail-test`);
-      if (data.ok === false) {
-        setTestError(data.error || (t('accounts.errors.testFailed') as string));
-        if (data.reauthUrl) {
-          setReauthUrl(data.reauthUrl);
+      if (data && data.ok === false) {
+        let msg = data.error || (t('accounts.errors.testFailed') as string);
+        if (data.reauthRequired) {
+          const url = await resolveReauthUrl('gmail', id);
+          if (url) {
+            setReauthUrl(url);
+            msg += ` ${t('accounts.messages.reauthRequired')}`;
+          }
         }
+        setTestError(msg);
         return;
       }
       setTestResult(data);
@@ -80,8 +85,16 @@ export default function Accounts() {
     setTestResult(null);
     try {
       const data = await apiFetch(`/api/accounts/${id}/outlook-test`);
-      if (data.ok === false) {
-        setTestError(data.error || (t('accounts.errors.testFailed') as string));
+      if (data && data.ok === false) {
+        let msg = data.error || (t('accounts.errors.testFailed') as string);
+        if (data.reauthRequired) {
+          const url = await resolveReauthUrl('outlook', id);
+          if (url) {
+            setReauthUrl(url);
+            msg += ` ${t('accounts.messages.reauthRequired')}`;
+          }
+        }
+        setTestError(msg);
         return;
       }
       setTestResult(data);
@@ -123,19 +136,43 @@ export default function Accounts() {
 
   useEffect(() => { fetchAccounts(); }, []);
 
+  const resolveReauthUrl = async (provider: 'gmail' | 'outlook', accountId?: string): Promise<string | null> => {
+    const payload: Record<string, string> = { provider, intent: 'reauth' };
+    if (accountId) payload.accountId = accountId;
+    const state = encodeURIComponent(JSON.stringify(payload));
+    const endpoint = provider === 'gmail'
+      ? `/api/accounts/oauth/google/initiate?state=${state}`
+      : `/api/accounts/oauth/outlook/initiate?state=${state}`;
+    try {
+      const data = await apiFetch(endpoint);
+      const url = typeof data?.url === 'string' && data.url ? data.url : null;
+      return url;
+    } catch (_error) {
+      return null;
+    }
+  };
+
   const refreshAccount = async (id: string) => {
     setLoading(true);
     setError(undefined);
     setReauthUrl(null);
     try {
+      const account = accounts.find(a => a.id === id) || null;
       const data = await apiFetch(`/api/accounts/${id}/refresh`, { method: 'POST' });
-      if (data.error) {
-        let msg = data.error;
-        if (data.reauthUrl) {
-          setReauthUrl(data.reauthUrl);
-          msg += ` ${t('accounts.messages.reauthRequired')}`;
+      if (data && typeof data === 'object' && data.ok === false) {
+        let msg = (data.error as string) || (t('accounts.errors.failedRefreshToken') as string);
+        if (data.reauthRequired) {
+          const provider = (data.reauth?.provider || data.provider || account?.provider) as 'gmail' | 'outlook' | undefined;
+          if (provider) {
+            const url = await resolveReauthUrl(provider, account?.id);
+            if (url) {
+              setReauthUrl(url);
+              msg += ` ${t('accounts.messages.reauthRequired')}`;
+            }
+          }
         }
-        throw new Error(msg);
+        setError(msg);
+        return;
       }
       await fetchAccounts();
     } catch (e: any) {
