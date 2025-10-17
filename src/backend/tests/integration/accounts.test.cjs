@@ -75,6 +75,7 @@ test('integration: account lifecycle enforces invariants', { concurrency: false,
     assert.strictEqual(refreshRes.ok, true, 'refresh request should complete');
     assert.strictEqual(refreshRes.status, 200, 'refresh responds with 200 even on failure');
     assert.ok(typeof refreshRes.data === 'object' && refreshRes.data !== null, 'refresh should respond with payload');
+    assert.strictEqual(refreshRes.data.ok, true, 'initial refresh should succeed with valid tokens');
   } finally {
     // Account lives inside the per-test temp data dir; explicit deletion is optional and
     // would attempt to revoke refresh tokens against the real provider. Skip it to avoid

@@ -20,6 +20,7 @@ Read this before touching any test. Violations revert to zero-trust immediately.
 - Triggering fetcher/orchestrator loops repeatedly to fish for outcomes. Each test may drive at most one controlled run and must stop the loop explicitly.
 - Leaving background timers, sqlite handles, or servers running between tests. Every test must shut down the Express server and call `shutdownRepos()` before exiting.
 - Swallowing failures with timeouts. Any wait must have a hard upper bound ≤ 10s and emit actionable context when it expires. Use the shared harness timeout wrapper.
+- Ignore hung suites. **A total runtime above 15 seconds for any individual test is considered a failure unless that test’s docstring explicitly authorizes a longer window.** When a test stalls past that limit, treat it as broken, diagnose immediately, and either tighten the code path or split the coverage; never normalize slow timeouts.
 - Hard-coding user IDs, tokens, or data paths. Discover the permitted test user via the `.testuser` markers under `data/users/**` and use that exact UID. Fail loudly if none exist.
 - Creating fake provider credentials, JWT payloads, or sqlite fixtures. If production requires them, the test runner must provide them beforehand.
 
