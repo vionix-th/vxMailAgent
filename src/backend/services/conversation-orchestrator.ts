@@ -107,12 +107,13 @@ export class ConversationOrchestrator {
     await this.stepLogger.logStepStart(threadId, stepType, emailId, context.thread.directorId);
     await this.stepLogger.logEngineStart(threadId, stepType, context.thread.messages.length, emailId, context.thread.directorId);
 
+    let engineTimeoutId: NodeJS.Timeout | undefined;
+
     try {
       const apiCfg = context.apiConfigs.find((c) => c.id === context.thread.apiConfigId);
       if (!apiCfg) {
         throw new Error(`API config not found for thread apiConfigId=${context.thread.apiConfigId}`);
       }
-      let engineTimeoutId: any;
       // Role gate first, then apply per-entity optional allowlist
       const role = context.thread.kind === 'director' ? 'director' : 'agent';
       const gatedToolDescriptors = role === 'director'
@@ -143,7 +144,10 @@ export class ConversationOrchestrator {
         }, Math.max(1, CONVERSATION_STEP_TIMEOUT_MS || 0));
       });
       const result = await Promise.race([enginePromise, engineTimeoutPromise]) as any;
-      clearTimeout(engineTimeoutId);
+      if (engineTimeoutId) {
+        clearTimeout(engineTimeoutId);
+        engineTimeoutId = undefined;
+      }
 
       // Log provider request/response
       if (result.request) {
@@ -180,6 +184,10 @@ export class ConversationOrchestrator {
 
     } catch (error: any) {
       const failureDuration = Date.now() - startTime;
+      if (engineTimeoutId) {
+        clearTimeout(engineTimeoutId);
+        engineTimeoutId = undefined;
+      }
       const meta: Record<string, unknown> = {
         runId: this.runId,
         accountId: this.accountId,

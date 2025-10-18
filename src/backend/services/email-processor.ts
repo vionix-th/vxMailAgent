@@ -5,7 +5,7 @@ import { ConversationOrchestrator, createUserRequest } from './conversation-orch
 import { repoFinalizeThreadStatus } from './conversation-mutations';
 import type { ContextInput } from '../utils/repo-access';
 import { newId } from '../utils/id';
-import { beginSpan, endSpan } from './logging';
+import { beginSpan, endSpan, endTrace } from './logging';
 import { ValidationError } from './error-handler';
 
 export interface EmailProcessingContext {
@@ -18,6 +18,7 @@ export interface EmailProcessingContext {
   agents: Agent[];
   prompts: Prompt[];
   apiConfigs: any[];
+  onAccountError?: (accountId: string, reason: string) => void;
 }
 
 export interface ProcessingResult {
@@ -364,6 +365,24 @@ snippet: ${envelope.snippet}`;
           finalizeErrorMessage = finalizeError?.message || String(finalizeError);
         }
 
+        try {
+          endTrace(context.traceId, 'error', orchestrationErrorMessage, orchestratorUserReq.context);
+        } catch (traceError: any) {
+          this.logFetch({
+            id: newId(),
+            timestamp: new Date().toISOString(),
+            level: 'warn',
+            provider: context.account.provider,
+            accountId: context.account.id,
+            emailId: thread.email.id,
+            event: 'trace_update_failed',
+            message: 'Failed to update email trace after orchestration error',
+            detail: traceError?.message || String(traceError)
+          });
+        }
+
+        context.onAccountError?.(context.account.id, orchestrationErrorMessage);
+
         this.logFetch({
           id: newId(),
           timestamp: new Date().toISOString(),
@@ -373,6 +392,7 @@ snippet: ${envelope.snippet}`;
           emailId: thread.email.id,
           event: 'orchestration_error',
           message: 'Failed to start director orchestration',
+          runId: context.runId,
           directorId: director.id,
           threadId: thread.id,
           detail: orchestrationErrorMessage,

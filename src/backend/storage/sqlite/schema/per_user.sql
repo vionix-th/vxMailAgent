@@ -171,7 +171,11 @@ CREATE TABLE IF NOT EXISTS fetcher_logs (
   event TEXT NOT NULL,
   email_id TEXT,
   count INTEGER,
-  detail_json TEXT CHECK(detail_json IS NULL OR json_valid(detail_json))
+  detail_json TEXT CHECK(detail_json IS NULL OR json_valid(detail_json)),
+  message TEXT,
+  run_id TEXT,
+  director_id TEXT,
+  thread_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_fetcher_logs_timestamp ON fetcher_logs(timestamp);

@@ -71,7 +71,8 @@ export class EmailFetcher {
         directors,
         agents,
         fetchStart,
-        runId
+        runId,
+        onAccountError
       });
       if (result.success) {
         onAccountSuccess?.(account.id);
@@ -105,8 +106,9 @@ export class EmailFetcher {
     agents: any[];
     fetchStart: string;
     runId: string;
+    onAccountError?: (accountId: string, reason: string) => void;
   }): Promise<AccountProcessResult> {
-    const { account, userReq, settings, filters, directors, agents, runId } = context;
+    const { account, userReq, settings, filters, directors, agents, runId, onAccountError } = context;
     const accountTraceId = beginTrace({ accountId: account.id, provider: account.provider }, userReq);
 
     try {
@@ -147,7 +149,8 @@ export class EmailFetcher {
           apiConfigs: settings.apiConfigs,
           userReq,
           accountTraceId,
-          runId
+          runId,
+          onAccountError
         });
       }
 
@@ -341,8 +344,9 @@ export class EmailFetcher {
     userReq: ContextInput;
     accountTraceId: string;
     runId: string;
+    onAccountError?: (accountId: string, reason: string) => void;
   }): Promise<void> {
-    const { envelope, account, filters, directors, agents, prompts, apiConfigs, userReq, runId } = context;
+    const { envelope, account, filters, directors, agents, prompts, apiConfigs, userReq, runId, onAccountError } = context;
     const emailTraceId = beginTrace({
       emailId: envelope.id,
       accountId: account.id,
@@ -359,19 +363,26 @@ export class EmailFetcher {
         directors,
         agents,
         prompts,
-        apiConfigs
+        apiConfigs,
+        onAccountError
       };
 
       const result = await this.emailProcessor.processEmail(processingContext, userReq);
-      
+
       if (result.success) {
         endTrace(emailTraceId, 'ok', 'Email processed successfully', userReq);
       } else {
         endTrace(emailTraceId, 'error', result.error || 'Processing failed', userReq);
+        if (typeof onAccountError === 'function') {
+          onAccountError(account.id, result.error || 'Processing failed');
+        }
       }
 
     } catch (error: any) {
       endTrace(emailTraceId, 'error', error.message, userReq);
+      if (typeof onAccountError === 'function') {
+        onAccountError(account.id, error?.message || String(error));
+      }
     }
   }
 }

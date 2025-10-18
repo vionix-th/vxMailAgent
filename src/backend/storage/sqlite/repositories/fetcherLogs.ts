@@ -3,6 +3,23 @@ import { FETCHER_TTL_DAYS, USER_MAX_LOGS_PER_TYPE } from '../../../config';
 import type { StorageHandle } from '../types';
 import { SqliteRepository, stringify } from './base';
 
+const EXTRA_COLUMNS: Array<{ name: string; ddl: string }> = [
+  { name: 'message', ddl: 'TEXT' },
+  { name: 'run_id', ddl: 'TEXT' },
+  { name: 'director_id', ddl: 'TEXT' },
+  { name: 'thread_id', ddl: 'TEXT' },
+];
+
+function ensureExtendedFetcherSchema(db: any) {
+  const rows = db.prepare('PRAGMA table_info(fetcher_logs)').all();
+  const existing = new Set(rows.map((row: any) => row.name));
+  for (const column of EXTRA_COLUMNS) {
+    if (!existing.has(column.name)) {
+      db.prepare(`ALTER TABLE fetcher_logs ADD COLUMN ${column.name} ${column.ddl}`).run();
+    }
+  }
+}
+
 function ensureLogString(value: unknown, field: string, id: string): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`fetcher log ${id}: ${field} missing`);
@@ -54,12 +71,16 @@ function pruneFetcherLogs(db: any) {
 export class FetcherLogRepository extends SqliteRepository {
   constructor(handle: StorageHandle) {
     super(handle);
+    void this.withConnection((db) => {
+      ensureExtendedFetcherSchema(db);
+      return undefined;
+    });
   }
 
   async list(): Promise<FetcherLogEntry[]> {
     return this.withConnection((db) => {
       const rows = db.prepare(
-        'SELECT id, timestamp, level, provider, account_id, event, email_id, count, detail_json FROM fetcher_logs ORDER BY timestamp'
+        'SELECT id, timestamp, level, provider, account_id, event, email_id, count, detail_json, message, run_id, director_id, thread_id FROM fetcher_logs ORDER BY timestamp'
       ).all();
       return rows.map((row: any) => {
         if (!row.account_id) {
@@ -74,9 +95,13 @@ export class FetcherLogRepository extends SqliteRepository {
           provider,
           accountId: row.account_id,
           event: row.event,
+          message: typeof row.message === 'string' ? row.message : null,
           emailId,
           count: typeof row.count === 'number' ? row.count : null,
           detail: row.detail_json ? JSON.parse(row.detail_json) : null,
+          runId: typeof row.run_id === 'string' ? row.run_id : null,
+          directorId: typeof row.director_id === 'string' ? row.director_id : null,
+          threadId: typeof row.thread_id === 'string' ? row.thread_id : null,
         } as FetcherLogEntry;
       });
     });
@@ -86,7 +111,7 @@ export class FetcherLogRepository extends SqliteRepository {
     await this.transaction((db) => {
       db.prepare('DELETE FROM fetcher_logs').run();
       const insert = db.prepare(
-        'INSERT INTO fetcher_logs (id, timestamp, level, provider, account_id, event, email_id, count, detail_json) VALUES (@id, @timestamp, @level, @provider, @account_id, @event, @email_id, @count, @detail_json)'
+        'INSERT INTO fetcher_logs (id, timestamp, level, provider, account_id, event, email_id, count, detail_json, message, run_id, director_id, thread_id) VALUES (@id, @timestamp, @level, @provider, @account_id, @event, @email_id, @count, @detail_json, @message, @run_id, @director_id, @thread_id)'
       );
       for (const entry of entries) {
         const provider = normalizeProvider(entry.provider, entry.id);
@@ -101,6 +126,10 @@ export class FetcherLogRepository extends SqliteRepository {
           email_id: emailId,
           count: typeof entry.count === 'number' ? entry.count : null,
           detail_json: entry.detail ? stringify(entry.detail) : null,
+          message: typeof entry.message === 'string' ? entry.message : null,
+          run_id: typeof entry.runId === 'string' ? entry.runId : null,
+          director_id: typeof entry.directorId === 'string' ? entry.directorId : null,
+          thread_id: typeof entry.threadId === 'string' ? entry.threadId : null,
         });
       }
       pruneFetcherLogs(db);
@@ -113,7 +142,7 @@ export class FetcherLogRepository extends SqliteRepository {
       const provider = normalizeProvider(entry.provider, entry.id);
       const emailId = normalizeEmailId(entry.emailId, entry.id);
       db.prepare(
-        'INSERT INTO fetcher_logs (id, timestamp, level, provider, account_id, event, email_id, count, detail_json) VALUES (@id, @timestamp, @level, @provider, @account_id, @event, @email_id, @count, @detail_json)'
+        'INSERT INTO fetcher_logs (id, timestamp, level, provider, account_id, event, email_id, count, detail_json, message, run_id, director_id, thread_id) VALUES (@id, @timestamp, @level, @provider, @account_id, @event, @email_id, @count, @detail_json, @message, @run_id, @director_id, @thread_id)'
       ).run({
         id: entry.id,
         timestamp: entry.timestamp,
@@ -124,6 +153,10 @@ export class FetcherLogRepository extends SqliteRepository {
         email_id: emailId,
         count: typeof entry.count === 'number' ? entry.count : null,
         detail_json: entry.detail ? stringify(entry.detail) : null,
+        message: typeof entry.message === 'string' ? entry.message : null,
+        run_id: typeof entry.runId === 'string' ? entry.runId : null,
+        director_id: typeof entry.directorId === 'string' ? entry.directorId : null,
+        thread_id: typeof entry.threadId === 'string' ? entry.threadId : null,
       });
       pruneFetcherLogs(db);
       return undefined;

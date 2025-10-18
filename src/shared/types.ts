@@ -250,6 +250,9 @@ export interface FetcherLogEntry {
   emailId: string | null;              // related email id or null when not applicable
   count?: number | null;               // optional count metric (e.g., messages listed)
   detail?: any;                        // structured payload (e.g., headers, error objects)
+  runId?: string | null;
+  directorId?: string | null;
+  threadId?: string | null;
   [key: string]: unknown;              // allow structured metadata extensions
 }
 
