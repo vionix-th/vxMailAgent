@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { OPENAI_REQUEST_TIMEOUT_MS } from '../config';
+import logger from '../services/logger';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 export interface ChatCompletionResult {
@@ -18,15 +19,16 @@ export async function chatCompletion(
 ): Promise<ChatCompletionResult> {
   if (String(process.env.VX_TEST_OPENAI_STUB || '').toLowerCase() === 'true') {
     const includeTools = Array.isArray((options as any)?.tools) ? (options as any).tools : [];
-    // Debug: surface tool names when stubbed
-    try {
-      const names = includeTools.map((t: any) => (t?.function || {}).name).filter(Boolean);
-      if (names.length) {
-        // eslint-disable-next-line no-console
-        console.debug('[OPENAI_STUB] tools:', names.join(','));
-      }
-    } catch {}
-    const supportsWorkspace = includeTools.some((t: any) => String((t?.function || {}).name) === 'workspace_add_item');
+    const toolNames = includeTools
+      .map((tool: any) => (tool && typeof tool === 'object' ? tool.function?.name : undefined))
+      .filter((name: unknown): name is string => typeof name === 'string' && name.trim().length > 0);
+    if (toolNames.length) {
+      logger.debug('[OPENAI_STUB] tools detected', { tools: toolNames });
+    }
+    const supportsWorkspace = includeTools.some((tool: any) => {
+      const name = tool && typeof tool === 'object' ? tool.function?.name : undefined;
+      return typeof name === 'string' && name === 'workspace_add_item';
+    });
     const agentId = process.env.VX_TEST_WORKSPACE_AGENT_ID || 'int-workspace-agent';
     if (supportsWorkspace || String(process.env.VX_TEST_FORCE_WORKSPACE_TOOLCALL || '').toLowerCase() === 'true') {
       const tc = {

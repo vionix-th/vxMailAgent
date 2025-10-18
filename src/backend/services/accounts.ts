@@ -8,7 +8,7 @@ import { ensureValidOutlookAccessToken, revokeOutlookToken } from '../oauth/outl
 import { toUserScopedContext, requireUid, getAccountsRepo } from '../utils/repo-access';
 import type { UserScopedContext, AppRequest } from '../interfaces';
 import type { Account } from '../../shared/types';
-import { isUuidV4 } from '../../shared/constructors';
+import { createAccount, isUuidV4 } from '../../shared/constructors';
 import { revokeGoogleToken } from '../oauth/google';
 
 // Data access helpers
@@ -26,7 +26,7 @@ export async function upsertAccount(source: AppRequest | UserScopedContext, next
     throw new ValidationError('Account id must be a UUID v4');
   }
 
-  const canonical: Account = { ...next };
+  let canonical = createAccount(next);
   const uid = requireUid(ctx);
 
   const existingById = await repo.getById(canonical.id);
