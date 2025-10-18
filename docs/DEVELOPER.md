@@ -230,10 +230,25 @@ Lint command (backend): `npm run lint` from `src/backend/`.
   - Director threads: `orchestrator.runConversationLoop({ ...context }, userReq, maxSteps)`
   - Agent threads: `orchestrator.runAgentAssistant(thread, userReq)`
 - The orchestrator encapsulates:
-  - Provider event logging for both roles via `ProviderEventLogger`.
-  - Director tool-call processing (e.g., `workspace_add_item`, `workspace_list_items`).
-  - Agent tool gating (mandatory + `agent.enabledOptionalTools`) and agent loop execution.
+- Provider event logging for both roles via `ProviderEventLogger`.
+- Director tool-call processing (e.g., `workspace_add_item`, `workspace_list_items`).
+- Agent tool gating (mandatory + `agent.enabledOptionalTools`) and agent loop execution.
 - Rationale: single source of truth for conversation behavior, thinner routes, and consistent diagnostics/persistence.
+
+#### Conversation API contracts (frontend + diagnostics)
+
+- `GET /api/conversations?limit=<n>&offset=<n>` returns `{ items: ConversationThread[] }` where each thread now includes:
+  - `messages`: ordered transcript; assistant messages may contain `tool_calls: [{ id, type: 'function', function: { name, arguments } }]`.
+  - Tool call arguments are serialized JSON strings; the corresponding tool response is persisted as a `role: 'tool'` message with matching `tool_call_id` and raw JSON content.
+  - `accountId`, `directorId`, `status`, `startedAt`, `lastActiveAt`, `endedAt` mirror repository fields.
+- `GET /api/conversations/:id` returns the thread object described above (no filtering of tool payloads).
+- `GET /api/conversations/:id/details` augments the thread with:
+  - `providerEvents`: ordered list of provider diagnostics for that conversation.
+  - `orchestrationEvents`: director/agent step log (success/failure, duration, tool count).
+  - `workspaceItems`: items created during the conversation.
+  - `metrics`: `{ stepCount, errorCount, toolCallCount }` summarising the run.
+- `GET /api/conversations/threads/:id/full` is used by diagnostics tooling; it returns the thread plus `toolCalls` array with parsed tool results (when JSON is valid) and any provider events scoped to that thread.
+- Trace persistence: each orchestrator run writes to `traces` with `status` set to `'error'` when the director loop aborts (e.g., timeout). Tests rely on `/api/cleanup/stats` to assert that trace records exist after failures.
 
 ## Terminology (Authoritative)
 
