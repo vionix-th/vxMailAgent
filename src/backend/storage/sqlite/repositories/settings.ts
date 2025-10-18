@@ -51,6 +51,9 @@ export class SettingsRepository extends SqliteRepository {
     if (typeof settings.sessionTimeoutMinutes !== 'number' || !Number.isFinite(settings.sessionTimeoutMinutes)) {
       throw new Error('SettingsRepository: sessionTimeoutMinutes must be a finite number');
     }
+    if (settings.sessionTimeoutMinutes <= 0) {
+      throw new Error('SettingsRepository: sessionTimeoutMinutes must be greater than zero');
+    }
     await this.transaction((db) => {
       db.prepare(
         'REPLACE INTO settings (id, virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes) VALUES (1, @virtual_root, @api_configs_json, @signatures_json, @fetcher_auto_start, @session_timeout_minutes)'
