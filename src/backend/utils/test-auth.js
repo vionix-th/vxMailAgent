@@ -1,9 +1,29 @@
 #!/usr/bin/env node
 
 const path = require('path');
-const { signJwt } = require('../dist/backend/utils/jwt');
-const { JWT_SECRET } = require('../dist/backend/config');
-const { SqliteConnectionFactory, SystemUsersRepository } = require('../dist/backend/storage/sqlite');
+const backendRoot = path.resolve(__dirname, '..');
+process.chdir(backendRoot);
+let hasTsNode = false;
+try {
+  const tsNode = require('ts-node');
+  tsNode.register({
+    project: path.resolve(__dirname, '..', 'tsconfig.json'),
+    transpileOnly: true,
+    compilerOptions: { module: 'commonjs' },
+  });
+  hasTsNode = true;
+} catch (error) {
+  // ts-node is required to execute TypeScript sources directly.
+}
+
+if (!hasTsNode) {
+  console.error('ts-node is required to run utils/test-auth.js. Install backend dependencies with "npm --prefix src/backend install".');
+  process.exit(1);
+}
+
+const { signJwt } = require('../utils/jwt.ts');
+const { JWT_SECRET } = require('../config.ts');
+const { SqliteConnectionFactory, SystemUsersRepository } = require('../storage/sqlite/index.ts');
 
 async function loadUserRepository() {
   const factory = new SqliteConnectionFactory();
@@ -24,7 +44,7 @@ async function generateTestToken(userId) {
     console.error('User not found:', userId);
     const users = await repo.list();
     console.log('Available users:');
-    users.forEach(u => console.log(`  ${u.id} (${u.email})`));
+    users.forEach((u) => console.log(`  ${u.id} (${u.email})`));
     process.exit(1);
   }
 
@@ -32,7 +52,7 @@ async function generateTestToken(userId) {
     uid: user.id,
     email: user.email,
     name: user.name,
-    picture: user.picture
+    picture: user.picture,
   };
 
   const token = signJwt(payload, JWT_SECRET, { expiresInSec: 3600 });
@@ -55,13 +75,13 @@ async function main() {
   if (args[0] === 'list') {
     const users = await getExistingUsers();
     console.log('Available users:');
-    users.forEach(u => {
+    users.forEach((u) => {
       console.log(`  ${u.id}`);
       console.log(`    Email: ${u.email}`);
       console.log(`    Name: ${u.name || 'N/A'}`);
       console.log('');
     });
-    return;
+    process.exit(0);
   }
 
   const userId = args[0];
@@ -76,10 +96,11 @@ async function main() {
   console.log('Or save to environment:');
   console.log(`export VX_TEST_TOKEN="${token}"`);
   console.log('curl -H "Authorization: Bearer $VX_TEST_TOKEN" http://localhost:3001/api/fetcher/status');
+  process.exit(0);
 }
 
 if (require.main === module) {
-  main().catch(err => {
+  main().catch((err) => {
     console.error('Failed to generate test token:', err?.message || err);
     process.exit(1);
   });
