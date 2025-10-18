@@ -1,4 +1,4 @@
-import { WorkspaceItem, WorkspaceContent } from '../../shared/types';
+import { WorkspaceItem, WorkspaceContent, WorkspaceProvenance } from '../../shared/types';
 import { ValidationError, NotFoundError } from './error-handler';
 import { newId } from '../utils/id';
 import { WorkspaceItemInput } from '../../shared/types';
@@ -61,15 +61,10 @@ export class WorkspaceService {
     if (typeof provenance.conversationId === 'string' && provenance.conversationId !== this.conversationId) {
       throw new ValidationError('provenance.conversationId mismatch');
     }
-    if (typeof provenance.emailId !== 'string' || !provenance.emailId) {
-      throw new ValidationError('provenance.emailId is required');
-    }
-    if (typeof provenance.createdBy !== 'string' || !provenance.createdBy) {
-      throw new ValidationError('provenance.createdBy is required');
-    }
-    if (typeof provenance.creatorId !== 'string' || !provenance.creatorId) {
-      throw new ValidationError('provenance.creatorId is required');
-    }
+    const validatedProv = this.validateProvenanceFields(provenance);
+    provenance.emailId = validatedProv.emailId;
+    provenance.createdBy = validatedProv.createdBy;
+    provenance.creatorId = validatedProv.creatorId;
 
     const nowIso = () => new Date().toISOString();
     const item: WorkspaceItem = {
@@ -113,6 +108,10 @@ export class WorkspaceService {
           throw new ValidationError('Cannot move workspace item to a different conversation');
         }
         nextProvenance = { ...nextProvenance, ...provPatch, conversationId: this.conversationId };
+        const validated = this.validateProvenanceFields(nextProvenance);
+        nextProvenance.emailId = validated.emailId;
+        nextProvenance.createdBy = validated.createdBy;
+        nextProvenance.creatorId = validated.creatorId;
       }
     }
 
@@ -179,6 +178,27 @@ export class WorkspaceService {
       throw new NotFoundError('Item not found');
     }
     return item;
+  }
+
+  private requireString(value: unknown, field: string): string {
+    if (typeof value !== 'string') {
+      throw new ValidationError(`${field} is required`);
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new ValidationError(`${field} is required`);
+    }
+    return trimmed;
+  }
+
+  private validateProvenanceFields(provenance: Record<string, unknown> | WorkspaceProvenance): { emailId: string; createdBy: WorkspaceProvenance['createdBy']; creatorId: string } {
+    const emailId = this.requireString((provenance as any).emailId, 'provenance.emailId');
+    const createdByRaw = this.requireString((provenance as any).createdBy, 'provenance.createdBy');
+    if (createdByRaw !== 'director' && createdByRaw !== 'agent' && createdByRaw !== 'tool') {
+      throw new ValidationError('provenance.createdBy must be director, agent, or tool');
+    }
+    const creatorId = this.requireString((provenance as any).creatorId, 'provenance.creatorId');
+    return { emailId, createdBy: createdByRaw as WorkspaceProvenance['createdBy'], creatorId };
   }
 
   private validateContent(content: WorkspaceContent): void {
