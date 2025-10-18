@@ -6,7 +6,7 @@ const dotenv = require('dotenv');
 const { backendRoot, requireBackend } = require('./paths');
 const { applyTestEnv } = require('./env');
 
-async function startBackend() {
+async function startBackend(options = {}) {
   if (!process.env.NODE_ENV) process.env.NODE_ENV = 'test';
   const originalCwd = process.cwd();
   process.chdir(backendRoot);
@@ -21,12 +21,24 @@ async function startBackend() {
   const tempDataDir = path.join(tempRoot, 'data');
   fs.cpSync(sourceDataDir, tempDataDir, { recursive: true, errorOnExist: false });
 
-  const restoreEnv = applyTestEnv({
+  const defaultEnv = {
     VX_MAILAGENT_DATA_DIR: tempDataDir,
     VX_TEST_MOCK_PROVIDER: 'true',
     VX_TEST_DISABLE_ORCHESTRATOR: 'true',
     VX_TEST_OPENAI_STUB: 'true',
-  });
+  };
+  const explicitEnv = options?.env ? { ...options.env } : {};
+  const mergedEnv = { ...defaultEnv, ...explicitEnv };
+  const finalEnv = {};
+  for (const [key, value] of Object.entries(mergedEnv)) {
+    if (key in explicitEnv) {
+      finalEnv[key] = value;
+      continue;
+    }
+    if (typeof process.env[key] !== 'undefined') continue;
+    finalEnv[key] = value;
+  }
+  const restoreEnv = applyTestEnv(finalEnv);
 
   const { createServer } = requireBackend('server.js');
   const { shutdownRepos } = requireBackend('initRepos.js');
@@ -74,8 +86,8 @@ async function startBackend() {
 
 module.exports = { startBackend };
 
-async function withServer(fn) {
-  const ctx = await startBackend();
+async function withServer(fn, options) {
+  const ctx = await startBackend(options);
   try {
     return await fn(ctx);
   } finally {
