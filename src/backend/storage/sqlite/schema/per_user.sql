@@ -19,8 +19,7 @@ CREATE TABLE IF NOT EXISTS settings (
   api_configs_json TEXT NOT NULL CHECK(json_valid(api_configs_json)),
   signatures_json TEXT NOT NULL CHECK(json_valid(signatures_json)),
   fetcher_auto_start INTEGER NOT NULL CHECK(fetcher_auto_start IN (0, 1)),
-  session_timeout_minutes INTEGER NOT NULL CHECK(session_timeout_minutes > 0),
-  payload_json TEXT NOT NULL CHECK(json_valid(payload_json))
+  session_timeout_minutes INTEGER NOT NULL CHECK(session_timeout_minutes > 0)
 );
 
 CREATE TABLE IF NOT EXISTS prompts (

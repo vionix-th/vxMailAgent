@@ -22,7 +22,7 @@ export class SettingsRepository extends SqliteRepository {
   async load(): Promise<SettingsRow | null> {
     return this.withConnection((db) => {
       const row = db.prepare(
-        'SELECT virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes, payload_json FROM settings WHERE id = 1'
+        'SELECT virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes FROM settings WHERE id = 1'
       ).get() as any;
       if (!row) return null;
 
@@ -32,22 +32,12 @@ export class SettingsRepository extends SqliteRepository {
       const signaturesRaw = JSON.parse(row.signatures_json);
       assertRecord(signaturesRaw, 'signatures');
 
-      let payload: Record<string, unknown> | undefined;
-      if (row.payload_json) {
-        const parsed = JSON.parse(row.payload_json);
-        if (parsed !== null) {
-          assertRecord(parsed, 'payload');
-          payload = parsed as Record<string, unknown>;
-        }
-      }
-
       return {
         virtualRoot: row.virtual_root,
         apiConfigs: apiConfigsRaw,
         signatures: signaturesRaw as Record<string, string>,
         fetcherAutoStart: Boolean(row.fetcher_auto_start),
         sessionTimeoutMinutes: Number(row.session_timeout_minutes),
-        ...(payload ? { payload } : {}),
       } as SettingsRow;
     });
   }
@@ -61,22 +51,15 @@ export class SettingsRepository extends SqliteRepository {
     if (typeof settings.sessionTimeoutMinutes !== 'number' || !Number.isFinite(settings.sessionTimeoutMinutes)) {
       throw new Error('SettingsRepository: sessionTimeoutMinutes must be a finite number');
     }
-    let payloadJson: string | null = null;
-    if (settings.payload !== undefined) {
-      assertRecord(settings.payload, 'payload');
-      payloadJson = stringify(settings.payload);
-    }
-
     await this.transaction((db) => {
       db.prepare(
-        'REPLACE INTO settings (id, virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes, payload_json) VALUES (1, @virtual_root, @api_configs_json, @signatures_json, @fetcher_auto_start, @session_timeout_minutes, @payload_json)'
+        'REPLACE INTO settings (id, virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes) VALUES (1, @virtual_root, @api_configs_json, @signatures_json, @fetcher_auto_start, @session_timeout_minutes)'
       ).run({
         virtual_root: settings.virtualRoot,
         api_configs_json: stringify(settings.apiConfigs),
         signatures_json: stringify(settings.signatures),
         fetcher_auto_start: settings.fetcherAutoStart ? 1 : 0,
         session_timeout_minutes: settings.sessionTimeoutMinutes,
-        payload_json: payloadJson,
       });
       return undefined;
     });

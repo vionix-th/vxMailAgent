@@ -19,7 +19,6 @@ export interface SettingsRow {
   signatures: Record<string, string>;
   fetcherAutoStart: boolean;
   sessionTimeoutMinutes: number;
-  payload?: Record<string, unknown>;
 }
 
 export interface SettingsRepository {
