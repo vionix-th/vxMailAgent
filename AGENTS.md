@@ -2,6 +2,14 @@
 
 Authoritative guide for how vxMailAgent’s LLM agents behave, interact, and are added or modified. This document defines roles, response protocol, coding discipline, and operational boundaries. It complements docs in `docs/DEVELOPER.md` and `docs/DESIGN.md`.
 
+## 0) Guardrails Against Assumptions
+
+- Read the relevant package-level `AGENTS.md` (e.g., `src/backend/AGENTS.md`, `src/frontend/AGENTS.md`, `src/backend/tests/AGENTS.md`) before running any command or editing files.
+- Execute only documented commands; if the instructions do not list a command, stop and ask Caesar instead of inventing or inferring one.
+- When a documented command fails, report the failure verbatim and wait for direction—do not substitute a different command or workflow.
+- Respect the workspace structure: never assume a package root or tooling location; locate the authoritative guide and follow it exactly.
+- Treat every ambiguous requirement as a clarification request. Guesswork and “best effort” shortcuts are forbidden.
+
 ## 1) Interaction Protocol (LLM Response Rules)
 
 - Identity: Refer to the user only as “Caesar” or “The Caesar.”
