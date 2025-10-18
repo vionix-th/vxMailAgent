@@ -637,6 +637,9 @@ const resources = {
             account: 'Account',
             event: 'Event',
             message: 'Message',
+            runId: 'Run ID',
+            director: 'Director ID',
+            thread: 'Thread ID',
             email: 'Email',
             count: 'Count',
             actions: 'Actions'
@@ -650,6 +653,9 @@ const resources = {
             message: 'Message:',
             provider: 'Provider:',
             account: 'Account:',
+            runId: 'Run ID:',
+            director: 'Director ID:',
+            thread: 'Thread ID:',
             email: 'Email:',
             count: 'Count:'
           },
@@ -771,6 +777,9 @@ const resources = {
           title: 'Conversation: {{id}}',
           transcript: 'Transcript',
           noMessages: 'No messages',
+          toolCall: 'Tool call',
+          noToolContent: 'No tool response payload',
+          noContent: 'No message content',
           labels: {
             lastActive: 'Last Active',
             endedAt: 'Ended At'

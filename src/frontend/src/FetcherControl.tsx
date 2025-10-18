@@ -241,7 +241,7 @@ const FetcherControl: React.FC = () => {
       if (accountFilter && !e.accountId && accountFilter) return false;
       if (eventFilter && !e.event.toLowerCase().includes(eventFilter.toLowerCase())) return false;
       if (q) {
-        const hay = `${e.message || ''} ${e.event} ${e.emailId || ''}`.toLowerCase();
+        const hay = `${e.message || ''} ${e.event} ${e.emailId || ''} ${e.runId || ''} ${e.directorId || ''} ${e.threadId || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -430,6 +430,9 @@ const FetcherControl: React.FC = () => {
                     <TableCell>{t('fetcher.logs.headers.account')}</TableCell>
                     <TableCell>{t('fetcher.logs.headers.event')}</TableCell>
                     <TableCell>{t('fetcher.logs.headers.message')}</TableCell>
+                    <TableCell>{t('fetcher.logs.headers.runId')}</TableCell>
+                    <TableCell>{t('fetcher.logs.headers.director')}</TableCell>
+                    <TableCell>{t('fetcher.logs.headers.thread')}</TableCell>
                     <TableCell>{t('fetcher.logs.headers.email')}</TableCell>
                     <TableCell>{t('fetcher.logs.headers.count')}</TableCell>
                     <TableCell padding="checkbox" sx={{ width: 56 }} align="right"></TableCell>
@@ -458,6 +461,9 @@ const FetcherControl: React.FC = () => {
                           {e.message || ''}
                         </Typography>
                       </TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{e.runId || ''}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{e.directorId || ''}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{e.threadId || ''}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace' }}>{e.emailId || ''}</TableCell>
                       <TableCell>{typeof e.count === 'number' ? e.count : ''}</TableCell>
                       <TableCell padding="checkbox" onClick={(ev) => ev.stopPropagation()} sx={{ verticalAlign: 'middle' }} align="right">
@@ -487,6 +493,9 @@ const FetcherControl: React.FC = () => {
                   <Typography variant="body2" sx={{ mb: 1 }}>
                     <strong>{t('fetcher.logs.labels.provider')}</strong> {activeEntry.provider || ''} {' '}
                     <strong>{t('fetcher.logs.labels.account')}</strong> <span style={{ fontFamily: 'monospace' }}>{activeEntry.accountId || ''}</span> {' '}
+                    <strong>{t('fetcher.logs.labels.runId')}</strong> <span style={{ fontFamily: 'monospace' }}>{activeEntry.runId || ''}</span> {' '}
+                    <strong>{t('fetcher.logs.labels.director')}</strong> <span style={{ fontFamily: 'monospace' }}>{activeEntry.directorId || ''}</span> {' '}
+                    <strong>{t('fetcher.logs.labels.thread')}</strong> <span style={{ fontFamily: 'monospace' }}>{activeEntry.threadId || ''}</span> {' '}
                     <strong>{t('fetcher.logs.labels.email')}</strong> <span style={{ fontFamily: 'monospace' }}>{activeEntry.emailId || ''}</span> {' '}
                     <strong>{t('fetcher.logs.labels.count')}</strong> {typeof activeEntry.count === 'number' ? activeEntry.count : ''}
                   </Typography>

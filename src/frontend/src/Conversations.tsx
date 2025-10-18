@@ -72,6 +72,54 @@ export default function Conversations() {
   const [editMimeType, setEditMimeType] = useState('');
   const [editEncoding, setEditEncoding] = useState<'utf8'|'base64'|'binary'|''>('');
 
+  const renderMessageContent = (message: any) => {
+    const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+    if (toolCalls.length) {
+      return (
+        <Stack spacing={1} sx={{ mt: 0.5 }}>
+          {toolCalls.map((tc: any) => {
+            const args = typeof tc?.function?.arguments === 'string' ? tc.function.arguments : '';
+            const preview = args.length > 160 ? `${args.slice(0, 160)}…` : args;
+            return (
+              <Box key={tc?.id || `${tc?.function?.name}-${preview}`}
+                sx={{ fontFamily: 'monospace' }}>
+                <Typography variant="caption" color="text.secondary">{t('conversations.detail.toolCall')}</Typography>
+                <Typography variant="body2">{tc?.function?.name || 'unknown'}({preview})</Typography>
+              </Box>
+            );
+          })}
+        </Stack>
+      );
+    }
+
+    if (message?.role === 'tool') {
+      const payload = typeof message?.content === 'string' ? message.content : '';
+      if (payload) {
+        try {
+          const parsed = JSON.parse(payload);
+          return (
+            <pre style={{ margin: 0, maxHeight: 160, overflow: 'auto' }}>{JSON.stringify(parsed, null, 2)}</pre>
+          );
+        } catch {
+          return <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{payload}</Typography>;
+        }
+      }
+      return <Typography variant="body2" color="text.secondary">{t('conversations.detail.noToolContent')}</Typography>;
+    }
+
+    if (typeof message?.content === 'string' && message.content.trim()) {
+      return <ReactMarkdown>{message.content}</ReactMarkdown>;
+    }
+
+    if (Array.isArray(message?.content)) {
+      return (
+        <pre style={{ margin: 0, maxHeight: 160, overflow: 'auto' }}>{JSON.stringify(message.content, null, 2)}</pre>
+      );
+    }
+
+    return <Typography variant="body2" color="text.secondary">{t('conversations.detail.noContent')}</Typography>;
+  };
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -356,7 +404,7 @@ export default function Conversations() {
               <Box key={idx} sx={{ mb: 1.5 }}>
                 <Typography variant="caption" color="text.secondary">{m.role}</Typography>
                 <Box sx={{ pl: 1 }}>
-                  <ReactMarkdown>{String(m.content ?? '')}</ReactMarkdown>
+                  {renderMessageContent(m)}
                 </Box>
               </Box>
             ))}

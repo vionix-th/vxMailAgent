@@ -89,6 +89,25 @@ export default function ConversationInspector({
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
   const [selectedJson, setSelectedJson] = useState<any>(null);
 
+  const summarizeMessage = (message: PromptMessage): string => {
+    const toolCalls = Array.isArray((message as any)?.tool_calls) ? (message as any).tool_calls : [];
+    if (toolCalls.length) {
+      const names = toolCalls.map((tc: any) => tc?.function?.name || 'unknown').join(', ');
+      return `Tool call → ${names}`;
+    }
+    if (message.role === 'tool') {
+      const payload = typeof (message as any)?.content === 'string' ? (message as any).content : '';
+      if (payload) {
+        return `Tool result (${(message as any)?.name || 'tool'})`;
+      }
+      return 'Tool result (empty payload)';
+    }
+    if (typeof message.content === 'string' && message.content.trim()) {
+      return message.content.length > 120 ? `${message.content.slice(0, 120)}…` : message.content;
+    }
+    return 'No content';
+  };
+
   const loadConversation = async () => {
     setLoading(true);
     setError(null);
@@ -231,14 +250,7 @@ export default function ConversationInspector({
                     </ListItemIcon>
                     <ListItemText
                       primary={`${message.role} message`}
-                      secondary={
-                        <Typography variant="body2" noWrap>
-                          {typeof message.content === 'string' 
-                            ? message.content.substring(0, 100) + (message.content.length > 100 ? '...' : '')
-                            : 'Complex content'
-                          }
-                        </Typography>
-                      }
+                      secondary={<Typography variant="body2" noWrap>{summarizeMessage(message)}</Typography>}
                     />
                   </ListItem>
                 ))}
