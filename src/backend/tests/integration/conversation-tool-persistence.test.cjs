@@ -7,6 +7,7 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -53,8 +54,9 @@ test('conversation API preserves tool call and tool result messages', { concurre
     assert.ok(toolResponse, 'Expected matching tool response message');
     assert.ok(typeof toolResponse.content === 'string' && toolResponse.content.length > 0, 'Tool response should include payload content');
   }, {
-    env: {
-      VX_TEST_DISABLE_ORCHESTRATOR: 'false',
-    }
+    env: createTestEnv({
+      VX_TEST_MOCK_PROVIDER: 'true',
+      VX_TEST_OPENAI_STUB: 'true',
+    }),
   });
 });

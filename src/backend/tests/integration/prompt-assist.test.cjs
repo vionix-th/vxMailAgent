@@ -6,6 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -74,5 +75,7 @@ test('integration: prompt-assist endpoints with OpenAI stub', { concurrency: fal
         await fetch(`${baseUrl}/api/settings/api-configs/${encodeURIComponent(created.apiConfigId)}`, { method: 'DELETE', headers: sessionHeaders }).catch(() => {});
       }
     }
+  }, {
+    env: createTestEnv({ VX_TEST_OPENAI_STUB: 'true' }),
   });
 });

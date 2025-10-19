@@ -6,6 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -61,9 +62,10 @@ test('integration: orchestrator timeout surfaces diagnostics metadata', { concur
     });
     assert.ok(failedThreads.length > 0, 'expected at least one failed thread recorded in conversations list');
   }, {
-    env: {
-      VX_TEST_DISABLE_ORCHESTRATOR: 'false',
+    env: createTestEnv({
+      VX_TEST_MOCK_PROVIDER: 'true',
+      VX_TEST_OPENAI_STUB: 'true',
       VX_TEST_FORCE_OPENAI_ERROR: 'timeout',
-    }
+    }),
   });
 });

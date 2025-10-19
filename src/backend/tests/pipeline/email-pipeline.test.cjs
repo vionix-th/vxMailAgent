@@ -7,6 +7,7 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -27,7 +28,12 @@ function ensureNonEmpty(collection, label, instruction) {
 
 test('pipeline uses pre-seeded configuration to complete director and agent flow', { concurrency: false, timeout: 15000 }, async () => {
   const startTimestamp = Date.now();
-  const { baseUrl, stop } = await startBackend();
+  const { baseUrl, stop } = await startBackend({
+    env: createTestEnv({
+      VX_TEST_MOCK_PROVIDER: 'true',
+      VX_TEST_DISABLE_ORCHESTRATOR: 'true',
+    }),
+  });
   const { headers: sessionHeaders } = await createSession(baseUrl, uid);
   const authHeaders = (extra = {}) => ({ ...sessionHeaders, ...extra });
 

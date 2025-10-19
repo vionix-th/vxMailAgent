@@ -9,6 +9,7 @@ const {
   createLogCapture,
   assertMetaFields,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -129,5 +130,10 @@ test('integration: orchestrator emits structured failure when apiConfig missing'
       }
       logCapture.stop();
     }
+  }, {
+    env: createTestEnv({
+      VX_TEST_MOCK_PROVIDER: 'true',
+      VX_TEST_OPENAI_STUB: 'true',
+    }),
   });
 });

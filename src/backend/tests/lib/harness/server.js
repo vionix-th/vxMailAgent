@@ -5,6 +5,7 @@ const os = require('os');
 const dotenv = require('dotenv');
 const { backendRoot, requireBackend } = require('./paths');
 const { applyTestEnv } = require('./env');
+const { BASE_TEST_ENV } = require('../testEnv');
 
 async function startBackend(options = {}) {
   if (!process.env.NODE_ENV) process.env.NODE_ENV = 'test';
@@ -23,22 +24,14 @@ async function startBackend(options = {}) {
 
   const defaultEnv = {
     VX_MAILAGENT_DATA_DIR: tempDataDir,
-    VX_TEST_MOCK_PROVIDER: 'true',
-    VX_TEST_DISABLE_ORCHESTRATOR: 'true',
-    VX_TEST_OPENAI_STUB: 'true',
+    ...BASE_TEST_ENV,
   };
   const explicitEnv = options?.env ? { ...options.env } : {};
-  const mergedEnv = { ...defaultEnv, ...explicitEnv };
-  const finalEnv = {};
-  for (const [key, value] of Object.entries(mergedEnv)) {
-    if (key in explicitEnv) {
-      finalEnv[key] = value;
-      continue;
-    }
-    if (typeof process.env[key] !== 'undefined') continue;
-    finalEnv[key] = value;
-  }
+  const finalEnv = { ...defaultEnv, ...explicitEnv };
   const restoreEnv = applyTestEnv(finalEnv);
+  if (process.env.VX_MAILAGENT_DATA_DIR !== tempDataDir) {
+    throw new Error(`Harness failed to isolate data dir (expected ${tempDataDir}, got ${process.env.VX_MAILAGENT_DATA_DIR || '<unset>'})`);
+  }
 
   const { createServer } = requireBackend('server.js');
   const { shutdownRepos } = requireBackend('initRepos.js');

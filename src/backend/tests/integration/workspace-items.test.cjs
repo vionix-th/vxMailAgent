@@ -7,6 +7,7 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -15,10 +16,13 @@ function authHeaders(sessionHeaders, extra = {}) {
 }
 
 test('integration: workspace items via tool call + revision guards', { concurrency: false, timeout: 25000 }, async () => {
-  // Force tool-call stub for this test only
-  process.env.VX_TEST_FORCE_WORKSPACE_TOOLCALL = 'true';
-  // Align stub agent id with provider stub default
-  const stubAgentId = process.env.VX_TEST_WORKSPACE_AGENT_ID || 'int-workspace-agent';
+  const testEnv = createTestEnv({
+    VX_TEST_MOCK_PROVIDER: 'true',
+    VX_TEST_DISABLE_ORCHESTRATOR: 'true',
+    VX_TEST_OPENAI_STUB: 'true',
+    VX_TEST_FORCE_WORKSPACE_TOOLCALL: 'true',
+  });
+  const stubAgentId = testEnv.VX_TEST_WORKSPACE_AGENT_ID;
   await withServer(async ({ baseUrl }) => {
     const { headers: sessionHeaders } = await createSession(baseUrl, uid);
     const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
@@ -150,5 +154,5 @@ test('integration: workspace items via tool call + revision guards', { concurren
         if (fetcherTriggered) await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: jsonHeaders });
       } catch {}
     }
-  });
+  }, { env: testEnv });
 });

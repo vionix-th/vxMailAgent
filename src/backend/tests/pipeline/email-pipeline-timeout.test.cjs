@@ -6,6 +6,7 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 
 const { uid } = require('../lib/harness').discoverTestUser();
 
@@ -16,10 +17,11 @@ function authHeaders(sessionHeaders, extra = {}) {
 test('pipeline surfaces orchestrator timeout diagnostics', { concurrency: false, timeout: 25000 }, async () => {
   const runStart = Date.now();
   const { baseUrl, stop } = await startBackend({
-    env: {
-      VX_TEST_DISABLE_ORCHESTRATOR: 'false',
+    env: createTestEnv({
+      VX_TEST_MOCK_PROVIDER: 'true',
+      VX_TEST_OPENAI_STUB: 'true',
       VX_TEST_FORCE_OPENAI_ERROR: 'timeout',
-    }
+    }),
   });
 
   const { headers: sessionHeaders } = await createSession(baseUrl, uid);

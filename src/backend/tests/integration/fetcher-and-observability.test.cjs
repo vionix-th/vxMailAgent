@@ -6,6 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 // Acceptance: assumes fetcher routes are enabled for the `.testuser` and conversations may be absent.
 const { uid } = discoverTestUser();
 
@@ -14,7 +15,12 @@ function authHeaders(sessionHeaders, extra = {}) {
 }
 
 test('integration: fetcher controls and observability endpoints', { concurrency: false, timeout: 20000 }, async () => {
-  const { baseUrl, stop } = await startBackend();
+  const { baseUrl, stop } = await startBackend({
+    env: createTestEnv({
+      VX_TEST_MOCK_PROVIDER: 'true',
+      VX_TEST_DISABLE_ORCHESTRATOR: 'true',
+    }),
+  });
   const { headers: sessionHeaders } = await createSession(baseUrl, uid);
   const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 

@@ -8,6 +8,7 @@ const {
   waitFor,
   createLogCapture,
 } = require('../lib/harness');
+const { createTestEnv } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -245,5 +246,10 @@ test('integration: conversations pagination, message append, and workspace acces
       }
       logCapture.stop();
     }
+  }, {
+    env: createTestEnv({
+      VX_TEST_MOCK_PROVIDER: 'true',
+      VX_TEST_OPENAI_STUB: 'true',
+    }),
   });
 });
