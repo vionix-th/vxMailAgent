@@ -11,7 +11,7 @@
 - **Single Source:** Update the shared type and fix all dependents in the same change; do not add shims or duplicate shapes.
 
 ## Tooling
-- **Build Consumers:** Run backend/frontend builds after changing shared types to catch breakage (`npm run build` in each package).
+- **Build Consumers:** After changing shared types, execute `npm --prefix src/backend run build` and `npm --prefix src/frontend run build` to catch breakage.
 - **Testing:** Coordinate with owning package maintainers before adding new shared-level tests; backend integration suites remain the verifier.
 
 ## References

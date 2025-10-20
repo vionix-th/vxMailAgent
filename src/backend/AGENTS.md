@@ -21,7 +21,7 @@
 
 ## Harness & Testing
 - **Build First:** `npm --prefix src/backend run build` so compiled modules exist under `dist/backend`.
-- **Run Integration Suites:** `cd src && node --test --test-reporter=spec backend/tests/integration/*.cjs`
+- **Run Integration Suites:** `cd src/backend && node --test --test-reporter=spec tests/integration/*.cjs`
 - **Harness Wrapper:** Use `withServer(async ({ baseUrl }) => { ... })` plus `createSession()` and `createLogCapture()` from `tests/lib`; ensure cleanup in `finally`.
 - **Charters:** See `src/backend/tests/AGENTS.md` for destructive-test rules and appendices for pipeline/integration specifics.
 
