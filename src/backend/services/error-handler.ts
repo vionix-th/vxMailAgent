@@ -43,6 +43,17 @@ export class OrchestrationError extends Error {
   }
 }
 
+export class ConversationTimeoutError extends OrchestrationError {
+  constructor(
+    message: string = 'Conversation exceeded step limit',
+    code: string = 'CONVERSATION_TIMEOUT',
+    statusCode: number = 504
+  ) {
+    super(message, code, statusCode);
+    this.name = 'ConversationTimeoutError';
+  }
+}
+
 export class InvalidAgentConfigError extends OrchestrationError {
   constructor(
     message: string = 'Invalid agent configuration',

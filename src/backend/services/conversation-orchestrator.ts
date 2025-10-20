@@ -11,7 +11,7 @@ import { conversationEngine } from './engine';
 import { newId } from '../utils/id';
 import { repoAppendMessage, repoAppendMessages, repoFinalizeThreadStatus, repoGetThreadById } from './conversation-mutations';
 import { extractLastUserContent } from '../utils/message-transformers';
-import { InvalidAgentConfigError, ValidationError } from './error-handler';
+import { ConversationTimeoutError, InvalidAgentConfigError, ValidationError } from './error-handler';
 import { serializeApiConfig, ApiConfigView } from './apiConfigSerializer';
 import { resolveAgentToolDescriptors, resolveDirectorToolDescriptors } from './tool-config-service';
 
@@ -234,6 +234,7 @@ export class ConversationOrchestrator {
   ): Promise<ConversationThread> {
     let currentThread = context.thread;
     let stepCount = 0;
+    let lastStepResult: ConversationStepResult | null = null;
 
     while (stepCount < maxSteps) {
       const stepResult = await this.runConversationStep(
@@ -241,6 +242,7 @@ export class ConversationOrchestrator {
         userReq
       );
 
+      lastStepResult = stepResult;
       currentThread = stepResult.updatedThread;
       stepCount++;
 
@@ -254,6 +256,13 @@ export class ConversationOrchestrator {
         await repoFinalizeThreadStatus(userReq.repos, userReq.context, currentThread.id, 'completed');
         break;
       }
+    }
+
+    if (stepCount >= maxSteps && (!lastStepResult || lastStepResult.shouldContinue)) {
+      await repoFinalizeThreadStatus(userReq.repos, userReq.context, currentThread.id, 'failed');
+      throw new ConversationTimeoutError(
+        `Conversation ${currentThread.id} exceeded the step cap (${maxSteps})`
+      );
     }
 
     return currentThread;
@@ -772,6 +781,9 @@ export class ConversationOrchestrator {
       throw new ValidationError('workspace_add_item: data is required');
     }
 
+    const provenanceCreatedBy = agentId ? 'agent' : 'director';
+    const provenanceCreatorId = agentId || context.thread.directorId;
+
     const payload: any = {
       label: typeof args.label === 'string' ? args.label : (typeof args.title === 'string' ? args.title : 'Untitled'),
       description: typeof args.description === 'string' ? args.description : undefined,
@@ -783,8 +795,8 @@ export class ConversationOrchestrator {
       provenance: {
         emailId: context.thread.email.id,
         conversationId,
-        createdBy: 'director' as const,
-        creatorId: context.thread.directorId,
+        createdBy: provenanceCreatedBy,
+        creatorId: provenanceCreatorId,
         toolName: toolCall?.name || 'workspace_add_item'
       },
     };
@@ -817,14 +829,16 @@ export class ConversationOrchestrator {
     userReq: UserRequest
   ): Promise<void> {
     try {
-      const apiConfigs = (await userReq.repos.getSettings(requireContext(userReq.context))).apiConfigs as ApiConfig[];
-      const apiConfig = apiConfigs.find((c) => c.id === parentThread.apiConfigId);
-      if (!apiConfig) {
-        logger.warn('API config not found for agent conversation', { apiConfigId: parentThread.apiConfigId });
-        return;
-      }
-
       const verifiedAgentThread = this.requireAgentThread(agentThread, 'executeAgentConversation');
+      const apiConfigs = (await userReq.repos.getSettings(requireContext(userReq.context))).apiConfigs as ApiConfig[];
+      const agentApiConfigId = verifiedAgentThread.apiConfigId;
+      if (typeof agentApiConfigId !== 'string' || !agentApiConfigId.trim()) {
+        throw new ValidationError('Agent thread missing apiConfigId', 'AGENT_API_CONFIG_ID_MISSING');
+      }
+      const apiConfig = apiConfigs.find((c) => c.id === agentApiConfigId);
+      if (!apiConfig) {
+        throw new ValidationError(`API config ${agentApiConfigId} not found for agent conversation`, 'AGENT_API_CONFIG_NOT_FOUND', 404);
+      }
 
       // Equal tool exposure for agent, except spawning further agents (disabled)
       const agents = await userReq.repos.getAgents(userReq.context);

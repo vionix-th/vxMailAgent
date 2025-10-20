@@ -28,7 +28,8 @@ test('integration: workspace items via tool call + revision guards', { concurren
     const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
 
   const ids = {
-    apiConfig: `int-ws-cfg-${Date.now()}`,
+    directorConfig: `int-ws-dir-cfg-${Date.now()}`,
+    agentConfig: `int-ws-agent-cfg-${Date.now()}`,
     agent: stubAgentId,
     director: `int-ws-director-${Date.now()}`,
     filter: `int-ws-filter-${Date.now()}`,
@@ -37,13 +38,21 @@ test('integration: workspace items via tool call + revision guards', { concurren
   let fetcherTriggered = false;
 
   try {
-    // Create stubbed ApiConfig
-    const createCfg = await fetchJson(baseUrl, '/api/settings/api-configs', {
+    // Create stubbed ApiConfig for director
+    const createDirectorCfg = await fetchJson(baseUrl, '/api/settings/api-configs', {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ id: ids.apiConfig, name: 'WS Stub', model: 'gpt-4o-mini', apiKey: 'sk-stub', provider: 'openai' }),
+      body: JSON.stringify({ id: ids.directorConfig, name: 'WS Director Stub', model: 'gpt-4o-mini', apiKey: 'sk-director', provider: 'openai' }),
     });
-    assert.strictEqual(createCfg.status, 201, 'failed to create api config');
+    assert.strictEqual(createDirectorCfg.status, 201, 'failed to create director api config');
+
+    // Create stubbed ApiConfig for agent with distinct characteristics
+    const createAgentCfg = await fetchJson(baseUrl, '/api/settings/api-configs', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ id: ids.agentConfig, name: 'WS Agent Stub', model: 'gpt-agent-special', apiKey: 'sk-agent', provider: 'openai' }),
+    });
+    assert.strictEqual(createAgentCfg.status, 201, 'failed to create agent api config');
 
     // Choose a prompt
     const promptsRes = await fetchJson(baseUrl, '/api/prompts', { headers: sessionHeaders });
@@ -55,7 +64,7 @@ test('integration: workspace items via tool call + revision guards', { concurren
     const createAgent = await fetchJson(baseUrl, '/api/agents', {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ id: ids.agent, name: 'WS Agent', type: 'openai', promptId: prompt.id, apiConfigId: ids.apiConfig, enabledOptionalTools: [] }),
+      body: JSON.stringify({ id: ids.agent, name: 'WS Agent', type: 'openai', promptId: prompt.id, apiConfigId: ids.agentConfig, enabledOptionalTools: [] }),
     });
     assert.strictEqual(createAgent.status, 201, 'agent creation failed');
 
@@ -63,7 +72,7 @@ test('integration: workspace items via tool call + revision guards', { concurren
     const createDirector = await fetchJson(baseUrl, '/api/directors', {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ id: ids.director, name: 'WS Director', agentIds: [ids.agent], promptId: prompt.id, apiConfigId: ids.apiConfig, enabledOptionalTools: [] }),
+      body: JSON.stringify({ id: ids.director, name: 'WS Director', agentIds: [ids.agent], promptId: prompt.id, apiConfigId: ids.directorConfig, enabledOptionalTools: [] }),
     });
     assert.strictEqual(createDirector.status, 201, 'director creation failed');
 
@@ -90,8 +99,13 @@ test('integration: workspace items via tool call + revision guards', { concurren
     assert.ok(directorThread && directorThread.id, 'director thread missing');
 
     // Call assistant once: the stub will emit a workspace_add_item tool_call targeting our agent id
-    const assistant = await fetchJson(baseUrl, `/api/conversations/${encodeURIComponent(directorThread.id)}/assistant`, { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
-    assert.strictEqual(assistant.ok, true, 'assistant call should succeed with stub responses');
+    const assistant = await fetchJson(baseUrl, `/api/conversations/${encodeURIComponent(directorThread.id)}/assistant`, {
+      method: 'POST',
+      headers: jsonHeaders,
+    }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
+    assert.strictEqual(assistant.status, 504, 'assistant call should fail with conversation timeout');
+    assert.strictEqual(assistant.ok, false, 'assistant timeout response must set success=false');
+    assert.strictEqual(assistant.data?.code, 'CONVERSATION_TIMEOUT', 'expected conversation timeout error code');
 
     // Workspace items are scoped to the agent child thread; locate it
     const agentThread = await waitFor(async () => {
@@ -102,12 +116,18 @@ test('integration: workspace items via tool call + revision guards', { concurren
     }, { timeoutMs: TEST_TIMEOUTS.wait.medium, intervalMs: 200 });
     assert.ok(agentThread && agentThread.id, 'agent child thread missing');
 
+    const refreshedDirector = await fetchJson(baseUrl, `/api/conversations/${encodeURIComponent(directorThread.id)}`, { headers: sessionHeaders });
+    assert.strictEqual(refreshedDirector.ok, true, 'director refresh failed');
+    assert.strictEqual(refreshedDirector.data.status, 'failed', 'director thread should be marked failed after timeout');
+
     // Verify a workspace item exists and can be read under the agent thread
     const listWs = await fetchJson(baseUrl, `/api/workspaces/${encodeURIComponent(agentThread.id)}/items`, { headers: sessionHeaders });
     assert.strictEqual(listWs.ok, true, 'workspace list failed');
     const items = Array.isArray(listWs.data) ? listWs.data : [];
     assert.ok(items.length >= 1, 'expected at least one workspace item');
     const item = items[0];
+    assert.strictEqual(item.provenance.createdBy, 'agent', 'workspace item provenance createdBy must be agent');
+    assert.strictEqual(String(item.provenance.creatorId), String(ids.agent), 'workspace item provenance.creatorId must match agent id');
 
     // Update with expectedRevision guard (happy path)
     const rev = item.lifecycle.revision;
@@ -145,12 +165,19 @@ test('integration: workspace items via tool call + revision guards', { concurren
     // 404 after hard delete
     const notFound = await fetch(`${baseUrl}/api/workspaces/${encodeURIComponent(agentThread.id)}/items/${encodeURIComponent(item.id)}`, { headers: sessionHeaders });
     assert.strictEqual(notFound.status, 404, 'deleted item should 404');
+
+    const providerEvents = await fetchJson(baseUrl, `/api/conversations/${encodeURIComponent(agentThread.id)}/provider-events`, { headers: sessionHeaders });
+    assert.strictEqual(providerEvents.ok, true, 'provider events fetch should succeed');
+    const requestEvent = Array.isArray(providerEvents.data) ? providerEvents.data.find((ev) => ev.type === 'request') : null;
+    assert.ok(requestEvent, 'expected provider request event for agent thread');
+    assert.strictEqual(requestEvent.payload?.model, 'gpt-agent-special', 'agent conversation must use the agent api config model');
     } finally {
       try {
         if (ids.filter) await fetch(`${baseUrl}/api/filters/${encodeURIComponent(ids.filter)}`, { method: 'DELETE', headers: sessionHeaders });
         if (ids.director) await fetch(`${baseUrl}/api/directors/${encodeURIComponent(ids.director)}`, { method: 'DELETE', headers: sessionHeaders });
         if (ids.agent) await fetch(`${baseUrl}/api/agents/${encodeURIComponent(ids.agent)}`, { method: 'DELETE', headers: sessionHeaders });
-        if (ids.apiConfig) await fetch(`${baseUrl}/api/settings/api-configs/${encodeURIComponent(ids.apiConfig)}`, { method: 'DELETE', headers: sessionHeaders });
+        if (ids.agentConfig) await fetch(`${baseUrl}/api/settings/api-configs/${encodeURIComponent(ids.agentConfig)}`, { method: 'DELETE', headers: sessionHeaders });
+        if (ids.directorConfig) await fetch(`${baseUrl}/api/settings/api-configs/${encodeURIComponent(ids.directorConfig)}`, { method: 'DELETE', headers: sessionHeaders });
         if (fetcherTriggered) await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: jsonHeaders });
       } catch {}
     }
