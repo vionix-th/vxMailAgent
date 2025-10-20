@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, CleanupStats, createApiConfig, updateApiConfig, deleteApiConfig, ApiConfigView, CreateApiConfigRequest, UpdateApiConfigRequest } from './utils/api';
+import { getCleanupStats, cleanupAll, cleanupFetcherLogs, cleanupOrchestrationLogs, cleanupConversations, cleanupWorkspaceItems, cleanupProviderEvents, cleanupTraces, cleanupEmails, CleanupStats, createApiConfig, updateApiConfig, deleteApiConfig, ApiConfigView, CreateApiConfigRequest, UpdateApiConfigRequest } from './utils/api';
 import log from './utils/log';
 import { apiFetch } from './utils/http';
 
@@ -232,7 +232,7 @@ export default function Settings() {
     setCleanupBusy(true);
     try {
       const result = await cleanupAll();
-      setSuccess(`🧹 All logs purged: ${result.deleted.total} items deleted (${result.deleted.fetcherLogs} fetcher logs, ${result.deleted.orchestrationLogs} orchestration logs, ${result.deleted.conversations} conversations, ${result.deleted.workspaceItems} workspace items, ${result.deleted.providerEvents} provider events, ${result.deleted.traces} traces)`);
+      setSuccess(`🧹 All logs purged: ${result.deleted.total} items deleted (${result.deleted.fetcherLogs} fetcher logs, ${result.deleted.orchestrationLogs} orchestration logs, ${result.deleted.conversations} conversations, ${result.deleted.workspaceItems} workspace items, ${result.deleted.providerEvents} provider events, ${result.deleted.traces} traces, ${result.deleted.emails} emails)`);
       await refreshCleanupStats();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -241,7 +241,7 @@ export default function Settings() {
     }
   };
 
-  const handleIndividualCleanup = async (type: 'fetcher-logs' | 'orchestration-logs' | 'conversations' | 'workspace-items' | 'provider-events' | 'traces') => {
+  const handleIndividualCleanup = async (type: 'fetcher-logs' | 'orchestration-logs' | 'conversations' | 'workspace-items' | 'provider-events' | 'traces' | 'emails') => {
     setCleanupIndividualOpen(false);
     setError(null);
     setSuccess(null);
@@ -266,6 +266,9 @@ export default function Settings() {
           break;
         case 'traces':
           result = await cleanupTraces();
+          break;
+        case 'emails':
+          result = await cleanupEmails();
           break;
       }
       setSuccess(result.message);
@@ -406,6 +409,10 @@ export default function Settings() {
                 <Typography variant="h6" color="primary">{cleanupStats.traces}</Typography>
                 <Typography variant="caption">Traces</Typography>
               </Box>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="h6" color="primary">{cleanupStats.emails}</Typography>
+                <Typography variant="caption">Emails</Typography>
+              </Box>
               <Box sx={{ textAlign: 'center', borderLeft: '1px solid', borderColor: 'divider', pl: 2 }}>
                 <Typography variant="h5" color="error.main">{cleanupStats.total}</Typography>
                 <Typography variant="caption"><strong>Total Items</strong></Typography>
@@ -457,6 +464,7 @@ export default function Settings() {
                 <Typography variant="body2">• {cleanupStats.workspaceItems} workspace items</Typography>
                 <Typography variant="body2">• {cleanupStats.providerEvents} LLM provider events</Typography>
                 <Typography variant="body2">• {cleanupStats.traces} diagnostic traces</Typography>
+                <Typography variant="body2">• {cleanupStats.emails} emails</Typography>
                 <Typography variant="body2" color="error.main" sx={{ mt: 1 }}>
                   <strong>Total: {cleanupStats.total} items</strong>
                 </Typography>
@@ -529,6 +537,16 @@ export default function Settings() {
                 >
                   <span>LLM Provider Events</span>
                   <span>{cleanupStats.providerEvents} items</span>
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  disabled={cleanupBusy || !cleanupStats.emails}
+                  onClick={() => handleIndividualCleanup('emails')}
+                  sx={{ justifyContent: 'space-between' }}
+                >
+                  <span>Emails</span>
+                  <span>{cleanupStats.emails} items</span>
                 </Button>
                 <Button
                   variant="outlined"

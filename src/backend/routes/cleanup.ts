@@ -48,6 +48,16 @@ async function purgeConversations(repos: LiveRepos, req: ContextInput): Promise<
   return deleted;
 }
 
+async function purgeEmails(repos: LiveRepos, req: ContextInput): Promise<number> {
+  const emails = await repos.getEmails(req);
+  const count = Array.isArray(emails) ? emails.length : 0;
+  if (count === 0) {
+    return 0;
+  }
+  await repos.clearEmails(req);
+  return count;
+}
+
 export default function registerCleanupRoutes(
   app: express.Express,
   repos: LiveRepos,
@@ -74,12 +84,14 @@ export default function registerCleanupRoutes(
       providerEvents,
       traces,
       workspaceItems,
+      emails,
     ] = await Promise.all([
       repos.getConversations(context),
       repos.getOrchestrationLog(context),
       getProviderEventsRepo(context).list(),
       getTracesRepo(context).list(),
       getWorkspaceItemsRepo(context).list(),
+      repos.getEmails(context),
     ]);
     const stats = {
       fetcherLogs: fetcherLog.length,
@@ -88,8 +100,19 @@ export default function registerCleanupRoutes(
       workspaceItems: workspaceItems.length,
       providerEvents: providerEvents.length,
       traces: traces.length,
+      emails: emails.length,
     };
-    res.json({ ...stats, total: stats.fetcherLogs + stats.orchestrationLogs + stats.conversations + stats.workspaceItems + stats.providerEvents + stats.traces });
+    res.json({
+      ...stats,
+      total:
+        stats.fetcherLogs +
+        stats.orchestrationLogs +
+        stats.conversations +
+        stats.workspaceItems +
+        stats.providerEvents +
+        stats.traces +
+        stats.emails,
+    });
   }));
 
   // Purge all logs and data for the current user (frontend expects /api/cleanup/all)
@@ -104,20 +127,23 @@ export default function registerCleanupRoutes(
       orchestrationLog,
       providerEvents,
       traces,
+      emails,
     ] = await Promise.all([
       repos.getOrchestrationLog(context),
       getProviderEventsRepo(context).list(),
       getTracesRepo(context).list(),
+      repos.getEmails(context),
     ]);
     const workspaceRepo = getWorkspaceItemsRepo(context);
     const workspaceDeleted = await purgeWorkspaceItems(workspaceRepo);
-    
+
     // Clear fetcher log through manager
     if (fetcherManager) {
       await fetcherManager.clearFetcherLog();
     }
-    
+
     const conversationsDeleted = await purgeConversations(repos, context);
+    const emailsDeleted = emails.length ? await purgeEmails(repos, context) : 0;
     await Promise.all([
       getOrchestrationLogRepo(context).clear(),
       getProviderEventsRepo(context).clear(),
@@ -130,10 +156,22 @@ export default function registerCleanupRoutes(
       workspaceItems: workspaceDeleted,
       providerEvents: providerEvents.length,
       traces: traces.length,
+      emails: emails.length,
     };
     res.json({
       success: true,
-      deleted: { ...deleted, total: deleted.fetcherLogs + deleted.orchestrationLogs + deleted.conversations + deleted.workspaceItems + deleted.providerEvents + deleted.traces },
+      deleted: {
+        ...deleted,
+        emails: emailsDeleted,
+        total:
+          deleted.fetcherLogs +
+          deleted.orchestrationLogs +
+          deleted.conversations +
+          deleted.workspaceItems +
+          deleted.providerEvents +
+          deleted.traces +
+          emailsDeleted,
+      },
       message: 'Purged all user data and logs',
     });
   }));
@@ -178,5 +216,10 @@ export default function registerCleanupRoutes(
     const prev = await repo.list();
     await repo.clear();
     res.json({ success: true, deleted: prev.length, message: `Deleted ${prev.length} traces` });
+  }));
+  app.delete('/api/cleanup/emails', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const context = requireContext(req);
+    const deleted = await purgeEmails(repos, context);
+    res.json({ success: true, deleted, message: `Deleted ${deleted} emails` });
   }));
 }

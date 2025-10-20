@@ -492,6 +492,7 @@ export interface CleanupStats {
   workspaceItems: number;
   providerEvents: number;
   traces: number;
+  emails: number;
   total: number;
 }
 

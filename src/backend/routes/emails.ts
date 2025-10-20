@@ -105,6 +105,20 @@ export function createEmailRoutes(repos: LiveRepos): express.Router {
     });
   }));
 
+  router.delete('/:id', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    const emailId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+    if (!emailId) {
+      throw new ValidationError('Email id is required for deletion');
+    }
+    const context = requireContext(req);
+    const deleted = await repos.deleteEmail(context, emailId);
+    if (!deleted) {
+      res.status(404).json({ success: false, message: `Email ${emailId} not found` });
+      return;
+    }
+    res.json({ success: true, deleted: { id: emailId } });
+  }));
+
   return router;
 }
 

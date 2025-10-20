@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  Box, Typography, Paper, Stack, IconButton, Tooltip, Chip, Alert, 
-  Button, Card, CardContent, Table, TableBody, TableCell, TableContainer, 
-  TableHead, TableRow, LinearProgress, FormControl, InputLabel, Select, 
-  MenuItem, TextField, Divider
+  Box, Typography, Paper, Stack, IconButton, Tooltip, Chip, Alert,
+  Button, Card, CardContent, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, LinearProgress, FormControl, InputLabel, Select,
+  MenuItem, TextField, CircularProgress
 } from '@mui/material';
 import { AnimatePresence, motion } from 'framer-motion';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -13,9 +13,11 @@ import ErrorIcon from '@mui/icons-material/Error';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useTranslation } from 'react-i18next';
 import { EmailEnvelope } from './types/shared';
 import { apiFetch } from './utils/http';
+import { deleteEmail } from './utils/api';
 
 interface EmailWithConversations extends EmailEnvelope {
   conversations: ConversationSummary[];
@@ -64,12 +66,15 @@ export default function EmailProcessingDashboard({ onEmailSelect }: { onEmailSel
   const [emails, setEmails] = useState<EmailWithConversations[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadEmails = async () => {
     setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       const response = await apiFetch('/api/emails', {
         method: 'GET',
@@ -90,6 +95,27 @@ export default function EmailProcessingDashboard({ onEmailSelect }: { onEmailSel
   useEffect(() => {
     loadEmails();
   }, [statusFilter]);
+
+  const handleDelete = async (email: EmailWithConversations) => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(`Delete email "${email.subject}"? This cannot be undone.`);
+      if (!confirmed) {
+        return;
+      }
+    }
+    setDeletingId(email.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      await deleteEmail(email.id);
+      setEmails((current) => current.filter((item) => item.id !== email.id));
+      setSuccess(`Deleted email '${email.subject || email.id}'.`);
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to delete email');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const filteredEmails = useMemo(() => {
     if (!searchTerm) return emails;
@@ -173,6 +199,12 @@ export default function EmailProcessingDashboard({ onEmailSelect }: { onEmailSel
         </Alert>
       )}
 
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          {success}
+        </Alert>
+      )}
+
       {loading && <LinearProgress sx={{ mb: 2 }} />}
 
       {/* Email List */}
@@ -253,13 +285,31 @@ export default function EmailProcessingDashboard({ onEmailSelect }: { onEmailSel
                       )}
                     </TableCell>
                     <TableCell>
-                      <IconButton
-                        size="small"
-                        onClick={() => onEmailSelect(email)}
-                        disabled={email.conversations.length === 0}
-                      >
-                        <VisibilityIcon />
-                      </IconButton>
+                      <Stack direction="row" spacing={1}>
+                        <Tooltip title="Inspect conversations">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => onEmailSelect(email)}
+                              disabled={email.conversations.length === 0}
+                            >
+                              <VisibilityIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Delete email">
+                          <span>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDelete(email)}
+                              disabled={deletingId === email.id}
+                            >
+                              {deletingId === email.id ? <CircularProgress size={18} /> : <DeleteIcon />}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Stack>
                     </TableCell>
                   </MotionTableRow>
                 ))}

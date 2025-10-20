@@ -35,6 +35,7 @@ export interface CleanupStats {
   workspaceItems: number;
   providerEvents: number;
   traces: number;
+  emails: number;
   total: number;
 }
 
@@ -66,6 +67,16 @@ export async function cleanupConversations(): Promise<{ success: boolean; delete
 /** Delete workspace items. */
 export async function cleanupWorkspaceItems(): Promise<{ success: boolean; deleted: number; message: string }> {
   return apiFetch('/api/cleanup/workspace-items', { method: 'DELETE' });
+}
+
+/** Delete stored emails. */
+export async function cleanupEmails(): Promise<{ success: boolean; deleted: number; message: string }> {
+  return apiFetch('/api/cleanup/emails', { method: 'DELETE' });
+}
+
+/** Delete a single email envelope. */
+export async function deleteEmail(id: string): Promise<{ success: boolean; deleted?: { id: string }; message?: string }> {
+  return apiFetch(`/api/emails/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 /** Delete a single workspace item (soft by default; pass hard=true to permanently remove). */
