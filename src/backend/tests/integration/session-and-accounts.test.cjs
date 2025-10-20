@@ -6,6 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { TEST_TIMEOUTS } = require('../lib/testEnv');
 // Acceptance: requires `.testuser` profile with at least one linked account and API config.
 const { uid } = discoverTestUser();
 
@@ -20,7 +21,7 @@ function ensureNonEmpty(array, label, remediation) {
   }
 }
 
-test('integration: session bootstrap and account visibility', { concurrency: false, timeout: 15000 }, async () => {
+test('integration: session bootstrap and account visibility', { concurrency: false, timeout: TEST_TIMEOUTS.node.short }, async () => {
   const { baseUrl, stop } = await startBackend();
   let sessionHeaders;
 

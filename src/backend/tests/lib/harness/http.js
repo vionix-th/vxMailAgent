@@ -1,4 +1,6 @@
-async function requestWithTimeout(baseUrl, pathSuffix, init = {}, timeoutMs = 3000) {
+const { TEST_TIMEOUTS } = require('../testEnv');
+
+async function requestWithTimeout(baseUrl, pathSuffix, init = {}, timeoutMs = TEST_TIMEOUTS.http.default) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error(`Request to ${pathSuffix} timed out after ${timeoutMs}ms`)), timeoutMs);
   try {
@@ -9,7 +11,7 @@ async function requestWithTimeout(baseUrl, pathSuffix, init = {}, timeoutMs = 30
   }
 }
 
-async function fetchJson(baseUrl, pathSuffix, init = {}, { timeoutMs = 3000 } = {}) {
+async function fetchJson(baseUrl, pathSuffix, init = {}, { timeoutMs = TEST_TIMEOUTS.http.default } = {}) {
   const res = await requestWithTimeout(baseUrl, pathSuffix, init, timeoutMs);
   const text = await res.text();
   let data = null;
@@ -27,4 +29,3 @@ module.exports = {
   requestWithTimeout,
   fetchJson,
 };
-

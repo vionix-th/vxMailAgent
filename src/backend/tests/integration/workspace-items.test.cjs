@@ -7,7 +7,7 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -15,7 +15,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: workspace items via tool call + revision guards', { concurrency: false, timeout: 25000 }, async () => {
+test('integration: workspace items via tool call + revision guards', { concurrency: false, timeout: TEST_TIMEOUTS.node.extended }, async () => {
   const testEnv = createTestEnv({
     VX_TEST_MOCK_PROVIDER: 'true',
     VX_TEST_DISABLE_ORCHESTRATOR: 'true',
@@ -76,7 +76,7 @@ test('integration: workspace items via tool call + revision guards', { concurren
     assert.strictEqual(createFilter.status, 201, 'filter creation failed');
 
     // Run fetcher → creates director thread (orchestrator disabled for email pipeline)
-    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 15000 });
+    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
     assert.strictEqual(runRes.ok, true, '/api/fetcher/run failed');
     fetcherTriggered = true;
 
@@ -86,11 +86,11 @@ test('integration: workspace items via tool call + revision guards', { concurren
       if (!list.ok) return null;
       const items = Array.isArray(list.data?.items) ? list.data.items : [];
       return items.find((t) => t.kind === 'director' && t.directorId === ids.director) || null;
-    }, { timeoutMs: 10000, intervalMs: 250 });
+    }, { timeoutMs: TEST_TIMEOUTS.wait.standard, intervalMs: 250 });
     assert.ok(directorThread && directorThread.id, 'director thread missing');
 
     // Call assistant once: the stub will emit a workspace_add_item tool_call targeting our agent id
-    const assistant = await fetchJson(baseUrl, `/api/conversations/${encodeURIComponent(directorThread.id)}/assistant`, { method: 'POST', headers: jsonHeaders }, { timeoutMs: 15000 });
+    const assistant = await fetchJson(baseUrl, `/api/conversations/${encodeURIComponent(directorThread.id)}/assistant`, { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
     assert.strictEqual(assistant.ok, true, 'assistant call should succeed with stub responses');
 
     // Workspace items are scoped to the agent child thread; locate it
@@ -99,7 +99,7 @@ test('integration: workspace items via tool call + revision guards', { concurren
       if (!list.ok) return null;
       const items = Array.isArray(list.data?.items) ? list.data.items : [];
       return items.find((t) => t.kind === 'agent' && t.parentId === directorThread.id) || null;
-    }, { timeoutMs: 8000, intervalMs: 200 });
+    }, { timeoutMs: TEST_TIMEOUTS.wait.medium, intervalMs: 200 });
     assert.ok(agentThread && agentThread.id, 'agent child thread missing');
 
     // Verify a workspace item exists and can be read under the agent thread

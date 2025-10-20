@@ -1,4 +1,6 @@
-async function waitFor(predicate, { timeoutMs = 10000, intervalMs = 200 } = {}) {
+const { TEST_TIMEOUTS } = require('../testEnv');
+
+async function waitFor(predicate, { timeoutMs = TEST_TIMEOUTS.wait.standard, intervalMs = 200 } = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     // eslint-disable-next-line no-await-in-loop
@@ -11,4 +13,3 @@ async function waitFor(predicate, { timeoutMs = 10000, intervalMs = 200 } = {}) 
 }
 
 module.exports = { waitFor };
-

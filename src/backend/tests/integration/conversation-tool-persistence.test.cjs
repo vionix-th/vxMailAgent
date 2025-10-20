@@ -7,7 +7,7 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -15,7 +15,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('conversation API preserves tool call and tool result messages', { concurrency: false, timeout: 20000 }, async () => {
+test('conversation API preserves tool call and tool result messages', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
   await withServer(async ({ baseUrl }) => {
     const { headers: sessionHeaders } = await createSession(baseUrl, uid);
     const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
@@ -24,7 +24,7 @@ test('conversation API preserves tool call and tool result messages', { concurre
     assert.strictEqual(beforeRes.ok, true, '/api/conversations pre-run failed');
     const beforeIds = new Set((beforeRes.data?.items || []).map((thread) => thread.id));
 
-    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 15000 });
+    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
     assert.strictEqual(runRes.ok, true, `/api/fetcher/run failed: ${JSON.stringify(runRes.data)}`);
 
     const { directorThread } = await waitFor(async () => {
@@ -35,7 +35,7 @@ test('conversation API preserves tool call and tool result messages', { concurre
       const director = newThreads.find((thread) => thread.kind === 'director');
       if (!director) return null;
       return { directorThread: director };
-    }, { timeoutMs: 8000, intervalMs: 200 });
+    }, { timeoutMs: TEST_TIMEOUTS.wait.medium, intervalMs: 200 });
 
     assert.ok(directorThread, 'Expected a completed director thread');
 

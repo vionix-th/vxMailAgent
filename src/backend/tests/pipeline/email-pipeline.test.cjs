@@ -7,7 +7,7 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -26,7 +26,7 @@ function ensureNonEmpty(collection, label, instruction) {
   }
 }
 
-test('pipeline uses pre-seeded configuration to complete director and agent flow', { concurrency: false, timeout: 15000 }, async () => {
+test('pipeline uses pre-seeded configuration to complete director and agent flow', { concurrency: false, timeout: TEST_TIMEOUTS.node.short }, async () => {
   const startTimestamp = Date.now();
   const { baseUrl, stop } = await startBackend({
     env: createTestEnv({
@@ -102,7 +102,7 @@ test('pipeline uses pre-seeded configuration to complete director and agent flow
         const agent = items.find((thread) => thread.kind === 'agent' && thread.parentId === director.id && thread.status === 'completed');
         if (!agent) return null;
         return { directorThread: director, agentThread: agent };
-      }, { timeoutMs: 10000, intervalMs: 250 }));
+      }, { timeoutMs: TEST_TIMEOUTS.wait.standard, intervalMs: 250 }));
     } catch (err) {
       throw new Error(`[pipeline] Fetcher did not produce a completed director+agent conversation within 10s — verify filters, linked account, and mock provider configuration. (${err?.message || err})`);
     }

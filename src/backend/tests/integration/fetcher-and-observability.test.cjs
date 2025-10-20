@@ -6,7 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 // Acceptance: assumes fetcher routes are enabled for the `.testuser` and conversations may be absent.
 const { uid } = discoverTestUser();
 
@@ -14,7 +14,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: fetcher controls and observability endpoints', { concurrency: false, timeout: 20000 }, async () => {
+test('integration: fetcher controls and observability endpoints', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
   const { baseUrl, stop } = await startBackend({
     env: createTestEnv({
       VX_TEST_MOCK_PROVIDER: 'true',
@@ -29,16 +29,16 @@ test('integration: fetcher controls and observability endpoints', { concurrency:
       assert.strictEqual(statusRes.ok, true, `/api/fetcher/status failed: ${JSON.stringify(statusRes.data)}`);
       assert.ok(typeof statusRes.data?.active === 'boolean', 'fetcher status must return active boolean');
 
-    const startRes = await fetchJson(baseUrl, '/api/fetcher/start', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 10000 });
+    const startRes = await fetchJson(baseUrl, '/api/fetcher/start', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.long });
     assert.strictEqual(startRes.ok, true, `/api/fetcher/start failed: ${JSON.stringify(startRes.data)}`);
 
-    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 15000 });
+    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
     assert.strictEqual(runRes.ok, true, `/api/fetcher/run failed: ${JSON.stringify(runRes.data)}`);
 
-    const fetchRes = await fetchJson(baseUrl, '/api/fetcher/fetch', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 15000 });
+    const fetchRes = await fetchJson(baseUrl, '/api/fetcher/fetch', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
     assert.strictEqual(fetchRes.ok, true, `/api/fetcher/fetch failed: ${JSON.stringify(fetchRes.data)}`);
 
-    const stopRes = await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 10000 });
+    const stopRes = await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.long });
     assert.strictEqual(stopRes.ok, true, `/api/fetcher/stop failed: ${JSON.stringify(stopRes.data)}`);
 
     const logsRes = await fetchJson(baseUrl, '/api/fetcher/logs', { headers: sessionHeaders });
@@ -71,7 +71,7 @@ test('integration: fetcher controls and observability endpoints', { concurrency:
       assert.ok(Array.isArray(providerEvents.data), 'provider events response must be an array');
   } finally {
     try {
-      await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 10000 });
+      await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.long });
     } catch (error) {
       console.warn('[integration] fetcher stop during observability cleanup failed', error);
     }

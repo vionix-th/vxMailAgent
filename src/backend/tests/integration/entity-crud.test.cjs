@@ -6,6 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { TEST_TIMEOUTS } = require('../lib/testEnv');
 // Acceptance: requires seeded prompt templates and API configs for the discovered `.testuser`.
 const { uid } = discoverTestUser();
 
@@ -13,7 +14,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: agent/director/filter lifecycle enforces invariants', { concurrency: false, timeout: 20000 }, async () => {
+test('integration: agent/director/filter lifecycle enforces invariants', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
   const { baseUrl, stop } = await startBackend();
   const { headers: sessionHeaders } = await createSession(baseUrl, uid);
   const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });

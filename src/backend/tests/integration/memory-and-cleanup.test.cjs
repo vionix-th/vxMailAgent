@@ -7,13 +7,14 @@ const {
   fetchJson,
   createLogCapture,
 } = require('../lib/harness');
+const { TEST_TIMEOUTS } = require('../lib/testEnv');
 const { uid } = discoverTestUser();
 
 function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: memory entries and cleanup routes', { concurrency: false, timeout: 20000 }, async () => {
+test('integration: memory entries and cleanup routes', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
   await withServer(async ({ baseUrl }) => {
     const logCapture = createLogCapture();
     const { headers: sessionHeaders } = await createSession(baseUrl, uid);
@@ -44,14 +45,14 @@ test('integration: memory entries and cleanup routes', { concurrency: false, tim
     const listByTag = await fetchJson(baseUrl, '/api/memory?tag=integration', { headers: sessionHeaders });
     assert.strictEqual(listByTag.ok, true, 'memory list by tag failed');
     assert.ok(Array.isArray(listByTag.data) && listByTag.data.some((entry) => entry.id === createdId), 'tag query should return created entry');
-    const tagLog = await logCapture.waitFor((entry) => entry.message === 'GET /api/memory query' && entry.meta?.tag === 'integration', { timeoutMs: 2000 });
+    const tagLog = await logCapture.waitFor((entry) => entry.message === 'GET /api/memory query' && entry.meta?.tag === 'integration', { timeoutMs: TEST_TIMEOUTS.wait.quick });
     assert.strictEqual(tagLog.meta.includeDeleted, false, 'memory query log should set includeDeleted=false');
     logCapture.drain();
 
     const scopedQuery = await fetchJson(baseUrl, `/api/memory?scope=local&owner=${encodeURIComponent(uid)}`, { headers: sessionHeaders });
     assert.strictEqual(scopedQuery.ok, true, 'scoped memory query failed');
     assert.ok(Array.isArray(scopedQuery.data) && scopedQuery.data.some((entry) => entry.id === createdId), 'scoped query should include created entry');
-    const scopeLog = await logCapture.waitFor((entry) => entry.message === 'GET /api/memory query' && entry.meta?.scope === 'local' && entry.meta?.owner === uid, { timeoutMs: 2000 });
+    const scopeLog = await logCapture.waitFor((entry) => entry.message === 'GET /api/memory query' && entry.meta?.scope === 'local' && entry.meta?.owner === uid, { timeoutMs: TEST_TIMEOUTS.wait.quick });
     assert.strictEqual(scopeLog.meta.includeDeleted, false, 'scoped log should mark includeDeleted=false');
     logCapture.drain();
 

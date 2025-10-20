@@ -1,8 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { startBackend } = require('../lib/harness');
+const { TEST_TIMEOUTS } = require('../lib/testEnv');
 
-test('integration: representative endpoints require authentication', { concurrency: false, timeout: 15000 }, async () => {
+test('integration: representative endpoints require authentication', { concurrency: false, timeout: TEST_TIMEOUTS.node.short }, async () => {
   const { baseUrl, stop } = await startBackend();
   try {
     const unauthSettings = await fetch(`${baseUrl}/api/settings`);

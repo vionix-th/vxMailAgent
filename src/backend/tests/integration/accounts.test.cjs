@@ -6,13 +6,14 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
+const { TEST_TIMEOUTS } = require('../lib/testEnv');
 const { uid } = discoverTestUser();
 
 function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: account lifecycle enforces invariants', { concurrency: false, timeout: 20000 }, async () => {
+test('integration: account lifecycle enforces invariants', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
   const { baseUrl, stop } = await startBackend();
   const { headers: sessionHeaders } = await createSession(baseUrl, uid);
   const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });

@@ -6,7 +6,7 @@ const {
   fetchJson,
   waitFor,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 
 const { uid } = require('../lib/harness').discoverTestUser();
 
@@ -14,7 +14,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('pipeline surfaces orchestrator timeout diagnostics', { concurrency: false, timeout: 25000 }, async () => {
+test('pipeline surfaces orchestrator timeout diagnostics', { concurrency: false, timeout: TEST_TIMEOUTS.node.extended }, async () => {
   const runStart = Date.now();
   const { baseUrl, stop } = await startBackend({
     env: createTestEnv({
@@ -34,7 +34,7 @@ test('pipeline surfaces orchestrator timeout diagnostics', { concurrency: false,
     await fetchJson(baseUrl, '/api/cleanup/fetcher-logs', { method: 'DELETE', headers: jsonHeaders });
     await fetchJson(baseUrl, '/api/cleanup/traces', { method: 'DELETE', headers: jsonHeaders });
 
-    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 15000 });
+    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
     assert.strictEqual(runRes.ok, true, `/api/fetcher/run failed: ${JSON.stringify(runRes.data)}`);
     fetcherTriggered = true;
 
@@ -48,7 +48,7 @@ test('pipeline surfaces orchestrator timeout diagnostics', { concurrency: false,
         const ts = Date.parse(entry.timestamp || '');
         return Number.isFinite(ts) && ts >= runStart;
       }) || null;
-    }, { timeoutMs: 12000, intervalMs: 250 });
+    }, { timeoutMs: TEST_TIMEOUTS.wait.extended, intervalMs: 250 });
 
     assert.ok(timeoutLog, 'expected orchestration_error log with normalized timeout detail');
     assert.ok(timeoutLog.runId, 'timeout log must include runId');

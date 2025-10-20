@@ -8,7 +8,7 @@ const {
   waitFor,
   createLogCapture,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -16,7 +16,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: conversations pagination, message append, and workspace access', { concurrency: false, timeout: 20000 }, async (t) => {
+test('integration: conversations pagination, message append, and workspace access', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async (t) => {
   await withServer(async ({ baseUrl }) => {
     const logCapture = createLogCapture();
     const { headers: sessionHeaders } = await createSession(baseUrl, uid);
@@ -102,7 +102,7 @@ test('integration: conversations pagination, message append, and workspace acces
       const runRes = await fetchJson(baseUrl, '/api/fetcher/run', {
         method: 'POST',
         headers: jsonHeaders,
-      }, { timeoutMs: 15000 });
+      }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
       assert.strictEqual(runRes.ok, true, '/api/fetcher/run failed to produce conversations');
       fetcherTriggered = true;
 
@@ -112,7 +112,7 @@ test('integration: conversations pagination, message append, and workspace acces
         const threads = Array.isArray(refresh.data?.items) ? refresh.data.items : [];
         const director = threads.find((thread) => thread.kind === 'director' && thread.directorId === (createdDirectorId || thread.directorId) && !baselineIds.has(thread.id));
         return director ? { threads, director } : null;
-      }, { timeoutMs: 15000, intervalMs: 300 });
+      }, { timeoutMs: TEST_TIMEOUTS.wait.long, intervalMs: 300 });
 
       directorThread = result.director;
     }
@@ -156,7 +156,7 @@ test('integration: conversations pagination, message append, and workspace acces
           { headers: sessionHeaders }
         );
         return res.ok ? res : null;
-      }, { timeoutMs: 5000, intervalMs: 200 });
+      }, { timeoutMs: TEST_TIMEOUTS.wait.short, intervalMs: 200 });
     } catch {
       console.warn('[integration] byDirectorEmail lookup timed out; continuing with direct thread data', {
         directorId: directorThread.directorId,
@@ -179,11 +179,11 @@ test('integration: conversations pagination, message append, and workspace acces
       const refreshed = await fetchJson(baseUrl, `/api/conversations/${encodeURIComponent(threadId)}`, { headers: sessionHeaders });
       if (!refreshed.ok) return false;
       return Array.isArray(refreshed.data.messages) && refreshed.data.messages.some((msg) => msg.role === 'user' && msg.content === messageContent);
-    }, { timeoutMs: 5000, intervalMs: 200 });
+    }, { timeoutMs: TEST_TIMEOUTS.wait.short, intervalMs: 200 });
 
     const appendLog = await logCapture.waitFor(
       (entry) => entry.message === 'POST /api/conversations/:id/messages appended user message' && entry.meta?.id === threadId,
-      { timeoutMs: 2000 }
+      { timeoutMs: TEST_TIMEOUTS.wait.quick }
     );
     assert.ok(appendLog.meta, 'append log must include meta');
     assert.strictEqual(appendLog.meta.id, threadId, 'append log meta.id mismatch');
@@ -207,7 +207,7 @@ test('integration: conversations pagination, message append, and workspace acces
             if (!res.ok) return null;
             if (res.data.status === 'ongoing') return null;
             return res.data.status;
-          }, { timeoutMs: 5000, intervalMs: 200 }).catch(() => {});
+          }, { timeoutMs: TEST_TIMEOUTS.wait.short, intervalMs: 200 }).catch(() => {});
         }
       } catch (waitError) {
         console.warn('[integration] conversation status wait failed', waitError);

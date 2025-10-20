@@ -9,7 +9,7 @@ const {
   createLogCapture,
   assertMetaFields,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -17,7 +17,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: orchestrator emits structured failure when apiConfig missing', { concurrency: false, timeout: 20000 }, async () => {
+test('integration: orchestrator emits structured failure when apiConfig missing', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
   await withServer(async ({ baseUrl }) => {
     const logCapture = createLogCapture();
     const { headers: sessionHeaders } = await createSession(baseUrl, uid);
@@ -76,7 +76,7 @@ test('integration: orchestrator emits structured failure when apiConfig missing'
     assert.strictEqual(createFilter.status, 201, 'filter creation failed');
 
     // Trigger the fetcher to create a director conversation thread
-    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 15000 });
+    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
     assert.strictEqual(runRes.ok, true, '/api/fetcher/run failed');
     fetcherTriggered = true;
 
@@ -86,7 +86,7 @@ test('integration: orchestrator emits structured failure when apiConfig missing'
       const items = Array.isArray(list.data?.items) ? list.data.items : [];
       const directorThread = items.find((t) => t.kind === 'director' && t.directorId === ids.director);
       return directorThread || null;
-    }, { timeoutMs: 10000, intervalMs: 250 });
+    }, { timeoutMs: TEST_TIMEOUTS.wait.standard, intervalMs: 250 });
 
     assert.ok(convo && convo.id, 'expected a director conversation thread');
     threadId = convo.id;
@@ -107,7 +107,7 @@ test('integration: orchestrator emits structured failure when apiConfig missing'
       entry.level === 'error' &&
       entry.message === 'Conversation step failed' &&
       entry.meta && entry.meta.conversationId === threadId && entry.meta.directorId === ids.director
-    ), { timeoutMs: 5000, intervalMs: 100 });
+    ), { timeoutMs: TEST_TIMEOUTS.wait.short, intervalMs: 100 });
 
     assertMetaFields(failureLog, ['runId', 'directorId', 'conversationId', 'stepType', 'traceId']);
     assert.strictEqual(failureLog.meta.stepType, 'director_llm', 'unexpected stepType');

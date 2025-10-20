@@ -1,4 +1,5 @@
 const { requireBackend } = require('./paths');
+const { TEST_TIMEOUTS } = require('../testEnv');
 
 function createLogCapture() {
   const loggerModule = requireBackend('services/logger.js');
@@ -22,7 +23,7 @@ function createLogCapture() {
     stop() {
       remove();
     },
-    waitFor(predicate, { timeoutMs = 5000, intervalMs = 50 } = {}) {
+    waitFor(predicate, { timeoutMs = TEST_TIMEOUTS.wait.short, intervalMs = 50 } = {}) {
       if (typeof predicate !== 'function') {
         throw new Error('predicate must be a function');
       }

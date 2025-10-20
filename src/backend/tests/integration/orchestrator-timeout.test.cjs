@@ -6,7 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -14,7 +14,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: orchestrator timeout surfaces diagnostics metadata', { concurrency: false, timeout: 25000 }, async () => {
+test('integration: orchestrator timeout surfaces diagnostics metadata', { concurrency: false, timeout: TEST_TIMEOUTS.node.extended }, async () => {
   await withServer(async ({ baseUrl }) => {
     const { headers: sessionHeaders } = await createSession(baseUrl, uid);
     const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
@@ -23,7 +23,7 @@ test('integration: orchestrator timeout surfaces diagnostics metadata', { concur
     await fetchJson(baseUrl, '/api/cleanup/traces', { method: 'DELETE', headers: jsonHeaders });
 
     const runStart = Date.now();
-    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: 15000 });
+    const runRes = await fetchJson(baseUrl, '/api/fetcher/run', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.fetcher });
     assert.strictEqual(runRes.ok, true, `/api/fetcher/run failed: ${JSON.stringify(runRes.data)}`);
 
     const expectedTimeout = `openai_request_timeout_${process.env.OPENAI_REQUEST_TIMEOUT_MS || '30000'}ms`;

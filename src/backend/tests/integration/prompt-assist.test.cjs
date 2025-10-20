@@ -6,7 +6,7 @@ const {
   createSession,
   fetchJson,
 } = require('../lib/harness');
-const { createTestEnv } = require('../lib/testEnv');
+const { createTestEnv, TEST_TIMEOUTS } = require('../lib/testEnv');
 
 const { uid } = discoverTestUser();
 
@@ -14,7 +14,7 @@ function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
 
-test('integration: prompt-assist endpoints with OpenAI stub', { concurrency: false, timeout: 15000 }, async () => {
+test('integration: prompt-assist endpoints with OpenAI stub', { concurrency: false, timeout: TEST_TIMEOUTS.node.short }, async () => {
   await withServer(async ({ baseUrl }) => {
     const { headers: sessionHeaders } = await createSession(baseUrl, uid);
     const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
@@ -43,7 +43,7 @@ test('integration: prompt-assist endpoints with OpenAI stub', { concurrency: fal
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ apiConfigId: apiId, messages: [{ role: 'user', content: 'hello' }] }),
-    }, { timeoutMs: 8000 });
+    }, { timeoutMs: TEST_TIMEOUTS.http.medium });
     assert.strictEqual(chatRes.ok, true, '/api/test/chat failed');
     assert.strictEqual(chatRes.data.success, true, 'chat result not marked success');
     assert.strictEqual(chatRes.data.assistantMessage?.content, 'stubbed-response', 'expected stubbed assistant response');
@@ -58,7 +58,7 @@ test('integration: prompt-assist endpoints with OpenAI stub', { concurrency: fal
     assert.strictEqual(makeDirector.status, 201, 'director create failed');
     created.directorId = directorId;
 
-    const dirTest = await fetchJson(baseUrl, `/api/test/director/${encodeURIComponent(directorId)}`, { headers: sessionHeaders }, { timeoutMs: 8000 });
+    const dirTest = await fetchJson(baseUrl, `/api/test/director/${encodeURIComponent(directorId)}`, { headers: sessionHeaders }, { timeoutMs: TEST_TIMEOUTS.http.medium });
     assert.strictEqual(dirTest.ok, true, '/api/test/director/:id failed');
     assert.strictEqual(dirTest.data.success, true, 'director test did not succeed');
     assert.strictEqual(dirTest.data.assistantMessage?.content, 'stubbed-response', 'expected stubbed assistant response for director');
