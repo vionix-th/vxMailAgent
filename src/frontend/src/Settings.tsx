@@ -117,7 +117,13 @@ export default function Settings() {
   const handleApiConfigEdit = (cfg: ApiConfigResponse) => {
     setEditingApiConfig(cfg);
     setAddingApiConfig(false);
-    setApiConfigDraft({ ...cfg, apiKey: '' });
+    setApiConfigDraft({
+      id: cfg.id,
+      name: cfg.name,
+      model: cfg.model,
+      maxCompletionTokens: cfg.maxCompletionTokens,
+      apiKey: '',
+    });
   };
   const handleApiConfigDelete = async (id: string) => {
     setLoading(true);
@@ -320,7 +326,7 @@ export default function Settings() {
               {typeof (cfg as any).maxCompletionTokens === 'number' && (
                 <Typography variant="body2" color="text.secondary">{t('settings.apiConfigs.labels.maxTokens')}: {(cfg as any).maxCompletionTokens}</Typography>
               )}
-              <Typography variant="body2" color="text.secondary">{t('settings.apiConfigs.labels.key')}: {t('settings.apiConfigs.labels.notSet')}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('settings.apiConfigs.labels.key')}: {cfg.hasApiKey ? t('settings.apiConfigs.labels.stored') : t('settings.apiConfigs.labels.notSet')}</Typography>
             </Box>
             <Button size="small" variant="outlined" onClick={() => handleApiConfigEdit(cfg)}>{t('actions.edit')}</Button>
             <Button size="small" color="error" variant="outlined" onClick={() => handleApiConfigDelete(cfg.id)}>{t('actions.delete')}</Button>
@@ -359,7 +365,7 @@ export default function Settings() {
             fullWidth
             margin="normal"
             type="password"
-            placeholder={editingApiConfig ? t('settings.apiConfigs.labels.notSet') : ''}
+            placeholder={editingApiConfig ? (editingApiConfig.hasApiKey ? t('settings.apiConfigs.labels.stored') : t('settings.apiConfigs.labels.notSet')) : ''}
             helperText={editingApiConfig ? 'Leave blank to keep the existing key' : undefined}
           />
           <TextField

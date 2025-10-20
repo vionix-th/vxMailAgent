@@ -363,6 +363,7 @@ const resources = {
             model: 'Model',
             maxTokens: 'Max tokens',
             key: 'Key',
+            stored: 'Stored',
             notSet: 'Not set'
           },
           test: {
@@ -1138,6 +1139,7 @@ const resources = {
             model: 'โมเดล',
             maxTokens: 'โทเค็นสูงสุด',
             key: 'คีย์',
+            stored: 'บันทึกแล้ว',
             notSet: 'ยังไม่ตั้งค่า'
           },
           test: {

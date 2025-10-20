@@ -9,6 +9,7 @@ export interface ApiConfigView {
   id: string;
   name: string;
   model: string;
+  hasApiKey: boolean;
   maxCompletionTokens?: number;
 }
 
