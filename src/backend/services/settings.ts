@@ -78,7 +78,9 @@ export async function updateSettingsPartial(
     const incoming = patch.apiConfigs as Partial<ApiConfig>[];
     next.apiConfigs = mergeApiConfigUpdates(current.apiConfigs, incoming);
   }
-  if (patch.signatures && typeof patch.signatures === 'object') next.signatures = patch.signatures as any;
+  if (patch.signatures && typeof patch.signatures === 'object' && !Array.isArray(patch.signatures)) {
+    next.signatures = mergeSignatureUpdates(current.signatures, patch.signatures as Record<string, unknown>);
+  }
   if (typeof patch.fetcherAutoStart === 'boolean') next.fetcherAutoStart = patch.fetcherAutoStart;
   if (typeof patch.sessionTimeoutMinutes === 'number') next.sessionTimeoutMinutes = patch.sessionTimeoutMinutes;
   await saveSettings(next, req);
@@ -162,6 +164,24 @@ export function mergeApiConfigUpdates(current: ApiConfig[], incoming: Partial<Ap
     }
   }
   return current.map((cfg) => clones.get(cfg.id) ?? cloneApiConfig(cfg));
+}
+
+export function mergeSignatureUpdates(
+  current: Record<string, string>,
+  incoming: Record<string, unknown>
+): Record<string, string> {
+  const merged: Record<string, string> = { ...current };
+  for (const [rawKey, value] of Object.entries(incoming)) {
+    const key = typeof rawKey === 'string' ? rawKey.trim() : '';
+    if (!key) {
+      throw new RepositoryError('Invalid signatures patch: signature key must be a non-empty string');
+    }
+    if (typeof value !== 'string') {
+      throw new RepositoryError(`Invalid signatures patch: signature ${key} must be a string`);
+    }
+    merged[key] = value;
+  }
+  return merged;
 }
 
 export interface ApiConfigCreateInput {

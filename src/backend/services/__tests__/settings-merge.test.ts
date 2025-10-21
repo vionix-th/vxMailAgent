@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RepositoryError } from '../error-handler';
-import { mergeApiConfigUpdates } from '../settings';
+import { mergeApiConfigUpdates, mergeSignatureUpdates } from '../settings';
 import type { ApiConfig } from '../../../shared/types';
 
 const baseConfigs: ApiConfig[] = [
@@ -59,5 +59,19 @@ void test('mergeApiConfigUpdates rejects apiKey updates', () => {
   assert.throws(
     () => mergeApiConfigUpdates(baseConfigs, [{ id: 'cfg-secondary', apiKey: 'sk-new' } as Partial<ApiConfig>]),
     (error: unknown) => error instanceof RepositoryError && /apiKey updates/.test(error.message)
+  );
+});
+
+void test('mergeSignatureUpdates preserves untouched entries', () => {
+  const current = { primary: 'Signature A', secondary: 'Signature B' };
+  const result = mergeSignatureUpdates(current, { primary: 'Signature A Updated' });
+  assert.deepStrictEqual(result, { primary: 'Signature A Updated', secondary: 'Signature B' });
+  assert.deepStrictEqual(current, { primary: 'Signature A', secondary: 'Signature B' }, 'original signatures map must remain unchanged');
+});
+
+void test('mergeSignatureUpdates rejects non-string values', () => {
+  assert.throws(
+    () => mergeSignatureUpdates({ primary: 'Signature A' }, { primary: 123 } as unknown as Record<string, unknown>),
+    (error: unknown) => error instanceof RepositoryError && /must be a string/.test(error.message)
   );
 });

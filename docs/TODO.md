@@ -40,6 +40,7 @@
 - **Regression Tests:**
   - Extend `src/backend/tests/integration/settings-and-api.test.cjs` with `integration: signature patch merges entries` to update a single signature and verify others persist.
   - Cover merge logic via the same service-level test suite planned for API configs.
+- **Status:** Completed on 2025-10-21 — signature patches now merge per key, the integration test confirms unchanged entries remain, and service tests assert the helper behaviour.
 
 ## Enforce Workspace Tag Strings (Medium)
 - **Defect Hypothesis:** `workspace-service.ts` and the workspace tool handler accept non-string tags when the array check passes, persisting invalid metadata.

@@ -142,6 +142,47 @@ test('integration: api config patch preserves siblings', { concurrency: false, t
   }
 });
 
+test('integration: signature patch merges entries', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
+  const { baseUrl, stop } = await startBackend();
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+
+  const original = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
+  assert.strictEqual(original.ok, true, `failed to load settings for baseline: ${JSON.stringify(original.data)}`);
+  const originalSignatures = original.data.signatures && typeof original.data.signatures === 'object'
+    ? { ...original.data.signatures }
+    : {};
+
+  try {
+    const seed = await fetchJson(baseUrl, '/api/settings', {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ signatures: { primary: 'Signature Primary', secondary: 'Signature Secondary' } }),
+    });
+    assert.strictEqual(seed.ok, true, `failed to seed signatures: ${JSON.stringify(seed.data)}`);
+
+    const merge = await fetchJson(baseUrl, '/api/settings', {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ signatures: { primary: 'Signature Primary Updated' } }),
+    });
+    assert.strictEqual(merge.ok, true, `failed to merge signatures: ${JSON.stringify(merge.data)}`);
+
+    const after = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
+    assert.strictEqual(after.ok, true, `failed to reload settings: ${JSON.stringify(after.data)}`);
+    const signatures = after.data.signatures || {};
+    assert.strictEqual(signatures.primary, 'Signature Primary Updated', 'primary signature should reflect update');
+    assert.strictEqual(signatures.secondary, 'Signature Secondary', 'secondary signature should remain intact');
+  } finally {
+    await fetchJson(baseUrl, '/api/settings', {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ signatures: originalSignatures }),
+    }).catch((error) => console.warn('[integration] failed to restore signatures', error));
+    await stop();
+  }
+});
+
 function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
