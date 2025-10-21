@@ -70,6 +70,78 @@ test('integration: settings require explicit provisioning', { concurrency: false
   }
 });
 
+test('integration: api config patch preserves siblings', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
+  const { baseUrl, stop } = await startBackend();
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+
+  const created = [];
+  try {
+    const firstId = `int-api-config-a-${Date.now()}`;
+    const secondId = `int-api-config-b-${Date.now()}`;
+
+    const createFirst = await fetchJson(baseUrl, '/api/settings/api-configs', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        id: firstId,
+        name: 'Integration Config A',
+        model: 'gpt-4.1-mini',
+        apiKey: 'sk-integration-A',
+        provider: 'openai',
+      }),
+    });
+    assert.strictEqual(createFirst.status, 201, `failed to create first api config: ${JSON.stringify(createFirst.data)}`);
+    created.push(firstId);
+
+    const createSecond = await fetchJson(baseUrl, '/api/settings/api-configs', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        id: secondId,
+        name: 'Integration Config B',
+        model: 'gpt-4.1-nano',
+        apiKey: 'sk-integration-B',
+        provider: 'openai',
+      }),
+    });
+    assert.strictEqual(createSecond.status, 201, `failed to create second api config: ${JSON.stringify(createSecond.data)}`);
+    created.push(secondId);
+
+    const patchRes = await fetchJson(baseUrl, '/api/settings', {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        apiConfigs: [
+          { id: firstId, name: 'Updated Config A', model: 'gpt-4.1', maxCompletionTokens: 3000 },
+        ],
+      }),
+    });
+    assert.strictEqual(patchRes.ok, true, `PATCH via PUT /api/settings failed: ${JSON.stringify(patchRes.data)}`);
+
+    const afterPatch = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
+    assert.strictEqual(afterPatch.ok, true, `/api/settings fetch failed: ${JSON.stringify(afterPatch.data)}`);
+    const configs = Array.isArray(afterPatch.data.apiConfigs) ? afterPatch.data.apiConfigs : [];
+    const updated = configs.find((cfg) => cfg.id === firstId);
+    const untouched = configs.find((cfg) => cfg.id === secondId);
+    assert.ok(updated, 'updated api config must remain present');
+    assert.ok(untouched, 'untouched api config must remain present');
+    assert.strictEqual(updated.name, 'Updated Config A', 'updated config should reflect new name');
+    assert.strictEqual(updated.model, 'gpt-4.1', 'updated config should reflect new model');
+    assert.strictEqual(updated.maxCompletionTokens, 3000, 'updated config should reflect new token limit');
+    assert.strictEqual(untouched.name, 'Integration Config B', 'sibling config must retain original name');
+    assert.strictEqual(untouched.model, 'gpt-4.1-nano', 'sibling config must retain original model');
+  } finally {
+    for (const id of created) {
+      await fetch(`${baseUrl}/api/settings/api-configs/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: sessionHeaders,
+      }).catch((error) => console.warn('[integration] cleanup delete api-config failed', id, error));
+    }
+    await stop();
+  }
+});
+
 function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }

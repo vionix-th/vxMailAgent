@@ -30,6 +30,7 @@
 - **Regression Tests:**
   - Expand `src/backend/tests/integration/settings-and-api.test.cjs` with `integration: api config patch preserves siblings` that seeds multiple configs, updates one via PATCH, and confirms others remain.
   - Add a service-level `node:test` (e.g. `src/backend/services/__tests__/settings-merge.test.ts`) verifying the merge helper leaves untouched configs intact.
+- **Status:** Completed on 2025-10-21 — partial `apiConfigs` patches now merge by id, the integration test confirms siblings persist, and the merge helper is covered by service tests.
 
 ## Preserve Signatures on Partial Updates (Medium)
 - **Defect Hypothesis:** `services/settings.ts` replaces the entire `signatures` map whenever the field is present in a patch payload.

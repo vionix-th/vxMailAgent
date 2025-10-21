@@ -75,27 +75,8 @@ export async function updateSettingsPartial(
   const next: Settings = { ...current };
   if (typeof patch.virtualRoot === 'string') next.virtualRoot = patch.virtualRoot;
   if (Array.isArray(patch.apiConfigs)) {
-    // Accept only updates that preserve existing apiKeys.
     const incoming = patch.apiConfigs as Partial<ApiConfig>[];
-    const merged: ApiConfig[] = incoming.map((cfg) => {
-      if (!cfg || typeof cfg.id !== 'string') {
-        throw new RepositoryError('Invalid settings patch: apiConfig id required');
-      }
-      const currentCfg = current.apiConfigs.find((c) => c.id === cfg.id);
-      if (!currentCfg) {
-        throw new RepositoryError(`Invalid settings patch: apiConfig ${cfg.id} not found`);
-      }
-      if (Object.prototype.hasOwnProperty.call(cfg, 'apiKey')) {
-        throw new RepositoryError('Invalid settings patch: apiKey updates are not allowed');
-      }
-      return {
-        ...currentCfg,
-        ...(typeof cfg.name === 'string' ? { name: cfg.name } : {}),
-        ...(typeof cfg.model === 'string' ? { model: cfg.model } : {}),
-        ...(typeof cfg.maxCompletionTokens === 'number' ? { maxCompletionTokens: cfg.maxCompletionTokens } : { maxCompletionTokens: currentCfg.maxCompletionTokens }),
-      };
-    });
-    next.apiConfigs = merged;
+    next.apiConfigs = mergeApiConfigUpdates(current.apiConfigs, incoming);
   }
   if (patch.signatures && typeof patch.signatures === 'object') next.signatures = patch.signatures as any;
   if (typeof patch.fetcherAutoStart === 'boolean') next.fetcherAutoStart = patch.fetcherAutoStart;
@@ -133,6 +114,54 @@ function cloneApiConfig(cfg: ApiConfig): ApiConfig {
     provider: cfg.provider,
     ...(typeof cfg.maxCompletionTokens === 'number' ? { maxCompletionTokens: cfg.maxCompletionTokens } : {}),
   };
+}
+
+export function mergeApiConfigUpdates(current: ApiConfig[], incoming: Partial<ApiConfig>[]): ApiConfig[] {
+  const clones = new Map<string, ApiConfig>(current.map((cfg) => [cfg.id, cloneApiConfig(cfg)]));
+  if (!incoming.length) {
+    return current.map((cfg) => cloneApiConfig(cfg));
+  }
+  const seen = new Set<string>();
+  for (const candidate of incoming) {
+    if (!candidate || typeof candidate !== 'object') {
+      throw new RepositoryError('Invalid settings patch: apiConfig entry must be an object');
+    }
+    const id = ensureNonEmptyString(candidate.id, 'apiConfig.id');
+    if (seen.has(id)) {
+      throw new RepositoryError(`Invalid settings patch: duplicate apiConfig ${id}`);
+    }
+    seen.add(id);
+    const target = clones.get(id);
+    if (!target) {
+      throw new RepositoryError(`Invalid settings patch: apiConfig ${id} not found`);
+    }
+    if (Object.prototype.hasOwnProperty.call(candidate, 'apiKey')) {
+      throw new RepositoryError('Invalid settings patch: apiKey updates are not allowed');
+    }
+    if (Object.prototype.hasOwnProperty.call(candidate, 'name')) {
+      target.name = ensureNonEmptyString(candidate.name, 'apiConfig.name');
+    }
+    if (Object.prototype.hasOwnProperty.call(candidate, 'model')) {
+      target.model = ensureNonEmptyString(candidate.model, 'apiConfig.model');
+    }
+    if (Object.prototype.hasOwnProperty.call(candidate, 'provider')) {
+      target.provider = typeof candidate.provider === 'string' && candidate.provider.trim() ? candidate.provider.trim() : undefined;
+    }
+    if (Object.prototype.hasOwnProperty.call(candidate, 'maxCompletionTokens')) {
+      const val = candidate.maxCompletionTokens;
+      if (val === null) {
+        delete target.maxCompletionTokens;
+      } else {
+        const coerced = ensureOptionalMaxTokens(val, 'apiConfig.maxCompletionTokens');
+        if (typeof coerced === 'number') {
+          target.maxCompletionTokens = coerced;
+        } else {
+          delete target.maxCompletionTokens;
+        }
+      }
+    }
+  }
+  return current.map((cfg) => clones.get(cfg.id) ?? cloneApiConfig(cfg));
 }
 
 export interface ApiConfigCreateInput {
