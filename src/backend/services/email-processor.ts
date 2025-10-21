@@ -1,6 +1,6 @@
 import { ConversationThread, Agent, Director, Filter, Prompt, EmailEnvelope } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
-import { evaluateFilters, selectDirectorTriggers } from './orchestration-director';
+import { evaluateFilters, selectDirectorTriggers, EmailContext, FilterEvaluation } from './orchestration-director';
 import { ConversationOrchestrator, createUserRequest } from './conversation-orchestrator';
 import { repoFinalizeThreadStatus } from './conversation-mutations';
 import type { ContextInput } from '../utils/repo-access';
@@ -115,7 +115,7 @@ export class EmailProcessor {
     filters: Filter[],
     traceId: string,
     userReq: ContextInput
-  ): Promise<any[]> {
+  ): Promise<FilterEvaluation[]> {
     this.ensureFilterContext(envelope);
 
     const sFilters = beginSpan(traceId, {
@@ -126,18 +126,19 @@ export class EmailProcessor {
       request: { filtersCount: filters.length }
     }, userReq);
 
-    const ctx: any = {
+    const context: EmailContext = {
       from: envelope.from,
       subject: envelope.subject,
+      to: envelope.to,
+      date: envelope.date,
     };
-    if (typeof envelope.to === 'string') ctx.to = envelope.to;
-    if (typeof envelope.cc === 'string') ctx.cc = envelope.cc;
-    if (typeof envelope.bcc === 'string') ctx.bcc = envelope.bcc;
-    if (typeof envelope.bodyPlain === 'string') ctx.bodyPlain = envelope.bodyPlain;
-    if (typeof envelope.bodyHtml === 'string') ctx.bodyHtml = envelope.bodyHtml;
-    if (typeof envelope.snippet === 'string') ctx.snippet = envelope.snippet;
-    if (typeof envelope.date === 'string') ctx.date = envelope.date;
-    const filterEvaluations = evaluateFilters(filters, ctx as any);
+    if (typeof envelope.cc === 'string' && envelope.cc.trim()) context.cc = envelope.cc;
+    if (typeof envelope.bcc === 'string' && envelope.bcc.trim()) context.bcc = envelope.bcc;
+    if (typeof envelope.bodyPlain === 'string' && envelope.bodyPlain.trim()) context.bodyPlain = envelope.bodyPlain;
+    if (typeof envelope.bodyHtml === 'string' && envelope.bodyHtml.trim()) context.bodyHtml = envelope.bodyHtml;
+    if (typeof envelope.snippet === 'string' && envelope.snippet.trim()) context.snippet = envelope.snippet;
+
+    const filterEvaluations = evaluateFilters(filters, context);
 
     endSpan(traceId, sFilters, {
       status: 'ok',
@@ -171,7 +172,7 @@ export class EmailProcessor {
    * Select directors that should be triggered based on filter results.
    */
   private async selectTriggeredDirectors(
-    filterEvaluations: any[],
+    filterEvaluations: FilterEvaluation[],
     traceId: string,
     userReq: ContextInput
   ): Promise<string[]> {
