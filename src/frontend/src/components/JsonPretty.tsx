@@ -1,11 +1,14 @@
 import React from 'react';
-import { Box, Stack, Button, Tooltip, IconButton, Switch, FormControlLabel } from '@mui/material';
+import { Box, Stack, Button, Tooltip, IconButton } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
 import WrapTextIcon from '@mui/icons-material/WrapText';
 
 export default function JsonPretty({ data, filename = 'data.json', maxHeight = 480, wrapDefault = true }: { data: any; filename?: string; maxHeight?: number; wrapDefault?: boolean }) {
   const [wrap, setWrap] = React.useState(wrapDefault);
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const pretty = React.useMemo(() => {
     try { return JSON.stringify(data, null, 2); } catch { return String(data); }
   }, [data]);
@@ -50,7 +53,9 @@ export default function JsonPretty({ data, filename = 'data.json', maxHeight = 4
       <Box
         component="pre"
         sx={{
-          backgroundColor: 'grey.100',
+          backgroundColor: isDark ? theme.palette.background.paper : theme.palette.grey[100],
+          color: theme.palette.text.primary,
+          border: `1px solid ${isDark ? theme.palette.divider : theme.palette.grey[200]}`,
           p: 2,
           borderRadius: 1,
           overflow: 'auto',

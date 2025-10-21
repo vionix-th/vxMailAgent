@@ -1,20 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Box, Typography, Paper, Stack, IconButton, Tooltip, Chip, Alert, 
-  Button, Card, CardContent, Accordion, AccordionSummary, AccordionDetails,
-  List, ListItem, ListItemText, ListItemIcon, Divider, Grid,
+  Box, Typography, Stack, IconButton, Chip, Alert,
+  Button, Card, CardContent,
   Dialog, DialogTitle, DialogContent, DialogActions, Avatar
 } from '@mui/material';
-import { AnimatePresence, motion } from 'framer-motion';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { useTheme, alpha } from '@mui/material/styles';
+import { motion } from 'framer-motion';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import BuildIcon from '@mui/icons-material/Build';
 import CodeIcon from '@mui/icons-material/Code';
-import ErrorIcon from '@mui/icons-material/Error';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { ConversationThread, PromptMessage, ProviderEvent } from './types/shared';
 import JsonPretty from './components/JsonPretty';
 import { apiFetch } from './utils/http';
@@ -49,16 +45,6 @@ const getRoleIcon = (role: string) => {
   }
 };
 
-const getRoleColor = (role: string) => {
-  switch (role) {
-    case 'user': return '#1976d2';
-    case 'assistant': return '#9c27b0';
-    case 'tool': return '#ff9800';
-    case 'system': return '#757575';
-    default: return '#000000';
-  }
-};
-
 export default function ThreadInspector({ 
   threadId, 
   onBack 
@@ -73,6 +59,36 @@ export default function ThreadInspector({
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
   const [selectedJson, setSelectedJson] = useState<any>(null);
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  const getRoleColor = (role: string) => {
+    switch (role) {
+      case 'user':
+        return theme.palette.primary.main;
+      case 'assistant':
+        return theme.palette.secondary.main;
+      case 'tool':
+        return theme.palette.warning.main;
+      case 'system':
+        return theme.palette.info.main;
+      default:
+        return theme.palette.text.primary;
+    }
+  };
+
+  const messageSurface = (role: string) => alpha(getRoleColor(role), isDark ? 0.24 : 0.08);
+  const subtleSurface = isDark ? alpha(theme.palette.common.white, 0.06) : theme.palette.grey[50];
+  const mutedSurface = isDark ? alpha(theme.palette.common.white, 0.12) : theme.palette.grey[100];
+  const threadToolCallLookup = useMemo(() => {
+    const map = new Map<string, ToolCallTrace>();
+    thread?.toolCalls?.forEach((tc) => {
+      if (tc?.id) {
+        map.set(tc.id, tc);
+      }
+    });
+    return map;
+  }, [thread]);
 
   const loadThread = async () => {
     setLoading(true);
@@ -145,37 +161,59 @@ export default function ThreadInspector({
     );
   };
 
-  const renderToolCalls = (toolCalls: ToolCallTrace[]) => {
+  const renderToolCalls = (toolCalls: any[]) => {
     if (!toolCalls || toolCalls.length === 0) return null;
 
     return (
       <Box sx={{ mt: 2 }}>
         <Typography variant="subtitle2" gutterBottom>Tool Calls:</Typography>
         <Stack spacing={1}>
-          {toolCalls.map((tc, index) => (
-            <Card key={index} variant="outlined" sx={{ backgroundColor: 'grey.50' }}>
-              <CardContent sx={{ py: 1 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="body2" fontWeight="medium">
-                    {tc.function?.name || tc.name}
-                  </Typography>
-                  <Button
-                    size="small"
-                    startIcon={<CodeIcon />}
-                    onClick={() => handleViewJson(tc)}
-                  >
-                    View Details
-                  </Button>
-                </Stack>
-                {tc.function?.arguments && (
-                  <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                    {tc.function.arguments.substring(0, 100)}
-                    {tc.function.arguments.length > 100 ? '...' : ''}
-                  </Typography>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+          {toolCalls.map((raw, index) => {
+            const trace = raw?.id ? threadToolCallLookup.get(raw.id) : undefined;
+            const callName = raw?.function?.name || trace?.name || 'tool_call';
+            const argumentString = raw?.function?.arguments ?? trace?.arguments ?? '';
+            const timestamp = trace?.timestamp ? new Date(trace.timestamp).toLocaleTimeString() : undefined;
+            const durationLabel = typeof trace?.durationMs === 'number' ? `${trace.durationMs}ms` : undefined;
+            const detailPayload = trace ? { ...trace, function: raw?.function } : raw;
+
+            return (
+              <Card key={raw?.id ?? index} variant="outlined" sx={{ backgroundColor: subtleSurface }}>
+                <CardContent sx={{ py: 1 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                    <Stack spacing={0.5}>
+                      <Typography variant="body2" fontWeight="medium">
+                        {callName}
+                      </Typography>
+                      {(timestamp || durationLabel) && (
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          {timestamp && <Chip label={timestamp} size="small" variant="outlined" />}
+                          {durationLabel && <Chip label={durationLabel} size="small" variant="outlined" />}
+                        </Stack>
+                      )}
+                    </Stack>
+                    <Button
+                      size="small"
+                      startIcon={<CodeIcon />}
+                      onClick={() => handleViewJson(detailPayload)}
+                    >
+                      Details
+                    </Button>
+                  </Stack>
+                  {argumentString && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      {argumentString.substring(0, 100)}
+                      {argumentString.length > 100 ? '...' : ''}
+                    </Typography>
+                  )}
+                  {trace?.error && (
+                    <Alert severity="error" sx={{ mt: 1 }}>
+                      <Typography variant="body2">{trace.error}</Typography>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </Stack>
       </Box>
     );
@@ -197,8 +235,7 @@ export default function ThreadInspector({
               variant="outlined" 
               sx={{ 
                 borderLeft: `4px solid ${getRoleColor(message.role)}`,
-                backgroundColor: message.role === 'user' ? 'primary.50' : 
-                                message.role === 'assistant' ? 'secondary.50' : 'grey.50'
+                backgroundColor: messageSurface(message.role)
               }}
             >
               <CardContent>
@@ -209,7 +246,9 @@ export default function ThreadInspector({
                     </Avatar>
                     <Box>
                       <Typography variant="subtitle1" fontWeight="medium">
-                        {message.role.charAt(0).toUpperCase() + message.role.slice(1)}
+                        {message.role === 'tool'
+                          ? 'Tool response'
+                          : message.role.charAt(0).toUpperCase() + message.role.slice(1)}
                       </Typography>
                       {message.name && (
                         <Typography variant="caption" color="text.secondary">
@@ -239,7 +278,7 @@ export default function ThreadInspector({
                 {message.tool_calls && renderToolCalls(message.tool_calls)}
 
                 {message.context && (
-                  <Box sx={{ mt: 2, p: 1, backgroundColor: 'grey.100', borderRadius: 1 }}>
+                  <Box sx={{ mt: 2, p: 1, backgroundColor: mutedSurface, borderRadius: 1 }}>
                     <Typography variant="caption" color="text.secondary">
                       Context: {JSON.stringify(message.context, null, 2).substring(0, 200)}...
                     </Typography>
@@ -250,124 +289,6 @@ export default function ThreadInspector({
           </motion.div>
         ))}
       </Stack>
-    );
-  };
-
-  const renderToolCallsTrace = () => {
-    if (!thread || !thread.toolCalls || thread.toolCalls.length === 0) return null;
-
-    return (
-      <Card>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>Tool Execution Trace</Typography>
-          <Stack spacing={2}>
-          {thread.toolCalls.map((tc, index) => {
-            const callName = tc.name || tc.function?.name || 'tool_call';
-            const argumentString = tc.arguments ?? tc.function?.arguments ?? '';
-            return (
-              <Accordion key={tc.id}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%' }}>
-                    <BuildIcon color="action" />
-                    <Typography variant="body1" fontWeight="medium">{callName}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {tc.timestamp ? new Date(tc.timestamp).toLocaleTimeString() : '—'}
-                    </Typography>
-                    {tc.durationMs && (
-                      <Chip label={`${tc.durationMs}ms`} size="small" />
-                    )}
-                    {tc.error ? (
-                      <ErrorIcon color="error" />
-                    ) : (
-                      <CheckCircleIcon color="success" />
-                    )}
-                  </Stack>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="subtitle2" gutterBottom>Arguments:</Typography>
-                      {(() => {
-                        if (!argumentString) {
-                          return <Typography variant="body2" color="text.secondary">(none)</Typography>;
-                        }
-                        try {
-                          const parsed = JSON.parse(argumentString);
-                          return <JsonPretty data={parsed} filename={`tool-args-${tc.id}.json`} maxHeight={260} />;
-                        } catch {
-                          return (
-                            <Box component="pre" sx={{ backgroundColor: 'grey.100', p: 1, borderRadius: 1, overflow: 'auto', fontSize: '0.75rem' }}>{argumentString}</Box>
-                          );
-                        }
-                      })()}
-                    </Box>
-                    
-                    {tc.result && (
-                      <Box>
-                        <Typography variant="subtitle2" gutterBottom>Result:</Typography>
-                        <JsonPretty data={tc.result} filename={`tool-result-${tc.id}.json`} maxHeight={260} />
-                      </Box>
-                    )}
-                    
-                    {tc.error && (
-                      <Alert severity="error">
-                        <Typography variant="body2">{tc.error}</Typography>
-                      </Alert>
-                    )}
-                  </Stack>
-                </AccordionDetails>
-              </Accordion>
-            );
-          })}
-          </Stack>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const renderProviderEvents = () => {
-    if (!thread || !thread.providerEvents || thread.providerEvents.length === 0) return null;
-
-    return (
-      <Card>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>Provider Events</Typography>
-          <Stack spacing={1}>
-            {thread.providerEvents.map((event: ProviderEvent, index: number) => (
-              <Box key={index} sx={{ p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Chip label={event.type} size="small" />
-                    <Typography variant="body2">{event.provider}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {new Date(event.timestamp).toLocaleTimeString()}
-                    </Typography>
-                  </Stack>
-                  <Stack direction="row" spacing={1}>
-                    {typeof event.latencyMs === 'number' && (
-                      <Chip label={`${event.latencyMs}ms`} size="small" />
-                    )}
-                    {event.usage?.totalTokens && (
-                      <Chip label={`${event.usage.totalTokens} tok`} size="small" />
-                    )}
-                  </Stack>
-                </Stack>
-                {event.type !== 'error' && (
-                  <Box sx={{ mt: 1 }}>
-                    <Typography variant="subtitle2" gutterBottom>Payload</Typography>
-                    <JsonPretty data={event.payload} filename={`provider-${event.id}.json`} maxHeight={260} />
-                  </Box>
-                )}
-                {event.error && (
-                  <Alert severity="error" sx={{ mt: 1 }}>
-                    <Typography variant="body2">{event.error}</Typography>
-                  </Alert>
-                )}
-              </Box>
-            ))}
-          </Stack>
-        </CardContent>
-      </Card>
     );
   };
 
@@ -406,21 +327,12 @@ export default function ThreadInspector({
         <Chip label={thread.kind} color="primary" size="small" />
       </Stack>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} lg={8}>
-          <Stack spacing={3}>
-            <Typography variant="h5">Messages ({thread.fullMessages?.length || 0})</Typography>
-            {renderMessages()}
-          </Stack>
-        </Grid>
-        
-        <Grid item xs={12} lg={4}>
-          <Stack spacing={3}>
-            {renderToolCallsTrace()}
-            {renderProviderEvents()}
-          </Stack>
-        </Grid>
-      </Grid>
+      <Stack spacing={3}>
+        <Box>
+          <Typography variant="h5">Messages ({thread.fullMessages?.length || 0})</Typography>
+          {renderMessages()}
+        </Box>
+      </Stack>
 
       {/* Message Details Dialog */}
       <Dialog

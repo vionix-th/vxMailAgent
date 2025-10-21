@@ -91,7 +91,7 @@ export default function UnifiedDiagnosticsRewrite() {
 
   const handleTabChange = (_: React.SyntheticEvent, value: number) => {
     setTab(value);
-    if (value !== 0) {
+    if (value !== 1) {
       resetEmailContext();
     }
   };
@@ -227,16 +227,16 @@ export default function UnifiedDiagnosticsRewrite() {
           <Tab
             id="diagnostics-tab-0"
             aria-controls="diagnostics-tabpanel-0"
-            icon={<EmailIcon fontSize="small" />}
+            icon={<CloudSyncIcon fontSize="small" />}
             iconPosition="start"
-            label={t('diagnosticsTabs.mailFlow')}
+            label={t('diagnosticsTabs.fetcher')}
           />
           <Tab
             id="diagnostics-tab-1"
             aria-controls="diagnostics-tabpanel-1"
-            icon={<CloudSyncIcon fontSize="small" />}
+            icon={<EmailIcon fontSize="small" />}
             iconPosition="start"
-            label={t('diagnosticsTabs.fetcher')}
+            label={t('diagnosticsTabs.mailFlow')}
           />
           <Tab
             id="diagnostics-tab-2"
@@ -246,7 +246,7 @@ export default function UnifiedDiagnosticsRewrite() {
             label={t('diagnosticsTabs.conversations')}
           />
         </Tabs>
-        {safeTab === 0 && (
+        {safeTab === 1 && (
           <Box sx={{ mt: 2 }}>
             {renderBreadcrumbs()}
             {(viewMode === 'conversation' || viewMode === 'thread') && renderEmailContext()}
@@ -254,7 +254,9 @@ export default function UnifiedDiagnosticsRewrite() {
         )}
       </Paper>
 
-      {renderTabPanel(0, (
+      {renderTabPanel(0, <FetcherControl />)}
+
+      {renderTabPanel(1, (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {viewMode === 'dashboard' && (
             <EmailProcessingDashboard onEmailSelect={handleEmailSelect} />
@@ -264,6 +266,7 @@ export default function UnifiedDiagnosticsRewrite() {
             <ConversationInspector
               conversationId={selectedConversationId}
               onBack={handleBackToDashboard}
+              onViewThread={handleThreadSelect}
             />
           )}
 
@@ -275,8 +278,6 @@ export default function UnifiedDiagnosticsRewrite() {
           )}
         </Box>
       ))}
-
-      {renderTabPanel(1, <FetcherControl />)}
 
       {renderTabPanel(2, <Conversations />)}
     </Box>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Paper, Stack, IconButton, Tooltip, Chip, Alert, 
   Button, Card, CardContent, Accordion, AccordionSummary, AccordionDetails,
@@ -39,26 +39,6 @@ interface ConversationMetrics {
   toolCallCount: number;
 }
 
-type ThreadWithContext = ConversationThread & {
-  fullMessages: any[];
-  toolCalls: ToolCallTrace[];
-  providerEvents: ProviderEvent[];
-};
-
-interface ToolCallTrace {
-  id: string;
-  name?: string;
-  arguments?: string;
-  result?: any;
-  error?: string;
-  timestamp?: string;
-  durationMs?: number;
-  function?: {
-    name: string;
-    arguments: string;
-  };
-}
-
 function TabPanel({ children, value, index, ...other }: any) {
   return (
     <div
@@ -75,17 +55,17 @@ function TabPanel({ children, value, index, ...other }: any) {
 
 export default function ConversationInspector({ 
   conversationId, 
-  onBack 
+  onBack,
+  onViewThread,
 }: { 
   conversationId: string; 
   onBack: () => void; 
+  onViewThread?: (threadId: string) => void;
 }) {
   const [conversation, setConversation] = useState<ConversationDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState(0);
-  const [selectedThread, setSelectedThread] = useState<string | null>(null);
-  const [threadDetails, setThreadDetails] = useState<ThreadWithContext | null>(null);
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
   const [selectedJson, setSelectedJson] = useState<any>(null);
 
@@ -118,16 +98,6 @@ export default function ConversationInspector({
       setError(err.message || 'Failed to load conversation');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadThreadDetails = async (threadId: string) => {
-    try {
-      const response = await apiFetch<ThreadWithContext>(`/api/conversations/threads/${threadId}/full`);
-      setThreadDetails(response);
-      setSelectedThread(threadId);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load thread details');
     }
   };
 
@@ -237,13 +207,13 @@ export default function ConversationInspector({
                 <Button
                   size="small"
                   startIcon={<VisibilityIcon />}
-                  onClick={() => loadThreadDetails(conversation.id)}
+                  onClick={() => onViewThread?.(conversation.id)}
                 >
-                  View Full Thread
+                  Details
                 </Button>
               </Stack>
               <List>
-                {conversation.messages.slice(0, 5).map((message: PromptMessage, index: number) => (
+                {conversation.messages.map((message: PromptMessage, index: number) => (
                   <ListItem key={index} divider>
                     <ListItemIcon>
                       <MessageIcon color={message.role === 'user' ? 'primary' : 'secondary'} />
@@ -254,14 +224,6 @@ export default function ConversationInspector({
                     />
                   </ListItem>
                 ))}
-                {conversation.messages.length > 5 && (
-                  <ListItem>
-                    <ListItemText
-                      primary={`... and ${conversation.messages.length - 5} more messages`}
-                      sx={{ textAlign: 'center', fontStyle: 'italic' }}
-                    />
-                  </ListItem>
-                )}
               </List>
             </CardContent>
           </Card>
@@ -355,7 +317,7 @@ export default function ConversationInspector({
                     startIcon={<CodeIcon />}
                     onClick={() => handleViewJson(event)}
                   >
-                    View Details
+                    Details
                   </Button>
                 </TableCell>
               </TableRow>
