@@ -3,6 +3,7 @@ import { saveSettings } from '../services/settings';
 import logger from '../services/logger';
 import { requireContext } from '../utils/repo-access';
 import { errorHandler, ValidationError } from '../services/error-handler';
+import { validateFetcherLogEntries } from '../services/fetcher-log-validation';
 
 import { FetcherManager } from '../services/fetcher-manager';
 import { LiveRepos } from '../liveRepos';
@@ -46,6 +47,14 @@ export default function registerFetcherRoutes(app: express.Express, fetcherManag
   app.get('/api/fetcher/logs', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const log = await fetcherManager.getFetcherLog(requireContext(req));
     res.json(log);
+  }));
+
+  app.post('/api/fetcher/logs', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
+    errorHandler.validateInput(typeof req.body === 'object' && req.body !== null, 'Request body must be an object');
+    const entries = (req.body as any).entries;
+    const validated = validateFetcherLogEntries(entries, 'fetcherLog');
+    await fetcherManager.setFetcherLog(requireContext(req), validated);
+    res.json({ success: true, count: validated.length });
   }));
 
   // Note: Full purge moved to cleanup routes (/api/cleanup/fetcher-logs)

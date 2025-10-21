@@ -5,6 +5,7 @@ import { requireContext } from '../utils/repo-access';
 import { FetcherLogEntry } from '../../shared/types';
 import { newId } from '../utils/id';
 import logger from './logger';
+import { validateFetcherLogEntry, validateFetcherLogEntries } from './fetcher-log-validation';
 
 /** Initialize the background fetcher with refactored modular architecture. */
 export function initFetcher(
@@ -28,11 +29,8 @@ export function initFetcher(
 
   async function logFetch(entry: FetcherLogEntry) {
     try {
-      if (typeof entry.id !== 'string' || !entry.id) {
-        throw new Error('FetcherLogEntry.id required');
-      }
-      const withId: FetcherLogEntry = entry;
-      await repos.appendFetcherLog(fetcherReq, withId);
+      const validated = validateFetcherLogEntry(entry, 'fetcherLog');
+      await repos.appendFetcherLog(fetcherReq, validated);
     } catch (e) {
       logger.error('Failed to create fetcherLog entry', { err: e });
     }
@@ -132,7 +130,8 @@ export function initFetcher(
   }
 
   async function setFetcherLog(next: FetcherLogEntry[]): Promise<void> {
-    return repos.replaceFetcherLog(fetcherReq, Array.isArray(next) ? next : []);
+    const validated = validateFetcherLogEntries(next, 'fetcherLog');
+    return repos.replaceFetcherLog(fetcherReq, validated);
   }
 
   async function deleteFetcherLog(id: string): Promise<boolean> {
@@ -148,10 +147,8 @@ export function initFetcher(
   }
 
   async function appendFetcherLog(entry: FetcherLogEntry): Promise<void> {
-    const payload = typeof entry.id === 'string' && entry.id
-      ? entry
-      : { ...entry, id: newId() };
-    await repos.appendFetcherLog(fetcherReq, payload);
+    const validated = validateFetcherLogEntry(entry, 'fetcherLog');
+    await repos.appendFetcherLog(fetcherReq, validated);
   }
 
   function getStatus() {

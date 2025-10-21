@@ -103,7 +103,7 @@ export class FetcherManager {
   /**
    * Set fetcher log for user or global
    */
-  async setFetcherLog(req: ContextInput, next: any[]): Promise<void> {
+  async setFetcherLog(req: ContextInput, next: FetcherLogEntry[]): Promise<void> {
     const fetcher = this.getFetcher(req);
     await fetcher.setFetcherLog(next);
   }

@@ -20,6 +20,7 @@
 - **Regression Tests:**
   - Extend `src/backend/tests/integration/fetcher-and-observability.test.cjs` with `integration: fetcher logs reject malformed entries` that POSTs malformed payloads (non-array and missing-id entries) and asserts the response is 400 with no repository changes.
   - Add a service-level `node:test` (e.g. `src/backend/services/__tests__/fetcher-logs.test.ts`) that exercises the validator directly with malformed inputs.
+- **Status:** Completed on 2025-10-21 — `fetcher-log-validation` now enforces shape, `POST /api/fetcher/logs` rejects bad payloads, and both the integration and service tests cover failures.
 
 ## Preserve API Configs on Partial Patch (High)
 - **Defect Hypothesis:** `services/settings.ts` rebuilds `apiConfigs` from `patch.apiConfigs`, erasing configs that are not included in the payload.

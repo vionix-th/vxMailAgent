@@ -87,6 +87,73 @@ test('integration: fetcher start blocked until settings provisioned', { concurre
   }
 });
 
+test('integration: fetcher logs reject malformed entries', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
+  const env = createTestEnv({
+    VX_TEST_MOCK_PROVIDER: 'true',
+    VX_TEST_DISABLE_ORCHESTRATOR: 'true',
+  });
+  const { baseUrl, stop } = await startBackend({ env });
+  let jsonHeaders;
+  try {
+    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+    jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+
+    const initial = await fetchJson(baseUrl, '/api/fetcher/logs', { headers: sessionHeaders });
+    assert.strictEqual(initial.ok, true, 'GET /api/fetcher/logs should succeed before validation checks');
+    assert.ok(Array.isArray(initial.data), 'fetcher logs response must be an array');
+    const baselineCount = initial.data.length;
+
+    const nonArray = await fetchJson(baseUrl, '/api/fetcher/logs', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ entries: {} }),
+    });
+    assert.strictEqual(nonArray.ok, false, 'non-array payload must be rejected');
+    assert.strictEqual(nonArray.status, 400, 'non-array payload should return HTTP 400');
+    assert.strictEqual(nonArray.data?.code, 'FETCHER_LOG_INVALID_ARRAY', 'error code should flag invalid array');
+
+    const afterNonArray = await fetchJson(baseUrl, '/api/fetcher/logs', { headers: sessionHeaders });
+    assert.strictEqual(afterNonArray.ok, true, 'fetcher logs should still be retrievable');
+    assert.ok(Array.isArray(afterNonArray.data), 'fetcher logs response must remain an array');
+    assert.strictEqual(afterNonArray.data.length, baselineCount, 'failed mutation must not change stored logs');
+
+    const missingId = await fetchJson(baseUrl, '/api/fetcher/logs', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        entries: [
+          {
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            provider: null,
+            accountId: 'all',
+            event: 'integration_missing_id',
+            message: 'missing id entry',
+            emailId: null,
+          },
+        ],
+      }),
+    });
+    assert.strictEqual(missingId.ok, false, 'missing id entry must be rejected');
+    assert.strictEqual(missingId.status, 400, 'missing id entry should return HTTP 400');
+    assert.strictEqual(missingId.data?.code, 'FETCHER_LOG_INVALID_ID', 'error code should indicate missing id');
+
+    const afterMissingId = await fetchJson(baseUrl, '/api/fetcher/logs', { headers: sessionHeaders });
+    assert.strictEqual(afterMissingId.ok, true, 'fetcher logs should still be retrievable after validation failure');
+    assert.ok(Array.isArray(afterMissingId.data), 'fetcher logs response must remain an array');
+    assert.strictEqual(afterMissingId.data.length, baselineCount, 'failed append must not mutate fetcher log length');
+  } finally {
+    try {
+      if (jsonHeaders) {
+        await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.long });
+      }
+    } catch (error) {
+      console.warn('[integration] fetcher stop cleanup after log validation test failed', error);
+    }
+    await stop();
+  }
+});
+
 test('integration: fetcher controls and observability endpoints', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
   const { baseUrl, stop } = await startBackend({
     env: createTestEnv({

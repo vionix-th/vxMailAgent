@@ -20,6 +20,7 @@ import {
 } from './utils/repo-access';
 import { loadSettings } from './services/settings';
 import { ValidationError, NotFoundError } from './services/error-handler';
+import { validateFetcherLogEntry, validateFetcherLogEntries } from './services/fetcher-log-validation';
 import { assertThreadTimestamps } from './services/conversation-mutations';
 export interface LiveRepos {
   getPrompts(context?: ContextInput): Promise<Prompt[]>;
@@ -188,11 +189,13 @@ export function createLiveRepos(): LiveRepos {
     },
     appendFetcherLog: async (context: ContextInput, entry: FetcherLogEntry) => {
       const repo = getFetcherLogRepo(ensureContext(context));
-      await repo.append(entry);
+      const validated = validateFetcherLogEntry(entry, 'fetcherLog');
+      await repo.append(validated);
     },
     replaceFetcherLog: async (context: ContextInput, next: FetcherLogEntry[]) => {
       const repo = getFetcherLogRepo(ensureContext(context));
-      await repo.replace(Array.isArray(next) ? next : []);
+      const validated = validateFetcherLogEntries(next, 'fetcherLog');
+      await repo.replace(validated);
     },
     clearFetcherLog: async (context: ContextInput) => {
       const repo = getFetcherLogRepo(ensureContext(context));
