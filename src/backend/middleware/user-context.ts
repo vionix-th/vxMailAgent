@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { validateUid } from '../utils/paths';
 import { getUserRepoBundle, RepoBundle } from '../repository/registry';
 import logger from '../services/logger';
+import { RepositoryError } from '../services/error-handler';
 
 /**
  * Extended request interface with user context.
@@ -83,7 +84,22 @@ export async function attachUserContext(req: UserRequest, res: Response, next: N
       });
       return;
     }
-    
+    if (error instanceof RepositoryError) {
+      const status = typeof error.statusCode === 'number' ? error.statusCode : 500;
+      const code = typeof error.code === 'string' ? error.code : 'REPOSITORY_ERROR';
+      logger.warn('[USER_CONTEXT] repository error during setup', {
+        uid: (req as UserRequest).auth?.uid,
+        code,
+        message: error.message,
+      });
+      res.status(status).json({
+        error: 'Repository error',
+        message: error.message,
+        code,
+      });
+      return;
+    }
+
     logger.error('[USER_CONTEXT] unexpected error', { err: error });
     res.status(500).json({
       error: 'Internal server error during user context setup',

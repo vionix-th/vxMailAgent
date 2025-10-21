@@ -2,6 +2,7 @@ import { FETCHER_BOOTSTRAP_CONCURRENCY } from '../config';
 import { getUserAccountsRepo } from './users';
 import { repoBundleRegistry } from '../repository/registry';
 import logger from './logger';
+import { RepositoryError } from './error-handler';
 import type { FetcherLogEntry } from '../../shared/types';
 import type { FetcherManager } from './fetcher-manager';
 import { newId } from '../utils/id';
@@ -21,7 +22,7 @@ export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise
         const bundle = await repoBundleRegistry.getBundle(uid);
         const settings = await bundle.settings.load();
         if (!settings) {
-          logger.warn('Boot: settings not initialized for user; skipping autostart', { uid });
+          logger.info('Boot: settings not initialized for user; skipping autostart', { uid });
           return;
         }
         if (settings.fetcherAutoStart !== true) return;
@@ -61,6 +62,10 @@ export async function bootstrapFetchers(fetcherManager: FetcherManager): Promise
           }
         }
       } catch (e) {
+        if (e instanceof RepositoryError && e.code === 'SETTINGS_NOT_INITIALIZED') {
+          logger.info('Boot: skipping fetcher autostart, settings not initialized', { uid });
+          return;
+        }
         logger.error('Boot: error preparing user bundle', { uid, err: e });
       }
     }

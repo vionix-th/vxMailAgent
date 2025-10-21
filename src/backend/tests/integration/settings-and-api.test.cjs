@@ -1,5 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const Database = require('better-sqlite3');
 const {
   discoverTestUser,
   startBackend,
@@ -7,7 +9,66 @@ const {
   fetchJson,
 } = require('../lib/harness');
 const { TEST_TIMEOUTS } = require('../lib/testEnv');
-const { uid, fsPath } = discoverTestUser();
+const { uid } = discoverTestUser();
+
+function userDbPath(uidValue) {
+  const dataDir = process.env.VX_MAILAGENT_DATA_DIR;
+  assert.ok(typeof dataDir === 'string' && dataDir, 'VX_MAILAGENT_DATA_DIR must be set during integration tests');
+  const safeUid = uidValue.replace(/:/g, '_');
+  return path.join(dataDir, 'users', safeUid, 'user.sqlite3');
+}
+
+function restoreSettings(dbFile, snapshot) {
+  const db = new Database(dbFile);
+  try {
+    db.prepare(
+      'REPLACE INTO settings (id, virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes) VALUES (@id, @virtual_root, @api_configs_json, @signatures_json, @fetcher_auto_start, @session_timeout_minutes)'
+    ).run({
+      id: 1,
+      virtual_root: snapshot.virtual_root,
+      api_configs_json: snapshot.api_configs_json,
+      signatures_json: snapshot.signatures_json,
+      fetcher_auto_start: snapshot.fetcher_auto_start,
+      session_timeout_minutes: snapshot.session_timeout_minutes,
+    });
+  } finally {
+    db.close();
+  }
+}
+
+test('integration: settings require explicit provisioning', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
+  const { baseUrl, stop } = await startBackend();
+  try {
+    const dbFile = userDbPath(uid);
+    const db = new Database(dbFile);
+    let snapshot;
+    try {
+      snapshot = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+      assert.ok(snapshot, 'expected seeded settings row to exist');
+      db.prepare('DELETE FROM settings WHERE id = 1').run();
+      const remaining = db.prepare('SELECT COUNT(1) AS count FROM settings').get();
+      assert.strictEqual(remaining.count, 0, 'settings row should be removed for provisioning test');
+    } finally {
+      db.close();
+    }
+
+    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+
+    const missingRes = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
+    assert.strictEqual(missingRes.ok, false, 'GET /api/settings must fail when settings are absent');
+    assert.strictEqual(missingRes.status, 412, 'missing settings should return HTTP 412');
+    assert.strictEqual(missingRes.data?.code, 'SETTINGS_NOT_INITIALIZED', 'error code must communicate missing settings');
+    assert.match(String(missingRes.data?.message ?? ''), /not initialized/i, 'error message should mention initialization');
+
+    restoreSettings(dbFile, snapshot);
+
+    const restored = await fetchJson(baseUrl, '/api/settings', { headers: sessionHeaders });
+    assert.strictEqual(restored.ok, true, 'GET /api/settings should succeed once settings restored');
+    assert.strictEqual(restored.data?.sessionTimeoutMinutes, snapshot.session_timeout_minutes, 'restored settings must match original timeout');
+  } finally {
+    await stop();
+  }
+});
 
 function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };

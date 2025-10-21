@@ -21,7 +21,7 @@ export async function loadSettings(req?: ContextInput): Promise<Settings> {
   const repo = getSettingsRepo(ctx);
   const settings = await repo.load();
   if (!settings) {
-    throw new RepositoryError('Settings not initialized');
+    throw new RepositoryError('Settings not initialized', 'SETTINGS_NOT_INITIALIZED', 412);
   }
   // Validate required shape — fail closed instead of synthesizing
   if (!settings || typeof settings !== 'object') {

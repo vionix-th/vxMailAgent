@@ -1,5 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const Database = require('better-sqlite3');
 const {
   discoverTestUser,
   startBackend,
@@ -13,6 +15,77 @@ const { uid } = discoverTestUser();
 function authHeaders(sessionHeaders, extra = {}) {
   return { ...sessionHeaders, ...extra };
 }
+
+function userDbPath(uidValue) {
+  const dataDir = process.env.VX_MAILAGENT_DATA_DIR;
+  assert.ok(typeof dataDir === 'string' && dataDir, 'VX_MAILAGENT_DATA_DIR must be set during integration tests');
+  const safeUid = uidValue.replace(/:/g, '_');
+  return path.join(dataDir, 'users', safeUid, 'user.sqlite3');
+}
+
+function restoreSettings(dbFile, snapshot) {
+  const db = new Database(dbFile);
+  try {
+    db.prepare(
+      'REPLACE INTO settings (id, virtual_root, api_configs_json, signatures_json, fetcher_auto_start, session_timeout_minutes) VALUES (@id, @virtual_root, @api_configs_json, @signatures_json, @fetcher_auto_start, @session_timeout_minutes)'
+    ).run({
+      id: 1,
+      virtual_root: snapshot.virtual_root,
+      api_configs_json: snapshot.api_configs_json,
+      signatures_json: snapshot.signatures_json,
+      fetcher_auto_start: snapshot.fetcher_auto_start,
+      session_timeout_minutes: snapshot.session_timeout_minutes,
+    });
+  } finally {
+    db.close();
+  }
+}
+
+test('integration: fetcher start blocked until settings provisioned', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
+  const env = createTestEnv({
+    VX_TEST_MOCK_PROVIDER: 'true',
+    VX_TEST_DISABLE_ORCHESTRATOR: 'true',
+  });
+  const { baseUrl, stop } = await startBackend({ env });
+  let jsonHeaders;
+  try {
+    const dbFile = userDbPath(uid);
+    const db = new Database(dbFile);
+    let snapshot;
+    try {
+      snapshot = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+      assert.ok(snapshot, 'expected seeded settings row to exist');
+      db.prepare('DELETE FROM settings WHERE id = 1').run();
+      const afterDelete = db.prepare('SELECT COUNT(1) AS count FROM settings').get();
+      assert.strictEqual(afterDelete.count, 0, 'settings row should be deleted before fetcher test');
+    } finally {
+      db.close();
+    }
+
+    const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+    jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+
+    const startMissing = await fetchJson(baseUrl, '/api/fetcher/start', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.long });
+    assert.strictEqual(startMissing.ok, false, '/api/fetcher/start must fail when settings are missing');
+    assert.strictEqual(startMissing.status, 412, 'missing settings should surface as HTTP 412');
+    assert.strictEqual(startMissing.data?.code, 'SETTINGS_NOT_INITIALIZED', 'error code should indicate missing settings');
+    assert.match(String(startMissing.data?.message ?? ''), /not initialized/i, 'error message should mention initialization');
+
+    restoreSettings(dbFile, snapshot);
+
+    const startRestored = await fetchJson(baseUrl, '/api/fetcher/start', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.long });
+    assert.strictEqual(startRestored.ok, true, '/api/fetcher/start should succeed once settings restored');
+  } finally {
+    try {
+      if (jsonHeaders) {
+        await fetchJson(baseUrl, '/api/fetcher/stop', { method: 'POST', headers: jsonHeaders }, { timeoutMs: TEST_TIMEOUTS.http.long });
+      }
+    } catch (error) {
+      console.warn('[integration] fetcher stop cleanup after provisioning test failed', error);
+    }
+    await stop();
+  }
+});
 
 test('integration: fetcher controls and observability endpoints', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
   const { baseUrl, stop } = await startBackend({

@@ -21,6 +21,7 @@ import {
 } from '../storage/sqlite/repositories';
 import { SqliteConnectionFactory, StorageHandle } from '../storage/sqlite';
 import logger from '../services/logger';
+import { RepositoryError } from '../services/error-handler';
 import type { TemplateItem } from '../../shared/types';
 import {
   augmentAccountsRepository,
@@ -76,17 +77,6 @@ export interface RepoBundle {
   providerEvents: ProviderEventsRepository;
   traces: TracesRepository;
   orchestrationLog: OrchestrationLogRepository;
-}
-
-function defaultSettings(): any {
-  return {
-    virtualRoot: '',
-    apiConfigs: [],
-    signatures: {},
-    fetcherAutoStart: true,
-    sessionTimeoutMinutes: 15,
-    payload: {},
-  };
 }
 
 function defaultTemplates(): TemplateItem[] {
@@ -165,7 +155,21 @@ export class RepoBundleRegistry {
       orchestrationLog: new OrchestrationLogRepository(handle),
     };
 
-    await this.applyDefaults(bundle);
+    try {
+      await this.applyDefaults(bundle);
+    } catch (error) {
+      if (sqliteFactory) {
+        try {
+          await sqliteFactory.releaseUserHandle(uid);
+        } catch (releaseError: unknown) {
+          logger.warn('[REGISTRY] Failed to release SQLite handle after defaults error', {
+            uid,
+            error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+          });
+        }
+      }
+      throw error;
+    }
 
     if (this.bundles.size >= USER_REGISTRY_MAX_ENTRIES) {
       this.evictOldest();
@@ -207,7 +211,7 @@ export class RepoBundleRegistry {
   private async applyDefaults(bundle: RepoBundle): Promise<void> {
     const settings = await bundle.settings.load();
     if (!settings) {
-      await bundle.settings.save(defaultSettings());
+      throw new RepositoryError('Settings not initialized', 'SETTINGS_NOT_INITIALIZED', 412);
     }
 
     const templates = await bundle.templates.list();
