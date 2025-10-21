@@ -3,6 +3,7 @@ import { ToolHandlerRegistrar, ToolExecutionRuntime } from './types';
 import logger from '../services/logger';
 import { MemoryRepository } from '../storage/sqlite/repositories/memory';
 import { ValidationError } from '../services/error-handler';
+import { newId } from '../utils/id';
 import { requireMemoryScope, optionalMemoryScope, requireMemoryOwner, requireContent, normalizeMemoryTags, normalizeOptionalString } from '../utils/memory-validation';
 
 export function registerMemoryHandlers(register: ToolHandlerRegistrar) {
@@ -83,13 +84,15 @@ export async function handleMemoryToolCall(payload: any, memoryRepo: MemoryRepos
         entryPayload && Array.isArray(entryPayload.tags) ? entryPayload.tags : undefined
       );
 
+      const entryId = resolveMemoryId(entryPayload, payload);
+      const createdAt = new Date().toISOString();
       const entry: MemoryEntry = {
-        id: typeof entryPayload?.id === 'string' ? entryPayload.id : payload.id || `mem_${Date.now()}`,
+        id: entryId,
         scope,
         owner,
         content,
-        created: new Date().toISOString(),
-        updated: new Date().toISOString(),
+        created: createdAt,
+        updated: createdAt,
         tags: tags ?? [],
       };
       await memoryRepo.insert(entry);
@@ -152,4 +155,22 @@ function sanitize(obj: any) {
   } catch {
     return undefined;
   }
+}
+
+function resolveMemoryId(entryPayload: Record<string, unknown> | undefined, payload: any): string {
+  if (entryPayload && Object.prototype.hasOwnProperty.call(entryPayload, 'id')) {
+    const candidate = typeof entryPayload.id === 'string' ? entryPayload.id.trim() : '';
+    if (!candidate) {
+      throw new ValidationError('memory_add.entry.id cannot be empty', 'MEMORY_ID_REQUIRED');
+    }
+    return candidate;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'id')) {
+    const candidate = typeof payload.id === 'string' ? payload.id.trim() : '';
+    if (!candidate) {
+      throw new ValidationError('memory_add.id cannot be empty', 'MEMORY_ID_REQUIRED');
+    }
+    return candidate;
+  }
+  return newId();
 }
