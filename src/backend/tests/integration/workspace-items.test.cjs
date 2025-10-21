@@ -129,23 +129,49 @@ test('integration: workspace items via tool call + revision guards', { concurren
     assert.strictEqual(item.provenance.createdBy, 'agent', 'workspace item provenance createdBy must be agent');
     assert.strictEqual(String(item.provenance.creatorId), String(ids.agent), 'workspace item provenance.creatorId must match agent id');
 
+    let currentRevision = item.lifecycle.revision;
+
+    const nonStringTags = await fetch(`${baseUrl}/api/workspaces/${encodeURIComponent(agentThread.id)}/items/${encodeURIComponent(item.id)}`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ expectedRevision: currentRevision, metadata: { tags: ['valid', 123] } }),
+    });
+    assert.strictEqual(nonStringTags.status, 400, 'workspace update should reject non-string tags');
+
+    const emptyTag = await fetch(`${baseUrl}/api/workspaces/${encodeURIComponent(agentThread.id)}/items/${encodeURIComponent(item.id)}`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ expectedRevision: currentRevision, metadata: { tags: ['primary', '  '] } }),
+    });
+    assert.strictEqual(emptyTag.status, 400, 'workspace update should reject empty tags');
+
+    const tagsPatch = await fetchJson(baseUrl, `/api/workspaces/${encodeURIComponent(agentThread.id)}/items/${encodeURIComponent(item.id)}`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ expectedRevision: currentRevision, metadata: { tags: ['Alpha', 'Beta ', 'Alpha'] } }),
+    });
+    assert.strictEqual(tagsPatch.ok, true, 'workspace update should accept valid tags');
+    assert.deepStrictEqual(tagsPatch.data.item.metadata.tags, ['Alpha', 'Beta'], 'workspace tags should be trimmed and deduplicated');
+    currentRevision = tagsPatch.data.item.lifecycle.revision;
+
     // Update with expectedRevision guard (happy path)
-    const rev = item.lifecycle.revision;
     const patch = await fetchJson(baseUrl, `/api/workspaces/${encodeURIComponent(agentThread.id)}/items/${encodeURIComponent(item.id)}`, {
       method: 'PUT',
       headers: jsonHeaders,
-      body: JSON.stringify({ expectedRevision: rev, metadata: { label: 'stub-note-updated' } }),
+      body: JSON.stringify({ expectedRevision: currentRevision, metadata: { label: 'stub-note-updated' } }),
     });
     assert.strictEqual(patch.ok, true, 'workspace update failed');
     assert.strictEqual(patch.data.item.metadata.label, 'stub-note-updated', 'label not updated');
+    const postLabelRevision = patch.data.item.lifecycle.revision;
 
     // Update with stale revision (should 4xx)
     const stale = await fetch(`${baseUrl}/api/workspaces/${encodeURIComponent(agentThread.id)}/items/${encodeURIComponent(item.id)}`, {
       method: 'PUT',
       headers: jsonHeaders,
-      body: JSON.stringify({ expectedRevision: rev, metadata: { label: 'stale' } }),
+      body: JSON.stringify({ expectedRevision: currentRevision, metadata: { label: 'stale' } }),
     });
     assert.ok(stale.status >= 400, 'stale revision must fail');
+    currentRevision = postLabelRevision;
 
     // Soft delete
     const softDel = await fetchJson(baseUrl, `/api/workspaces/${encodeURIComponent(agentThread.id)}/items/${encodeURIComponent(item.id)}`, {

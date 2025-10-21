@@ -3,6 +3,7 @@ import { ValidationError, NotFoundError } from './error-handler';
 import { newId } from '../utils/id';
 import { WorkspaceItemInput } from '../../shared/types';
 import type { WorkspaceItemsRepoInstance } from '../repository/wrappers';
+import { normalizeStringTags } from '../utils/tag-normalization';
 
 export interface WorkspaceServiceDeps {
   repo: WorkspaceItemsRepoInstance;
@@ -47,13 +48,18 @@ export class WorkspaceService {
     const conversationId = this.requireConversationId();
     await this.ensureConversationExists();
     this.validateContent(input.content);
-    if (!input.metadata || typeof input.metadata !== 'object') {
+    if (!input.metadata || typeof input.metadata !== 'object' || Array.isArray(input.metadata)) {
       throw new ValidationError('metadata is required');
     }
-    const tagsAny = (input as any)?.metadata?.tags;
-    if (typeof tagsAny !== 'undefined' && !Array.isArray(tagsAny)) {
-      throw new ValidationError('metadata.tags must be an array of strings');
-    }
+    const hasTags = Object.prototype.hasOwnProperty.call(input.metadata, 'tags');
+    const normalizedTags = hasTags
+      ? normalizeStringTags((input.metadata as any).tags, 'metadata.tags', {
+          optional: false,
+          skipEmpty: false,
+          allowEmptyResult: true,
+          fieldLabel: 'metadata.tags',
+        })
+      : [];
     if (!input.provenance || typeof input.provenance !== 'object') {
       throw new ValidationError('provenance is required');
     }
@@ -73,7 +79,7 @@ export class WorkspaceService {
       metadata: {
         ...(typeof input.metadata.label !== 'undefined' ? { label: input.metadata.label } : {}),
         ...(typeof input.metadata.description !== 'undefined' ? { description: input.metadata.description } : {}),
-        tags: Array.isArray(input.metadata.tags) ? input.metadata.tags : [],
+        tags: normalizedTags,
       },
       provenance: { ...provenance, conversationId },
       lifecycle: {
@@ -93,12 +99,35 @@ export class WorkspaceService {
     await this.ensureConversationExists();
     const current = await this.getItemOrThrow(id);
 
-    const pTags = (patch as any)?.metadata?.tags;
-    if (typeof pTags !== 'undefined' && !Array.isArray(pTags)) {
-      throw new ValidationError('metadata.tags must be an array of strings');
+    const patchCopy: Partial<WorkspaceItem> = { ...patch };
+
+    if (patchCopy.metadata && (typeof patchCopy.metadata !== 'object' || Array.isArray(patchCopy.metadata))) {
+      throw new ValidationError('metadata must be an object');
     }
 
-    const patchCopy: Partial<WorkspaceItem> = { ...patch };
+    const hasMetadataPatch = !!patchCopy.metadata && typeof patchCopy.metadata === 'object';
+    if (hasMetadataPatch) {
+      const metadataPatch = { ...(patchCopy.metadata as WorkspaceItem['metadata']) } as Record<string, unknown>;
+      let normalizedTags: string[] | undefined;
+      if (Object.prototype.hasOwnProperty.call(metadataPatch, 'tags')) {
+        normalizedTags = normalizeStringTags(metadataPatch.tags, 'metadata.tags', {
+          optional: false,
+          skipEmpty: false,
+          allowEmptyResult: true,
+          fieldLabel: 'metadata.tags',
+        });
+        metadataPatch.tags = normalizedTags;
+      }
+      const mergedMetadata = {
+        ...current.metadata,
+        ...metadataPatch,
+      } as WorkspaceItem['metadata'];
+      if (Object.prototype.hasOwnProperty.call(metadataPatch, 'tags')) {
+        mergedMetadata.tags = metadataPatch.tags as string[];
+      }
+      patchCopy.metadata = mergedMetadata;
+    }
+
     let nextProvenance: WorkspaceItem['provenance'] = { ...current.provenance, conversationId: this.conversationId };
     if ('provenance' in patchCopy) {
       const provPatch = (patchCopy as any).provenance;

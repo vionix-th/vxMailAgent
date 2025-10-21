@@ -50,6 +50,7 @@
 - **Regression Tests:**
   - Augment `src/backend/tests/integration/workspace-items.test.cjs` with `integration: workspace tags enforce string array` covering rejection of numeric/object tags and acceptance of normalized strings.
   - Add a targeted `node:test` under `src/backend/services/__tests__/workspace-tags.test.ts` for the normalization helper.
+- **Status:** Completed on 2025-10-21 — workspace tags now reuse the shared normalizer, API/tool updates reject invalid entries, integration coverage asserts rejection/normalization, and helper tests lock behaviour.
 - **Follow-Up:** Schedule a cleanup script (tracked separately) to audit existing workspace records for non-string tags once validation deploys.
 
 ## Remove Mock Provider Token Defaults (Medium)

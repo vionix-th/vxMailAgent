@@ -5,6 +5,7 @@ import { ValidationError } from '../services/error-handler';
 import logger from '../services/logger';
 import type { WorkspaceItemsRepoInstance } from '../repository/wrappers';
 import { ToolHandlerRegistrar, ToolExecutionRuntime } from './types';
+import { normalizeStringTags } from '../utils/tag-normalization';
 
 export function registerWorkspaceHandlers(register: ToolHandlerRegistrar) {
   register('workspace_add_item', (runtime) => executeWorkspace('workspace_add_item', runtime, 'add'));
@@ -56,6 +57,16 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceIte
       if (typeof data === 'undefined') {
         throw new ValidationError('workspace_add_item: data is required');
       }
+      const hasTags = Object.prototype.hasOwnProperty.call(payload, 'tags');
+      const normalizedTags = hasTags
+        ? normalizeStringTags(payload.tags, 'workspace_add_item.tags', {
+            optional: false,
+            skipEmpty: false,
+            allowEmptyResult: true,
+            fieldLabel: 'workspace_add_item.tags',
+          }) ?? []
+        : [];
+
       const input = {
         content: {
           mimeType,
@@ -65,7 +76,7 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceIte
         metadata: {
           ...(typeof payload.label === 'string' ? { label: payload.label } : {}),
           ...(typeof payload.description === 'string' ? { description: payload.description } : {}),
-          tags: Array.isArray(payload.tags) ? payload.tags : []
+          tags: normalizedTags
         },
         provenance: {
           emailId: prov.emailId,

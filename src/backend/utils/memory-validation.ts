@@ -1,5 +1,6 @@
 import type { MemoryScope } from '../../shared/types';
 import { ValidationError } from '../services/error-handler';
+import { normalizeStringTags } from './tag-normalization';
 
 const SCOPE_VALUES: ReadonlySet<MemoryScope> = new Set(['local', 'shared', 'global']);
 
@@ -47,26 +48,13 @@ export function requireContent(value: unknown, field: string): string {
 }
 
 export function normalizeMemoryTags(value: unknown): string[] | undefined {
-  if (typeof value === 'undefined' || value === null) {
-    return undefined;
-  }
-  if (!Array.isArray(value)) {
-    throw new ValidationError('tags must be an array of strings', 'MEMORY_TAGS_INVALID');
-  }
-  const tags: string[] = [];
-  for (const raw of value) {
-    if (typeof raw !== 'string') {
-      throw new ValidationError('tags must be an array of strings', 'MEMORY_TAGS_INVALID');
-    }
-    const tag = raw.trim();
-    if (!tag) {
-      continue;
-    }
-    if (!tags.includes(tag)) {
-      tags.push(tag);
-    }
-  }
-  return tags.length ? tags : undefined;
+  const tags = normalizeStringTags(value, 'memory tags', {
+    optional: true,
+    skipEmpty: true,
+    allowEmptyResult: true,
+    fieldLabel: 'memory tags',
+  });
+  return tags && tags.length ? tags : undefined;
 }
 
 export function normalizeOptionalString(value: unknown, field: string): string | undefined {
