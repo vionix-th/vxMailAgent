@@ -105,6 +105,7 @@ function assertConversationsRepositoryContract(repo: SqlConversationsRepository)
   const missing = [] as string[];
   if (typeof repo.list !== 'function') missing.push('list');
   if (typeof repo.getById !== 'function') missing.push('getById');
+  if (typeof repo.findOngoingAgentThread !== 'function') missing.push('findOngoingAgentThread');
   if (typeof repo.insert !== 'function') missing.push('insert');
   if (typeof repo.update !== 'function') missing.push('update');
   if (typeof repo.appendMessages !== 'function') missing.push('appendMessages');

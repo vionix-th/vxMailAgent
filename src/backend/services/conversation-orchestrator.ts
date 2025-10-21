@@ -514,6 +514,9 @@ export class ConversationOrchestrator {
         toolName: toolCall.name,
         error: error?.message || String(error)
       });
+      if (toolCall.name === 'workspace_add_item') {
+        throw (error instanceof Error ? error : new Error(String(error)));
+      }
     }
     return false;
   }
@@ -597,7 +600,12 @@ export class ConversationOrchestrator {
       return true;
     }
 
-    const conversationSnapshot = await userReq.repos.getConversations(userReq.context);
+    const existingAgentThread = await userReq.repos.findOngoingAgentThread(
+      userReq.context,
+      context.thread.id,
+      agent.id
+    );
+    const conversationSnapshot = existingAgentThread ? [existingAgentThread] : [];
     const nowIso = new Date().toISOString();
     let agentThread: ConversationThread;
     try {
@@ -828,10 +836,14 @@ export class ConversationOrchestrator {
     toolCall: { id: string; name: string; arguments: string },
     userReq: UserRequest
   ): Promise<void> {
+    let delegatedThread!: AgentThread;
+    let hasDelegatedThread = false;
+    let errorReported = false;
     try {
-      const verifiedAgentThread = this.requireAgentThread(agentThread, 'executeAgentConversation');
+      delegatedThread = this.requireAgentThread(agentThread, 'executeAgentConversation');
+      hasDelegatedThread = true;
       const apiConfigs = (await userReq.repos.getSettings(requireContext(userReq.context))).apiConfigs as ApiConfig[];
-      const agentApiConfigId = verifiedAgentThread.apiConfigId;
+      const agentApiConfigId = delegatedThread.apiConfigId;
       if (typeof agentApiConfigId !== 'string' || !agentApiConfigId.trim()) {
         throw new ValidationError('Agent thread missing apiConfigId', 'AGENT_API_CONFIG_ID_MISSING');
       }
@@ -842,18 +854,17 @@ export class ConversationOrchestrator {
 
       // Equal tool exposure for agent, except spawning further agents (disabled)
       const agents = await userReq.repos.getAgents(userReq.context);
-      const srcAgent = this.requireAgentById(verifiedAgentThread.agentId, agents, `Agent ${verifiedAgentThread.agentId} not found for agent conversation`);
+      const srcAgent = this.requireAgentById(delegatedThread.agentId, agents, `Agent ${delegatedThread.agentId} not found for agent conversation`);
       const gatedToolDescriptors = resolveAgentToolDescriptors(srcAgent);
 
       const rawHandleTool = createToolHandler(requireRepos(requireContext(userReq.context)));
       const scopedHandleTool = (name: string, params: any) =>
-        rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: verifiedAgentThread.id } } : undefined);
+        rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: delegatedThread.id } } : undefined);
 
       if (typeof apiConfig.apiKey !== 'string' || !apiConfig.apiKey.trim()) {
         throw new ValidationError('apiConfig.apiKey missing for agent conversation');
       }
 
-      let delegatedThread: AgentThread = verifiedAgentThread;
       const delegatedPersistence: AgentConversationPersistence = {
         appendMessages: async (messages: PromptMessage[]) => {
           const updated = await repoAppendMessages(userReq.repos, userReq.context, delegatedThread.id, messages as any[]);
@@ -923,13 +934,43 @@ export class ConversationOrchestrator {
         });
       } else {
         await this.injectAgentErrorMessage(parentThread, toolCall.id, agentResult.error, userReq);
+        errorReported = true;
+        throw new Error(agentResult.error || 'Agent conversation failed');
       }
     } catch (error: any) {
-      logger.error('Error running agent conversation', { 
-        agentId: agentThread.agentId, 
+      const err = error instanceof Error ? error : new Error(String(error));
+      const failingThread = hasDelegatedThread
+        ? delegatedThread
+        : (agentThread.kind === 'agent' ? (agentThread as AgentThread) : null);
+      if (failingThread) {
+        try {
+          await repoFinalizeThreadStatus(userReq.repos, userReq.context, failingThread.id, 'failed');
+        } catch (finalizeError: any) {
+          logger.warn('Failed to finalize agent thread after error', {
+            agentId: failingThread.agentId,
+            conversationId: failingThread.id,
+            error: finalizeError?.message || String(finalizeError)
+          });
+        }
+      }
+      if (!errorReported) {
+        try {
+          await this.injectAgentErrorMessage(parentThread, toolCall.id, err.message, userReq);
+          errorReported = true;
+        } catch (injectError: any) {
+          logger.warn('Failed to inject agent error message', {
+            conversationId: parentThread.id,
+            toolCallId: toolCall.id,
+            error: injectError?.message || String(injectError)
+          });
+        }
+      }
+      logger.error('Error running agent conversation', {
+        agentId: agentThread.agentId,
         conversationId: agentThread.id,
-        error: error?.message || String(error) 
+        error: err.message
       });
+      throw err;
     }
   }
 

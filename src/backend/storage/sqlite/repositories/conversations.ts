@@ -106,6 +106,24 @@ export class ConversationsRepository extends SqliteRepository {
     return this.withConnection((db) => this.loadOne(db, id));
   }
 
+  async findOngoingAgentThread(parentId: string, agentId: string): Promise<ConversationThread | null> {
+    this.assertId(parentId);
+    this.assertId(agentId);
+    return this.withConnection((db) => {
+      const row = db
+        .prepare(
+          `SELECT id FROM conversation_threads
+           WHERE kind = 'agent' AND parent_id = ? AND agent_id = ? AND status = 'ongoing'
+           ORDER BY last_active_at DESC LIMIT 1`
+        )
+        .get(parentId, agentId) as { id: string } | undefined;
+      if (!row) {
+        return null;
+      }
+      return this.loadOne(db, row.id);
+    });
+  }
+
   async insert(thread: ConversationThread): Promise<void> {
     this.assertThread(thread);
     await this.transaction((db) => {

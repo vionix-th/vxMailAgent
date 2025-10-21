@@ -32,6 +32,7 @@ export interface LiveRepos {
   deleteImprint(context: ContextInput, id: string): Promise<boolean>;
   getOrchestrationLog(context?: ContextInput): Promise<OrchestrationEvent[]>;
   getConversations(context?: ContextInput): Promise<ConversationThread[]>;
+  findOngoingAgentThread(context: ContextInput, parentId: string, agentId: string): Promise<ConversationThread | null>;
   appendConversation(context: ContextInput, thread: ConversationThread): Promise<ConversationThread>;
   updateConversation(context: ContextInput, thread: ConversationThread): Promise<ConversationThread>;
   deleteConversation(context: ContextInput, id: string): Promise<boolean>;
@@ -86,6 +87,7 @@ export function createLiveRepos(): LiveRepos {
       !repo ||
       typeof repo.list !== 'function' ||
       typeof repo.getById !== 'function' ||
+      typeof repo.findOngoingAgentThread !== 'function' ||
       typeof repo.insert !== 'function' ||
       typeof repo.update !== 'function' ||
       typeof repo.appendMessages !== 'function' ||
@@ -117,6 +119,10 @@ export function createLiveRepos(): LiveRepos {
     },
     getOrchestrationLog: get<OrchestrationEvent>((ctx) => getOrchestrationLogRepo(ctx)),
     getConversations: get<ConversationThread>((ctx) => getConversationsRepo(ctx)),
+    findOngoingAgentThread: async (context: ContextInput, parentId: string, agentId: string): Promise<ConversationThread | null> => {
+      const repo = getConversationsRepo(ensureContext(context));
+      return await repo.findOngoingAgentThread(parentId, agentId);
+    },
     appendConversation: async (context: ContextInput, thread: ConversationThread): Promise<ConversationThread> => {
       assertThreadTimestamps(thread, 'appendConversation');
       const repo = requireConversationRepo(context);

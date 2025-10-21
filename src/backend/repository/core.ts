@@ -105,6 +105,7 @@ export interface MemoryRepository {
 export interface ConversationsRepository {
   list(): Promise<readonly ConversationThread[]>;
   getById(id: string): Promise<ConversationThread | null>;
+  findOngoingAgentThread(parentId: string, agentId: string): Promise<ConversationThread | null>;
   insert(thread: ConversationThread): Promise<void>;
   update(thread: ConversationThread): Promise<void>;
   appendMessages(threadId: string, messages: readonly PromptMessage[]): Promise<ConversationThread>;
