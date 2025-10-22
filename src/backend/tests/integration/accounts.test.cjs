@@ -84,3 +84,49 @@ test('integration: account lifecycle enforces invariants', { concurrency: false,
     await stop();
   }
 });
+
+test('integration: mock provider enforces tokens', { concurrency: false, timeout: TEST_TIMEOUTS.node.standard }, async () => {
+  const { baseUrl, stop } = await startBackend({ env: { VX_TEST_MOCK_PROVIDER: 'true' } });
+  const { headers: sessionHeaders } = await createSession(baseUrl, uid);
+  const jsonHeaders = authHeaders(sessionHeaders, { 'Content-Type': 'application/json' });
+
+  try {
+    const missingTokensRes = await fetch(`${baseUrl}/api/accounts`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        provider: 'gmail',
+        email: 'mock-enforce@example.com',
+        signature: 'Mock Signature',
+      }),
+    });
+    assert.strictEqual(missingTokensRes.status, 400, 'mock provider must reject accounts without tokens');
+
+    const createRes = await fetchJson(baseUrl, '/api/accounts', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        provider: 'gmail',
+        email: 'mock-enforce@example.com',
+        signature: 'Mock Signature',
+        tokens: {
+          accessToken: 'mock-access-token',
+          refreshToken: 'mock-refresh-token',
+          expiry: new Date(Date.now() + 60_000).toISOString(),
+        },
+      }),
+    });
+    assert.strictEqual(createRes.ok, true, 'mock provider should accept explicit tokens');
+
+    const accountId = createRes.data?.id;
+    assert.ok(accountId, 'account id missing in mock provider creation');
+
+    const refreshRes = await fetchJson(baseUrl, `/api/accounts/${encodeURIComponent(accountId)}/refresh`, {
+      method: 'POST',
+      headers: jsonHeaders,
+    });
+    assert.strictEqual(refreshRes.ok, true, 'mock provider refresh request should complete');
+  } finally {
+    await stop();
+  }
+});

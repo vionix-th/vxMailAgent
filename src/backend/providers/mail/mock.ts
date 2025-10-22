@@ -1,17 +1,35 @@
 import type { Account, EmailEnvelope } from '../../../shared/types';
 import type { IMailProvider, FetchOptions } from './base';
 import { createEmailEnvelope } from '../../../shared/constructors';
+import { ValidationError } from '../../services/error-handler';
+
+function ensureMockTokens(account: Account): { accessToken: string; refreshToken: string; expiry: string } {
+  const tokens = account.tokens;
+  if (!tokens || typeof tokens !== 'object') {
+    throw new ValidationError('mock provider requires explicit tokens', 'MOCK_PROVIDER_MISSING_TOKENS', 400);
+  }
+  const accessToken = typeof tokens.accessToken === 'string' ? tokens.accessToken.trim() : '';
+  const refreshToken = typeof tokens.refreshToken === 'string' ? tokens.refreshToken.trim() : '';
+  const expiry = typeof tokens.expiry === 'string' ? tokens.expiry.trim() : '';
+  if (!accessToken || !refreshToken || !expiry) {
+    throw new ValidationError('mock provider requires explicit tokens', 'MOCK_PROVIDER_MISSING_TOKENS', 400);
+  }
+  if (Number.isNaN(Date.parse(expiry))) {
+    throw new ValidationError('mock provider token expiry must be a valid ISO timestamp', 'MOCK_PROVIDER_INVALID_EXPIRY', 400);
+  }
+  return { accessToken, refreshToken, expiry };
+}
 
 export function createMockMailProvider(id: Account['provider']): IMailProvider {
   return {
     id,
     async ensureValidAccessToken(account: Account) {
-      const oneHour = new Date(Date.now() + 3600_000).toISOString();
+      const tokens = ensureMockTokens(account);
       return {
         updated: false,
-        accessToken: account.tokens?.accessToken || 'mock-token',
-        expiry: account.tokens?.expiry || oneHour,
-        refreshToken: account.tokens?.refreshToken || 'mock-refresh',
+        accessToken: tokens.accessToken,
+        expiry: tokens.expiry,
+        refreshToken: tokens.refreshToken,
       };
     },
     async fetchUnread(account: Account, opts?: FetchOptions): Promise<EmailEnvelope[]> {

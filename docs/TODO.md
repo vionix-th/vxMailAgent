@@ -61,6 +61,7 @@
 - **Regression Tests:**
   - Extend `src/backend/tests/integration/accounts.test.cjs` with `integration: mock provider enforces tokens` by starting the backend with `VX_TEST_MOCK_PROVIDER=true`, attempting to create/use an account without tokens (expect failure), then repeating with explicit mock tokens (expect success).
   - Add a provider-focused `node:test` (e.g. `src/backend/providers/mail/__tests__/mock-provider.test.ts`) to assert the constructor throws when tokens are missing.
+- **Status:** Completed on 2025-10-21 — mock provider now requires explicit tokens, integration coverage checks failure/success cases, and provider unit tests validate the guard.
 
 ## Test & Validation Workflow
 - **Command Gate:** Run `npm --prefix src/backend run lint`, `npm --prefix src/backend run typecheck`, and `npm --prefix src/backend run build` before executing the integration suite.
