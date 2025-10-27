@@ -132,6 +132,10 @@ async function executeDelegateToAgent(runtime: ToolExecutionRuntime): Promise<To
   if (!parent) {
     return { kind: 'delegate_to_agent', success: false, result: null, error: 'Parent conversation not found' };
   }
+  const parentEmailId = typeof (parent.email as any)?.id === 'string' ? (parent.email as any).id : '';
+  if (!parentEmailId) {
+    return { kind: 'delegate_to_agent', success: false, result: null, error: 'Parent conversation missing email context' };
+  }
 
   let director: Director;
   try {
@@ -194,11 +198,18 @@ async function executeDelegateToAgent(runtime: ToolExecutionRuntime): Promise<To
     return { kind: 'delegate_to_agent', success: false, result: null, error: 'api_key_missing_for_agent' };
   }
 
+  const workspaceContext = {
+    conversationId: parent.id,
+    createdBy: 'agent' as const,
+    creatorId: agent.id,
+    emailId: parentEmailId,
+  };
+
   const scopedHandleTool = (toolName: string, toolParams: any) =>
     handleToolByName(
       toolName,
       toolParams,
-      toolName.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined,
+      toolName.startsWith('workspace_') ? { workspace: { ...workspaceContext, toolName } } : undefined,
     );
 
   const persistence: AgentConversationPersistence = {

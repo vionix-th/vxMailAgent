@@ -129,7 +129,6 @@ export interface WorkspaceProvenance {
 export interface WorkspaceLifecycle {
   created: string;
   updated: string;
-  revision: number;
   deleted: boolean;
 }
 
@@ -146,7 +145,6 @@ export interface WorkspaceItem {
 export interface WorkspaceItemInput {
   content: WorkspaceContent;
   metadata: Omit<WorkspaceMetadata, 'tags'> & { tags?: string[] };
-  provenance: WorkspaceProvenance;
 }
 
 /** Generic file attachment. */

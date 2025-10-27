@@ -1,10 +1,9 @@
 import { ToolCallResult } from '../../shared/types';
 import { WorkspaceService } from '../services/workspace-service';
-import { validateWorkspaceProvenance } from '../validation';
 import { ValidationError } from '../services/error-handler';
 import logger from '../services/logger';
 import type { WorkspaceItemsRepoInstance } from '../repository/wrappers';
-import { ToolHandlerRegistrar, ToolExecutionRuntime } from './types';
+import { ToolHandlerRegistrar, ToolExecutionRuntime, ToolCallExecutionContext } from './types';
 import { normalizeStringTags } from '../utils/tag-normalization';
 
 export function registerWorkspaceHandlers(register: ToolHandlerRegistrar) {
@@ -17,12 +16,22 @@ export function registerWorkspaceHandlers(register: ToolHandlerRegistrar) {
 
 async function executeWorkspace(toolName: string, runtime: ToolExecutionRuntime, action: 'add' | 'list' | 'get' | 'update' | 'remove'): Promise<ToolCallResult> {
   const result = await runtime.withTimeout(
-    handleWorkspaceToolCall({ ...runtime.params, action }, runtime.repos.workspaceItems, runtime.context?.workspace?.conversationId)
+    handleWorkspaceToolCall(
+      { ...runtime.params, action },
+      runtime.repos.workspaceItems,
+      runtime.context?.workspace?.conversationId,
+      runtime.context?.workspace
+    )
   );
   return { ...result, kind: toolName };
 }
 
-async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceItemsRepoInstance, scopedConversationId?: string): Promise<ToolCallResult> {
+async function handleWorkspaceToolCall(
+  payload: any,
+  workspaceRepo: WorkspaceItemsRepoInstance,
+  scopedConversationId?: string,
+  workspaceContext?: ToolCallExecutionContext['workspace']
+): Promise<ToolCallResult> {
   logger.info('[TOOLCALL] workspace', { payload });
   try {
     const conversationId = typeof scopedConversationId === 'string' && scopedConversationId.trim().length > 0
@@ -35,16 +44,22 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceIte
       throw new ValidationError('workspace tools require conversation scope');
     }
 
+    const legacyProv = payload?.provenance && typeof payload.provenance === 'object' ? payload.provenance : {};
+    const createdBy: any = workspaceContext?.createdBy || legacyProv.createdBy;
+    const creatorId: string | undefined = workspaceContext?.creatorId || legacyProv.creatorId;
+    const emailId: string | undefined = workspaceContext?.emailId || legacyProv.emailId;
+    const toolName: string | undefined = workspaceContext?.toolName || legacyProv.toolName;
+
     const service = new WorkspaceService({
       repo: workspaceRepo,
       conversationId,
+      createdBy,
+      directorId: createdBy === 'director' ? creatorId : undefined,
+      agentId: createdBy === 'agent' ? creatorId : undefined,
+      emailId,
+      toolName,
     });
     if (payload.action === 'add') {
-      const prov = payload?.provenance || {};
-      const provErrors = validateWorkspaceProvenance({ ...prov, conversationId });
-      if (provErrors.length) {
-        return { kind: 'workspace', success: false, result: { ok: false, errors: provErrors, received: sanitize(payload) }, error: 'Invalid workspace add payload' };
-      }
       const mimeType = typeof payload.mimeType === 'string' ? payload.mimeType : undefined;
       if (!mimeType) {
         throw new ValidationError('workspace_add_item: mimeType is required');
@@ -78,13 +93,6 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceIte
           ...(typeof payload.description === 'string' ? { description: payload.description } : {}),
           tags: normalizedTags
         },
-        provenance: {
-          emailId: prov.emailId,
-          conversationId,
-          createdBy: prov.createdBy,
-          creatorId: prov.creatorId,
-          ...(typeof prov.toolName === 'string' ? { toolName: prov.toolName } : { toolName: 'workspace_add_item' })
-        }
       } as const;
       const item = await service.addItem(input as any);
       return { kind: 'workspace', success: true, result: { added: true, item } };
@@ -96,10 +104,10 @@ async function handleWorkspaceToolCall(payload: any, workspaceRepo: WorkspaceIte
       if (!item) return { kind: 'workspace', success: false, result: null, error: 'Workspace item not found' };
       return { kind: 'workspace', success: true, result: item };
     } else if (payload.action === 'update') {
-      const updated = await service.updateItem(payload.id, payload.patch, payload.expectedRevision);
+      const updated = await service.updateItem(payload.id, payload.patch);
       return { kind: 'workspace', success: true, result: { updated: true, item: updated } };
     } else if (payload.action === 'remove') {
-      await service.hardDeleteItem(payload.id);
+      await service.deleteItem(payload.id);
       return { kind: 'workspace', success: true, result: { removed: true } };
     }
     return { kind: 'workspace', success: false, result: null, error: 'Invalid workspace action' };

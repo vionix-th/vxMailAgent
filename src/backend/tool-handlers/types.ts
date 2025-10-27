@@ -4,6 +4,10 @@ import type { RepoBundle } from '../repository/registry';
 export interface ToolCallExecutionContext {
   workspace?: {
     conversationId: string;
+    createdBy?: 'director' | 'agent' | 'tool';
+    creatorId?: string;
+    emailId?: string;
+    toolName?: string;
   };
 }
 

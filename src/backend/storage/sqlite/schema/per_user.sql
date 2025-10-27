@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS workspace_items (
   metadata_json TEXT NOT NULL CHECK(json_valid(metadata_json)),
   provenance_json TEXT NOT NULL CHECK(json_valid(provenance_json)),
   lifecycle_json TEXT NOT NULL CHECK(json_valid(lifecycle_json)),
-  conversation_id TEXT
+  conversation_id TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_workspace_items_conversation ON workspace_items(conversation_id);

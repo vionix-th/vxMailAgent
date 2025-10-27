@@ -48,30 +48,21 @@ export default function registerWorkspacesRoutes(app: express.Express, deps: Wor
 
   app.put('/api/workspaces/:id/items/:itemId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { itemId } = req.params as { id: string; itemId: string };
-    const expectedRevision = typeof req.body?.expectedRevision === 'number' ? (req.body.expectedRevision as number) : undefined;
     const service = createWorkspaceService(req, deps);
     const patch: Partial<WorkspaceItem> = {};
     if (req.body.content) patch.content = req.body.content;
     if (req.body.metadata) patch.metadata = req.body.metadata;
     if (req.body.lifecycle) patch.lifecycle = req.body.lifecycle;
-    const nextItem = await service.updateItem(itemId, patch, expectedRevision);
-    logger.info('PUT /api/workspaces/:id/items/:itemId updated', { itemId, revision: nextItem.lifecycle.revision });
+    const nextItem = await service.updateItem(itemId, patch);
+    logger.info('PUT /api/workspaces/:id/items/:itemId updated', { itemId });
     res.json({ success: true, item: nextItem });
   }));
 
   app.delete('/api/workspaces/:id/items/:itemId', errorHandler.wrapAsync(async (req: express.Request, res: express.Response) => {
     const { itemId } = req.params as { id: string; itemId: string };
-    const isHardDelete = String(req.query.hard).toLowerCase() === 'true';
     const service = createWorkspaceService(req, deps);
-
-    if (isHardDelete) {
-      await service.hardDeleteItem(itemId);
-      logger.info('DELETE /api/workspaces/:id/items/:itemId removed', { itemId, hard: true });
-      res.json({ success: true });
-    } else {
-      const updatedItem = await service.softDeleteItem(itemId);
-      logger.info('DELETE /api/workspaces/:id/items/:itemId soft-deleted', { itemId, hard: false, revision: updatedItem.lifecycle.revision });
-      res.json({ success: true, item: updatedItem });
-    }
+    await service.deleteItem(itemId);
+    logger.info('DELETE /api/workspaces/:id/items/:itemId removed', { itemId });
+    res.json({ success: true });
   }));
 }

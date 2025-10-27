@@ -1,5 +1,5 @@
 import { ConversationThread, PromptMessage, ProviderEvent, Director, Agent, WorkspaceItem, ApiConfig, AgentThread } from '../../shared/types';
-import { runAgentConversation, ensureAgentThread, AgentConversationPersistence } from './orchestration-agent';
+import { runAgentConversation, AgentConversationPersistence } from './orchestration-agent';
 import { createToolHandler } from '../toolCalls';
 import { requireContext, requireRepos, ensureContext } from '../utils/repo-access';
 import logger from './logger';
@@ -305,8 +305,15 @@ export class ConversationOrchestrator {
     }
 
     const rawHandleTool = createToolHandler(requireRepos(requireContext(userReq.context)));
+    const workspaceConversationId = typeof agentThread.parentId === 'string' && agentThread.parentId.trim()
+      ? agentThread.parentId
+      : agentThread.id;
     const scopedHandleTool = (name: string, params: any) =>
-      rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: agentThread.id } } : undefined);
+      rawHandleTool(
+        name,
+        params,
+        name.startsWith('workspace_') ? { workspace: { conversationId: workspaceConversationId } } : undefined
+      );
 
     let activeThread: AgentThread = agentThread;
     const persistence: AgentConversationPersistence = {
@@ -472,7 +479,7 @@ export class ConversationOrchestrator {
       if (toolCall.name === 'workspace_add_item') {
         return await this.handleWorkspaceAddItem(context, userReq, toolCall, args);
       } else if (toolCall.name === 'workspace_list_items') {
-        await this.handleWorkspaceListItems(context, userReq, toolCall, args);
+        await this.handleWorkspaceListItems(context, userReq, toolCall);
         return true;
       } else {
         // Fallback: route remaining names through generic tool handler to honor contract
@@ -525,138 +532,11 @@ export class ConversationOrchestrator {
     context: ConversationContext,
     userReq: UserRequest,
     toolCall: { id: string; name: string; arguments: string },
-    args: any
+    _args: any
   ): Promise<boolean> {
-    const agentId = args.agent_id;
-    if (!agentId) {
-      const toolErrorMsg = {
-        role: 'tool',
-        name: toolCall.name,
-        tool_call_id: toolCall.id,
-        content: JSON.stringify({ success: false, error: 'missing_agent_id' })
-      };
-      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
-      try {
-        await this.stepLogger.logStepError(
-          context.thread.id,
-          'director_tool',
-          0,
-          'workspace_add_item_missing_agent_id',
-          context.thread.email.id,
-          context.thread.directorId
-        );
-      } catch (e) {
-        logger.debug('stepLogger.logStepError failed (missing_agent_id)', { err: String(e) });
-      }
-      return true;
-    }
-
-    const agent = await this.validateAgent(agentId, userReq);
-    if (!agent) {
-      const toolErrorMsg = {
-        role: 'tool',
-        name: toolCall.name,
-        tool_call_id: toolCall.id,
-        content: JSON.stringify({ success: false, error: 'agent_not_found', agent_id: String(agentId) })
-      };
-      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
-      try {
-        await this.stepLogger.logStepError(
-          context.thread.id,
-          'director_tool',
-          0,
-          'workspace_add_item_agent_not_found',
-          context.thread.email.id,
-          context.thread.directorId
-        );
-      } catch (e) {
-        logger.debug('stepLogger.logStepError failed (agent_not_found)', { err: String(e) });
-      }
-      return true;
-    }
-
-    // Resolve director configuration for ensureAgentThread
-    const director = context.director || null;
-    if (!director) {
-      const toolErrorMsg = {
-        role: 'tool',
-        name: toolCall.name,
-        tool_call_id: toolCall.id,
-        content: JSON.stringify({ success: false, error: 'director_context_missing' })
-      };
-      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
-      try {
-        await this.stepLogger.logStepError(
-          context.thread.id,
-          'director_tool',
-          0,
-          'workspace_add_item_director_context_missing',
-          context.thread.email.id,
-          context.thread.directorId
-        );
-      } catch (e) {
-        logger.debug('stepLogger.logStepError failed (director_context_missing)', { err: String(e) });
-      }
-      return true;
-    }
-
-    const existingAgentThread = await userReq.repos.findOngoingAgentThread(
-      userReq.context,
-      context.thread.id,
-      agent.id
-    );
-    const conversationSnapshot = existingAgentThread ? [existingAgentThread] : [];
-    const nowIso = new Date().toISOString();
-    let agentThread: ConversationThread;
+    let addedItem: WorkspaceItem;
     try {
-      const ensure = ensureAgentThread(
-        conversationSnapshot,
-        context.thread.id,
-        director,
-        agent,
-        context.thread.email as any,
-        context.prompts as any,
-        context.apiConfigs as any,
-        nowIso,
-        () => newId(),
-        this.accountId,
-        userReq.traceId,
-        userReq.context
-      );
-
-      if (ensure.isNew) {
-        agentThread = await userReq.repos.appendConversation(userReq.context, ensure.agentThread);
-      } else {
-        const persisted = await userReq.repos.getConversationById(userReq.context, ensure.agentThread.id);
-        agentThread = persisted ?? ensure.agentThread;
-      }
-    } catch (e: any) {
-      const toolErrorMsg = {
-        role: 'tool',
-        name: toolCall.name,
-        tool_call_id: toolCall.id,
-        content: JSON.stringify({ success: false, error: 'ensure_agent_thread_failed', detail: String(e?.message || e) })
-      };
-      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
-      try {
-        await this.stepLogger.logStepError(
-          context.thread.id,
-          'director_tool',
-          0,
-          'workspace_add_item_ensure_agent_failed',
-          context.thread.email.id,
-          context.thread.directorId
-        );
-      } catch (e) {
-        logger.debug('stepLogger.logStepError failed (ensure_agent_failed)', { err: String(e) });
-      }
-      return true;
-    }
-
-    // Persist workspace item via helper (validates schema and writes to repo)
-    let addedItem: WorkspaceItem | null;
-    try {
-      addedItem = await this.createWorkspaceItem(context, args, agentId, agentThread.id, userReq, { id: toolCall.id, name: toolCall.name });
+      addedItem = await this.createWorkspaceItem(context, _args, userReq, { id: toolCall.id, name: toolCall.name });
     } catch (error: any) {
       if (error instanceof ValidationError) {
         const toolErrorMsg = {
@@ -678,34 +558,31 @@ export class ConversationOrchestrator {
         } catch (e) {
           logger.debug('stepLogger.logStepError failed (workspace_add_item_invalid_payload)', { err: String(e) });
         }
-        return true;
-      }
-      throw error;
-    }
-    if (!addedItem) {
-      const toolErrorMsg = {
-        role: 'tool',
-        name: toolCall.name,
-        tool_call_id: toolCall.id,
-        content: JSON.stringify({ success: false, error: 'workspace_add_failed' })
-      };
-      await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg]);
-      try {
-        await this.stepLogger.logStepError(
-          context.thread.id,
-          'director_tool',
-          0,
-          'workspace_add_item_failed',
-          context.thread.email.id,
-          context.thread.directorId
-        );
-      } catch (e) {
-        logger.debug('stepLogger.logStepError failed (workspace_add_failed)', { err: String(e) });
+      } else {
+        const err = error instanceof Error ? error : new Error(String(error));
+        const toolErrorMsg = {
+          role: 'tool',
+          name: toolCall.name,
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({ success: false, error: 'workspace_add_item_failed', detail: err.message })
+        };
+        await repoAppendMessages(userReq.repos, userReq.context, context.thread.id, [toolErrorMsg as any]);
+        try {
+          await this.stepLogger.logStepError(
+            context.thread.id,
+            'director_tool',
+            0,
+            'workspace_add_item_failed',
+            context.thread.email.id,
+            context.thread.directorId
+          );
+        } catch (e) {
+          logger.debug('stepLogger.logStepError failed (workspace_add_item_failed)', { err: String(e) });
+        }
       }
       return true;
     }
 
-    // Inject tool response back into director thread for continuity
     const toolResponse: PromptMessage = {
       id: newId(),
       role: 'tool',
@@ -713,17 +590,13 @@ export class ConversationOrchestrator {
       content: JSON.stringify({ added: true, itemId: addedItem.id, label: addedItem.metadata.label }),
     };
     await repoAppendMessage(userReq.repos, userReq.context, context.thread.id, toolResponse);
-
-    // Run the agent conversation after item creation
-    await this.executeAgentConversation(context.thread, agentThread, args, toolCall, userReq);
     return true;
   }
 
   private async handleWorkspaceListItems(
     context: ConversationContext,
     userReq: UserRequest,
-    toolCall: { id: string; name: string; arguments: string },
-    args: any
+    toolCall: { id: string; name: string; arguments: string }
   ): Promise<void> {
     const handleTool = createToolHandler(requireRepos(requireContext(userReq.context)) as any);
     const listResult = await handleTool('workspace_list_items', {}, { workspace: { conversationId: context.thread.id } });
@@ -732,11 +605,7 @@ export class ConversationOrchestrator {
       return;
     }
 
-    let items: WorkspaceItem[] = Array.isArray(listResult.result) ? (listResult.result as WorkspaceItem[]) : [];
-    const agentId = args.agent_id ? String(args.agent_id) : undefined;
-    if (agentId) {
-      items = items.filter((it) => String((it as any).provenance?.creatorId) === agentId);
-    }
+    const items: WorkspaceItem[] = Array.isArray(listResult.result) ? (listResult.result as WorkspaceItem[]) : [];
 
     const toolResponse: PromptMessage = {
       id: newId(),
@@ -751,30 +620,17 @@ export class ConversationOrchestrator {
       toolCallId: toolCall.id,
       totalItems: Array.isArray(listResult.result) ? (listResult.result as any[]).length : 0,
       filteredItems: items.length,
-      agentFilter: agentId,
+      createdBy: undefined,
+      creatorId: undefined,
     });
   }
-
-  private async validateAgent(agentId: string, userReq: UserRequest): Promise<Agent | null> {
-    const agents = await userReq.repos.getAgents(userReq.context);
-    const match = agents.find((a: Agent) => a.id === agentId) || null;
-    if (!match) {
-      return null;
-    }
-    resolveAgentToolDescriptors(match);
-    return match;
-  }
-
-  // Removed local ensure/create agent thread logic; using ensureAgentThread() from services/orchestration.ts
 
   private async createWorkspaceItem(
     context: ConversationContext,
     args: any,
-    agentId: string,
-    conversationId: string,
     userReq: UserRequest,
     toolCall?: { id: string; name: string }
-  ): Promise<WorkspaceItem | null> {
+  ): Promise<WorkspaceItem> {
     const handleTool = createToolHandler(requireRepos(requireContext(userReq.context)) as any);
     const mimeType = typeof args.mimeType === 'string' ? args.mimeType : undefined;
     if (!mimeType) {
@@ -789,8 +645,25 @@ export class ConversationOrchestrator {
       throw new ValidationError('workspace_add_item: data is required');
     }
 
-    const provenanceCreatedBy = agentId ? 'agent' : 'director';
-    const provenanceCreatorId = agentId || context.thread.directorId;
+    let conversationIdForWorkspace: string;
+    let creatorIdForWorkspace: string;
+    let createdBy: 'agent' | 'director';
+    if (context.thread.kind === 'agent') {
+      conversationIdForWorkspace = context.thread.parentId;
+      creatorIdForWorkspace = context.thread.agentId;
+      createdBy = 'agent';
+    } else {
+      conversationIdForWorkspace = context.thread.id;
+      creatorIdForWorkspace = context.thread.directorId;
+      createdBy = 'director';
+    }
+    const provenance = {
+      emailId: context.thread.email.id,
+      conversationId: conversationIdForWorkspace,
+      createdBy,
+      creatorId: creatorIdForWorkspace,
+      toolName: toolCall?.name || 'workspace_add_item',
+    };
 
     const payload: any = {
       label: typeof args.label === 'string' ? args.label : (typeof args.title === 'string' ? args.title : 'Untitled'),
@@ -798,21 +671,25 @@ export class ConversationOrchestrator {
       mimeType,
       encoding,
       data,
-      // Do not coerce non-array tags; pass through for schema validation to reject
       ...(typeof args.tags !== 'undefined' ? { tags: Array.isArray(args.tags) ? args.tags : (args as any).tags } : {}),
-      provenance: {
-        emailId: context.thread.email.id,
-        conversationId,
-        createdBy: provenanceCreatedBy,
-        creatorId: provenanceCreatorId,
-        toolName: toolCall?.name || 'workspace_add_item'
-      },
     };
 
-    const addResult = await handleTool('workspace_add_item', payload, { workspace: { conversationId } });
+    const addResult = await handleTool(
+      'workspace_add_item',
+      payload,
+      {
+        workspace: {
+          conversationId: provenance.conversationId,
+          createdBy: provenance.createdBy,
+          creatorId: provenance.creatorId,
+          emailId: provenance.emailId,
+          toolName: provenance.toolName,
+        },
+      }
+    );
     if (!addResult.success) {
       logger.warn('Workspace add failed', { error: addResult.error });
-      return null;
+      throw new ValidationError(addResult.error || 'workspace_add_item failed', 'WORKSPACE_ADD_FAILED');
     }
     const resultPayload = addResult.result;
     if (!resultPayload || typeof resultPayload !== 'object') {
@@ -825,153 +702,14 @@ export class ConversationOrchestrator {
     if (typeof addedItem.id !== 'string' || addedItem.id.trim().length === 0) {
       throw new ValidationError('workspace_add_item returned invalid item id', 'WORKSPACE_ADD_INVALID_ITEM');
     }
-    logger.info('Added workspace item', { itemId: addedItem.id, agentId, label: addedItem?.metadata?.label });
+    logger.info('Added workspace item', {
+      itemId: addedItem.id,
+      label: addedItem?.metadata?.label,
+      createdBy: provenance.createdBy,
+      creatorId: provenance.creatorId,
+      conversationId: provenance.conversationId,
+    });
     return addedItem as WorkspaceItem;
-  }
-
-  private async executeAgentConversation(
-    parentThread: ConversationThread,
-    agentThread: ConversationThread,
-    args: any,
-    toolCall: { id: string; name: string; arguments: string },
-    userReq: UserRequest
-  ): Promise<void> {
-    let delegatedThread!: AgentThread;
-    let hasDelegatedThread = false;
-    let errorReported = false;
-    try {
-      delegatedThread = this.requireAgentThread(agentThread, 'executeAgentConversation');
-      hasDelegatedThread = true;
-      const apiConfigs = (await userReq.repos.getSettings(requireContext(userReq.context))).apiConfigs as ApiConfig[];
-      const agentApiConfigId = delegatedThread.apiConfigId;
-      if (typeof agentApiConfigId !== 'string' || !agentApiConfigId.trim()) {
-        throw new ValidationError('Agent thread missing apiConfigId', 'AGENT_API_CONFIG_ID_MISSING');
-      }
-      const apiConfig = apiConfigs.find((c) => c.id === agentApiConfigId);
-      if (!apiConfig) {
-        throw new ValidationError(`API config ${agentApiConfigId} not found for agent conversation`, 'AGENT_API_CONFIG_NOT_FOUND', 404);
-      }
-
-      // Equal tool exposure for agent, except spawning further agents (disabled)
-      const agents = await userReq.repos.getAgents(userReq.context);
-      const srcAgent = this.requireAgentById(delegatedThread.agentId, agents, `Agent ${delegatedThread.agentId} not found for agent conversation`);
-      const gatedToolDescriptors = resolveAgentToolDescriptors(srcAgent);
-
-      const rawHandleTool = createToolHandler(requireRepos(requireContext(userReq.context)));
-      const scopedHandleTool = (name: string, params: any) =>
-        rawHandleTool(name, params, name.startsWith('workspace_') ? { workspace: { conversationId: delegatedThread.id } } : undefined);
-
-      if (typeof apiConfig.apiKey !== 'string' || !apiConfig.apiKey.trim()) {
-        throw new ValidationError('apiConfig.apiKey missing for agent conversation');
-      }
-
-      const delegatedPersistence: AgentConversationPersistence = {
-        appendMessages: async (messages: PromptMessage[]) => {
-          const updated = await repoAppendMessages(userReq.repos, userReq.context, delegatedThread.id, messages as any[]);
-          if (!updated) {
-            throw new Error(`Agent thread ${delegatedThread.id} missing during delegated append`);
-          }
-          const ensured = this.requireAgentThread(updated, 'executeAgentConversation.appendMessages');
-          delegatedThread = ensured;
-          return ensured;
-        },
-        finalize: async (status: 'completed' | 'failed') => {
-          await repoFinalizeThreadStatus(userReq.repos, userReq.context, delegatedThread.id, status);
-          const reloaded = await repoGetThreadById(userReq.repos, userReq.context, delegatedThread.id);
-          if (!reloaded) {
-            throw new Error(`Agent thread ${delegatedThread.id} missing after delegated finalize`);
-          }
-          const ensured = this.requireAgentThread(reloaded, 'executeAgentConversation.finalize');
-          delegatedThread = ensured;
-          return ensured;
-        },
-      };
-
-      const agentResult = await runAgentConversation(
-        delegatedThread,
-        args.content || args.title || 'New task assigned',
-        delegatedPersistence,
-        serializeApiConfig(apiConfig),
-        gatedToolDescriptors,
-        scopedHandleTool,
-        userReq.traceId,
-        { apiKey: apiConfig.apiKey },
-        async (ev: ProviderEvent) => {
-          try {
-            const t = (ev as any).type;
-            if (t === 'request') {
-              await this.providerLogger.logRequest(delegatedThread.id, (ev as any).payload);
-            } else if (t === 'response') {
-              await this.providerLogger.logResponse(
-                delegatedThread.id,
-                (ev as any).latencyMs,
-                (ev as any).payload,
-                (ev as any).usage
-              );
-            } else if (t === 'error') {
-              await this.providerLogger.logError(
-                delegatedThread.id,
-                String((ev as any).error),
-                (ev as any).latencyMs
-              );
-            } else {
-              logger.warn('Unknown provider event type', { type: t, conversationId: delegatedThread.id });
-            }
-          } catch (e: any) {
-            logger.warn('Provider event logging failed', {
-              error: e?.message || String(e),
-              conversationId: delegatedThread.id,
-            });
-          }
-        }
-      );
-
-      if (agentResult.success) {
-        logger.info('Agent conversation completed successfully', {
-          agentId: delegatedThread.agentId,
-          conversationId: delegatedThread.id,
-          messageLength: agentResult.finalAssistantMessage?.content?.length || 0
-        });
-      } else {
-        await this.injectAgentErrorMessage(parentThread, toolCall.id, agentResult.error, userReq);
-        errorReported = true;
-        throw new Error(agentResult.error || 'Agent conversation failed');
-      }
-    } catch (error: any) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      const failingThread = hasDelegatedThread
-        ? delegatedThread
-        : (agentThread.kind === 'agent' ? (agentThread as AgentThread) : null);
-      if (failingThread) {
-        try {
-          await repoFinalizeThreadStatus(userReq.repos, userReq.context, failingThread.id, 'failed');
-        } catch (finalizeError: any) {
-          logger.warn('Failed to finalize agent thread after error', {
-            agentId: failingThread.agentId,
-            conversationId: failingThread.id,
-            error: finalizeError?.message || String(finalizeError)
-          });
-        }
-      }
-      if (!errorReported) {
-        try {
-          await this.injectAgentErrorMessage(parentThread, toolCall.id, err.message, userReq);
-          errorReported = true;
-        } catch (injectError: any) {
-          logger.warn('Failed to inject agent error message', {
-            conversationId: parentThread.id,
-            toolCallId: toolCall.id,
-            error: injectError?.message || String(injectError)
-          });
-        }
-      }
-      logger.error('Error running agent conversation', {
-        agentId: agentThread.agentId,
-        conversationId: agentThread.id,
-        error: err.message
-      });
-      throw err;
-    }
   }
 
   private async injectAgentErrorMessage(

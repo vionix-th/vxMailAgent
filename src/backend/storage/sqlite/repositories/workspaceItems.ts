@@ -175,8 +175,5 @@ export class WorkspaceItemsRepository extends SqliteRepository {
       throw new Error(`WorkspaceItemsRepository: provenance required for '${item.id}'`);
     }
     this.assertId(item.provenance.conversationId ?? '', 'conversation');
-    if (typeof item.lifecycle?.revision !== 'number') {
-      throw new Error(`WorkspaceItemsRepository: lifecycle.revision required for '${item.id}'`);
-    }
   }
 }

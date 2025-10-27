@@ -8,12 +8,22 @@ import { normalizeStringTags } from '../utils/tag-normalization';
 export interface WorkspaceServiceDeps {
   repo: WorkspaceItemsRepoInstance;
   conversationId: string;
+  directorId?: string;
+  agentId?: string;
+  emailId?: string;
+  createdBy?: 'director' | 'agent' | 'tool';
+  toolName?: string;
   ensureConversation?: () => Promise<void>;
 }
 
 export class WorkspaceService {
   private readonly repo: WorkspaceItemsRepoInstance;
   private readonly conversationId: string;
+  private readonly directorId?: string;
+  private readonly agentId?: string;
+  private readonly emailId?: string;
+  private readonly forcedCreatedBy?: 'director' | 'agent' | 'tool';
+  private readonly toolName?: string;
   private readonly ensureConversationExists: () => Promise<void>;
 
   constructor(deps: WorkspaceServiceDeps) {
@@ -22,6 +32,11 @@ export class WorkspaceService {
     }
     this.repo = deps.repo;
     this.conversationId = deps.conversationId;
+    this.directorId = deps.directorId;
+    this.agentId = deps.agentId;
+    this.emailId = deps.emailId;
+    this.forcedCreatedBy = deps.createdBy;
+    this.toolName = deps.toolName;
     this.ensureConversationExists = typeof deps.ensureConversation === 'function'
       ? deps.ensureConversation
       : async () => {};
@@ -45,7 +60,7 @@ export class WorkspaceService {
   }
 
   async addItem(input: WorkspaceItemInput): Promise<WorkspaceItem> {
-    const conversationId = this.requireConversationId();
+    this.requireConversationId();
     await this.ensureConversationExists();
     this.validateContent(input.content);
     if (!input.metadata || typeof input.metadata !== 'object' || Array.isArray(input.metadata)) {
@@ -60,18 +75,6 @@ export class WorkspaceService {
           fieldLabel: 'metadata.tags',
         })
       : [];
-    if (!input.provenance || typeof input.provenance !== 'object') {
-      throw new ValidationError('provenance is required');
-    }
-    const provenance: any = { ...input.provenance };
-    if (typeof provenance.conversationId === 'string' && provenance.conversationId !== this.conversationId) {
-      throw new ValidationError('provenance.conversationId mismatch');
-    }
-    const validatedProv = this.validateProvenanceFields(provenance);
-    provenance.emailId = validatedProv.emailId;
-    provenance.createdBy = validatedProv.createdBy;
-    provenance.creatorId = validatedProv.creatorId;
-
     const nowIso = () => new Date().toISOString();
     const item: WorkspaceItem = {
       id: newId(),
@@ -81,11 +84,10 @@ export class WorkspaceService {
         ...(typeof input.metadata.description !== 'undefined' ? { description: input.metadata.description } : {}),
         tags: normalizedTags,
       },
-      provenance: { ...provenance, conversationId },
+      provenance: this.buildProvenance(),
       lifecycle: {
         created: nowIso(),
         updated: nowIso(),
-        revision: 1,
         deleted: false,
       },
     };
@@ -94,7 +96,7 @@ export class WorkspaceService {
     return item;
   }
 
-  async updateItem(id: string, patch: Partial<WorkspaceItem>, expectedRevision?: number): Promise<WorkspaceItem> {
+  async updateItem(id: string, patch: Partial<WorkspaceItem>): Promise<WorkspaceItem> {
     this.assertId(id, 'workspace item');
     await this.ensureConversationExists();
     const current = await this.getItemOrThrow(id);
@@ -128,42 +130,20 @@ export class WorkspaceService {
       patchCopy.metadata = mergedMetadata;
     }
 
-    let nextProvenance: WorkspaceItem['provenance'] = { ...current.provenance, conversationId: this.conversationId };
-    if ('provenance' in patchCopy) {
-      const provPatch = (patchCopy as any).provenance;
-      delete (patchCopy as any).provenance;
-      if (provPatch && typeof provPatch === 'object') {
-        if (typeof provPatch.conversationId !== 'undefined' && provPatch.conversationId !== this.conversationId) {
-          throw new ValidationError('Cannot move workspace item to a different conversation');
-        }
-        nextProvenance = { ...nextProvenance, ...provPatch, conversationId: this.conversationId };
-        const validated = this.validateProvenanceFields(nextProvenance);
-        nextProvenance.emailId = validated.emailId;
-        nextProvenance.createdBy = validated.createdBy;
-        nextProvenance.creatorId = validated.creatorId;
-      }
-    }
-
     if (patchCopy.content) {
       const nextContent: WorkspaceContent = { ...current.content, ...patchCopy.content };
       this.validateContent(nextContent);
       patchCopy.content = nextContent;
     }
 
-    const currentRevision = current.lifecycle.revision ?? 0;
-    if (typeof expectedRevision === 'number' && currentRevision !== expectedRevision) {
-      throw new ValidationError(`Revision mismatch: expected ${expectedRevision}, got ${currentRevision}`);
-    }
-
     const updated: WorkspaceItem = {
       ...current,
       ...patchCopy,
-      provenance: nextProvenance,
+      provenance: current.provenance,
       lifecycle: {
         ...current.lifecycle,
         ...patchCopy.lifecycle,
         updated: new Date().toISOString(),
-        revision: currentRevision + 1,
       },
     };
 
@@ -171,24 +151,7 @@ export class WorkspaceService {
     return updated;
   }
 
-  async softDeleteItem(id: string): Promise<WorkspaceItem> {
-    this.assertId(id, 'workspace item');
-    await this.ensureConversationExists();
-    const current = await this.getItemOrThrow(id);
-    const updated: WorkspaceItem = {
-      ...current,
-      lifecycle: {
-        ...current.lifecycle,
-        deleted: true,
-        updated: new Date().toISOString(),
-        revision: (current.lifecycle.revision ?? 0) + 1,
-      },
-    };
-    await this.repo.update(updated);
-    return updated;
-  }
-
-  async hardDeleteItem(id: string): Promise<void> {
+  async deleteItem(id: string): Promise<void> {
     this.assertId(id, 'workspace item');
     await this.ensureConversationExists();
     const removed = await this.repo.delete(id);
@@ -220,14 +183,19 @@ export class WorkspaceService {
     return trimmed;
   }
 
-  private validateProvenanceFields(provenance: Record<string, unknown> | WorkspaceProvenance): { emailId: string; createdBy: WorkspaceProvenance['createdBy']; creatorId: string } {
-    const emailId = this.requireString((provenance as any).emailId, 'provenance.emailId');
-    const createdByRaw = this.requireString((provenance as any).createdBy, 'provenance.createdBy');
-    if (createdByRaw !== 'director' && createdByRaw !== 'agent' && createdByRaw !== 'tool') {
-      throw new ValidationError('provenance.createdBy must be director, agent, or tool');
-    }
-    const creatorId = this.requireString((provenance as any).creatorId, 'provenance.creatorId');
-    return { emailId, createdBy: createdByRaw as WorkspaceProvenance['createdBy'], creatorId };
+  private buildProvenance(): WorkspaceProvenance {
+    const createdBy = this.forcedCreatedBy || (this.agentId ? 'agent' : 'director');
+    const creatorId = createdBy === 'agent'
+      ? this.requireString(this.agentId, 'agentId')
+      : this.requireString(this.directorId, 'directorId');
+    const emailId = this.requireString(this.emailId, 'emailId');
+    return {
+      conversationId: this.conversationId,
+      emailId,
+      createdBy,
+      creatorId,
+      toolName: this.toolName || 'workspace_add_item',
+    };
   }
 
   private validateContent(content: WorkspaceContent): void {
