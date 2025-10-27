@@ -445,7 +445,8 @@ const resources = {
         noSubject: '(no subject)',
         failedLoad: 'Failed to load conversations',
         preview: 'Preview',
-        imageAlt: 'image'
+        imageAlt: 'image',
+        creatorLabel: 'Creator'
       },
       actions: {
         cancel: 'Cancel',
@@ -1220,7 +1221,8 @@ const resources = {
         noSubject: '(ไม่มีหัวเรื่อง)',
         failedLoad: 'ไม่สามารถโหลดการสนทนา',
         preview: 'ตัวอย่าง',
-        imageAlt: 'รูปภาพ'
+        imageAlt: 'รูปภาพ',
+        creatorLabel: 'ผู้สร้าง'
       },
       actions: {
         cancel: 'ยกเลิก',

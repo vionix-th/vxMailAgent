@@ -80,10 +80,9 @@ export async function deleteEmail(id: string): Promise<{ success: boolean; delet
   return apiFetch(`/api/emails/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
-/** Delete a single workspace item (soft by default; pass hard=true to permanently remove). */
-export async function deleteWorkspaceItem(conversationId: string, itemId: string, opts?: { hard?: boolean }): Promise<any> {
-  const search = opts?.hard ? '?hard=true' : '';
-  return apiFetch(`/api/workspaces/${encodeURIComponent(conversationId)}/items/${encodeURIComponent(itemId)}${search}`, { method: 'DELETE' });
+/** Delete a single workspace item. */
+export async function deleteWorkspaceItem(conversationId: string, itemId: string): Promise<any> {
+  return apiFetch(`/api/workspaces/${encodeURIComponent(conversationId)}/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
 }
 
 export async function createApiConfig(input: CreateApiConfigRequest): Promise<ApiConfigView> {

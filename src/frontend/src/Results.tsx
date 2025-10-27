@@ -29,10 +29,11 @@ import Code from '@mui/icons-material/Code';
 import WarningAmber from '@mui/icons-material/WarningAmber';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { WorkspaceItem, ConversationThread } from './types/shared';
+import type { WorkspaceItem, ConversationThread, Agent, Director } from './types/shared';
 import { useTranslation } from 'react-i18next';
 import { deleteWorkspaceItem } from './utils/api';
 import { apiFetch } from './utils/http';
+import { formatWorkspaceCreator } from './utils/workspace';
 
 const conversationMarker = (conversation: ConversationThread): string => {
   const lastActive = conversation.lastActiveAt || conversation.startedAt || '';
@@ -52,7 +53,8 @@ export default function Results() {
   const [loading, setLoading] = useState(false);
   // Selection is at group-level (grouped by email id); stores group keys
   const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
-  const [directors, setDirectors] = useState<any[]>([]);
+  const [directors, setDirectors] = useState<Director[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   // Right pane shows a single view at a time
   const [groupFilter, setGroupFilter] = useState<string>('');
   const [activeDirectorId, setActiveDirectorId] = useState<string | 'all'>('all');
@@ -112,12 +114,13 @@ export default function Results() {
 
   // Fetch directors for fixed ordering and display names
   useEffect(() => {
-    apiFetch('/api/directors')
-      .then(setDirectors)
-      .catch(() => void 0);
+    apiFetch<Director[]>('/api/directors').then(setDirectors).catch(() => void 0);
+    apiFetch<Agent[]>('/api/agents').then(setAgents).catch(() => void 0);
   }, []);
-  const directorOrder = useMemo(() => directors.map((d: any) => d.id), [directors]);
-  const directorNameMap = useMemo(() => Object.fromEntries(directors.map((d: any) => [d.id, d.name])), [directors]);
+  const directorOrder = useMemo(() => directors.map((d: Director) => d.id), [directors]);
+  const directorNameMap = useMemo(() => Object.fromEntries(directors.map((d: Director) => [d.id, d.name])), [directors]);
+  const directorMap = useMemo(() => new Map(directors.map((d: Director) => [d.id, d])), [directors]);
+  const agentMap = useMemo(() => new Map(agents.map((a: Agent) => [a.id, a])), [agents]);
   // No agent grouping or names in simplified browser
 
   const conversationLookup = useMemo(() => Object.fromEntries(conversations.map((c) => [c.id, c])), [conversations]);
@@ -565,8 +568,10 @@ export default function Results() {
             {activeItem ? (
               (() => {
                 const dirId = String(activeDirectorId);
-                const name = directorNameMap[dirId] || dirId;
                 const item = activeItem as WorkspaceItem;
+                const creatorLabel = formatWorkspaceCreator((item as any)?.provenance, { directorMap, agentMap });
+                const fallbackLabel = dirId !== 'all' ? (directorNameMap[dirId] || dirId) : '';
+                const headerSuffix = creatorLabel || fallbackLabel;
 
                 const renderItem = (it: WorkspaceItem) => {
                   const kind = getItemKind(it);
@@ -655,13 +660,20 @@ export default function Results() {
                 return (
                   <Box>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                      <Typography variant="h6">{((item as any)?.metadata?.label) || t('results.preview')} · {name}</Typography>
+                      <Typography variant="h6">
+                        {((item as any)?.metadata?.label) || t('results.preview')}{headerSuffix ? ` · ${headerSuffix}` : ''}
+                      </Typography>
                       <Stack direction="row" spacing={1}>
                         <Button size="small" variant="text" onClick={() => setActiveItemId(null)}>{t('results.backToDirector')}</Button>
                         <Button size="small" color="error" variant="outlined" disabled={deleting} onClick={() => handleDeleteItem(item)}>Delete</Button>
                       </Stack>
                     </Stack>
                     <Divider sx={{ mb: 1.5 }} />
+                    {creatorLabel && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                        {t('results.creatorLabel')}: {creatorLabel}
+                      </Typography>
+                    )}
                     {renderItem(item)}
                   </Box>
                 );

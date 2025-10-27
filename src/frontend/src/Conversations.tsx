@@ -29,6 +29,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import ReactMarkdown from 'react-markdown';
 import { ConversationThread, ConversationStatus, WorkspaceItem, Agent, Director } from './types/shared';
+import { formatWorkspaceCreator } from './utils/workspace';
 import { WORKSPACE_ITEM_TYPES, WorkspaceItemTypeUI } from './constants/workspace';
 import { useTranslation } from 'react-i18next';
 import { apiFetch } from './utils/http';
@@ -71,6 +72,9 @@ export default function Conversations() {
   const [editData, setEditData] = useState('');
   const [editMimeType, setEditMimeType] = useState('');
   const [editEncoding, setEditEncoding] = useState<'utf8'|'base64'|'binary'|''>('');
+
+  const directorMap = useMemo(() => new Map(directors.map((d) => [d.id, d])), [directors]);
+  const agentMap = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
 
   const renderMessageContent = (message: any) => {
     const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
@@ -232,7 +236,6 @@ export default function Conversations() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          expectedRevision: ((editTarget as any)?.lifecycle?.revision ?? 1) as number,
           metadata: {
             ...(editLabel ? { label: editLabel } : {}),
             ...(editDescription ? { description: editDescription } : {}),
@@ -254,12 +257,10 @@ export default function Conversations() {
 
   
 
-  async function deleteWorkspaceItem(item: WorkspaceItem, hard = false) {
+  async function deleteWorkspaceItem(item: WorkspaceItem) {
     if (!detail || detail.thread.kind !== 'director') return;
     try {
-      await apiFetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/items/${encodeURIComponent(item.id)}?hard=${hard}`, {
-        method: 'DELETE'
-      });
+      await apiFetch(`/api/workspaces/${encodeURIComponent(detail.thread.id)}/items/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
       await loadWorkspaceItems(detail.thread.id);
     } catch (e: any) {
       setWsError(e?.message || String(e));
@@ -331,14 +332,14 @@ export default function Conversations() {
                 <TableCell><Chip size="small" label={t(`conversations.filters.kindOptions.${c.kind}` as any)} /></TableCell>
                 <TableCell>
                   <Stack spacing={0.25}>
-                    <Typography variant="body2">{directors.find(d => d.id === c.directorId)?.name || c.directorId}</Typography>
+                    <Typography variant="body2">{directorMap.get(c.directorId)?.name || c.directorId}</Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{c.directorId}</Typography>
                   </Stack>
                 </TableCell>
                 <TableCell>
                   {c.agentId ? (
                     <Stack spacing={0.25}>
-                      <Typography variant="body2">{agents.find(a => a.id === c.agentId)?.name || c.agentId}</Typography>
+                      <Typography variant="body2">{agentMap.get(c.agentId)?.name || c.agentId}</Typography>
                       <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{c.agentId}</Typography>
                     </Stack>
                   ) : (
@@ -391,7 +392,16 @@ export default function Conversations() {
             </Stack>
           </Stack>
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-            {t(`conversations.filters.kindOptions.${detail.thread.kind}` as any)} • {t('conversations.table.director')}={directors.find(d => d.id === detail.thread.directorId)?.name || detail.thread.directorId} ({detail.thread.directorId}) • {t('conversations.table.agent')}={detail.thread.agentId ? `${(agents.find(a => a.id === detail.thread.agentId)?.name || detail.thread.agentId)} (${detail.thread.agentId})` : '-'} • {t('conversations.table.started')}={detail.thread.startedAt}
+            {t(`conversations.filters.kindOptions.${detail.thread.kind}` as any)} • {t('conversations.table.director')}={(() => {
+              const dir = directorMap.get(detail.thread.directorId);
+              const display = dir?.name || detail.thread.directorId;
+              return `${display} (${detail.thread.directorId})`;
+            })()} • {t('conversations.table.agent')}={(() => {
+              if (!detail.thread.agentId) return '-';
+              const agent = agentMap.get(detail.thread.agentId);
+              const display = agent?.name || detail.thread.agentId;
+              return `${display} (${detail.thread.agentId})`;
+            })()} • {t('conversations.table.started')}={detail.thread.startedAt}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
             {detail.thread.lastActiveAt ? `${t('conversations.detail.labels.lastActive')}=${detail.thread.lastActiveAt} • ` : ''}
@@ -431,20 +441,16 @@ export default function Conversations() {
               </TableHead>
               <TableBody>
                 {wsItems.map((a: WorkspaceItem) => (
-                  <TableRow key={a.id}>
-                    <TableCell><Chip size="small" label={getItemKind(a)} /></TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
+                    <TableRow key={a.id}>
+                      <TableCell><Chip size="small" label={getItemKind(a)} /></TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="text.secondary">
                         {(() => {
                           const prov = (a as any)?.provenance as any;
-                          if (!prov) return '';
-                          const by = prov.createdBy || '';
-                          const who = prov.creatorId ? `:${prov.creatorId}` : '';
-                          const tool = prov.toolName ? `/${prov.toolName}` : '';
-                          return `${by}${who}${tool}`;
+                          return formatWorkspaceCreator(prov, { directorMap, agentMap }) || '-';
                         })()}
-                      </Typography>
-                    </TableCell>
+                        </Typography>
+                      </TableCell>
                     <TableCell>{(((a as any)?.metadata?.tags) || []).map((tTag: any, i: number) => <Chip key={i} size="small" label={String(tTag)} sx={{ mr: 0.5 }} />)}</TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -470,8 +476,7 @@ export default function Conversations() {
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">
                           <Button size="small" onClick={() => openEdit(a)}>{t('actions.edit')}</Button>
-                          <Button size="small" color="error" onClick={() => deleteWorkspaceItem(a, false)}>{t('actions.delete')}</Button>
-                          <Button size="small" color="error" onClick={() => deleteWorkspaceItem(a, true)}>{t('conversations.workspace.hardDelete')}</Button>
+                          <Button size="small" color="error" onClick={() => deleteWorkspaceItem(a)}>{t('actions.delete')}</Button>
                         </Stack>
                       </TableCell>
                     )}

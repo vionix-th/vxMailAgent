@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, Paper, Stack, IconButton, Tooltip, Chip, Alert, 
   Button, Card, CardContent, Accordion, AccordionSummary, AccordionDetails,
@@ -18,7 +18,8 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import TokenIcon from '@mui/icons-material/Token';
 import CodeIcon from '@mui/icons-material/Code';
 import VisibilityIcon from '@mui/icons-material/Visibility';
-import { ConversationThread, OrchestrationEvent, ProviderEvent, WorkspaceItem, PromptMessage } from './types/shared';
+import { ConversationThread, OrchestrationEvent, ProviderEvent, WorkspaceItem, PromptMessage, Director, Agent } from './types/shared';
+import { formatWorkspaceCreator } from './utils/workspace';
 import JsonPretty from './components/JsonPretty';
 import { apiFetch } from './utils/http';
 
@@ -68,6 +69,11 @@ export default function ConversationInspector({
   const [selectedTab, setSelectedTab] = useState(0);
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
   const [selectedJson, setSelectedJson] = useState<any>(null);
+  const [directors, setDirectors] = useState<Director[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+
+  const directorMap = useMemo(() => new Map(directors.map((d) => [d.id, d])), [directors]);
+  const agentMap = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
 
   const summarizeMessage = (message: PromptMessage): string => {
     const toolCalls = Array.isArray((message as any)?.tool_calls) ? (message as any).tool_calls : [];
@@ -104,6 +110,11 @@ export default function ConversationInspector({
   useEffect(() => {
     loadConversation();
   }, [conversationId]);
+
+  useEffect(() => {
+    apiFetch<Director[]>('/api/directors').then(setDirectors).catch(() => {});
+    apiFetch<Agent[]>('/api/agents').then(setAgents).catch(() => {});
+  }, []);
 
   const handleViewJson = (data: any) => {
     setSelectedJson(data);
@@ -176,13 +187,24 @@ export default function ConversationInspector({
                 />
               </Grid>
               <Grid item xs={12} md={6}>
-                <Typography variant="body2" color="text.secondary">Director ID</Typography>
-                <Typography variant="body1">{conversation.directorId}</Typography>
+                <Typography variant="body2" color="text.secondary">Director</Typography>
+                <Typography variant="body1">
+                  {(() => {
+                    const dir = directorMap.get(conversation.directorId);
+                    return dir ? `${dir.name} (${dir.id})` : conversation.directorId;
+                  })()}
+                </Typography>
               </Grid>
               {conversation.kind === 'agent' && (
                 <Grid item xs={12} md={6}>
-                  <Typography variant="body2" color="text.secondary">Agent ID</Typography>
-                  <Typography variant="body1">{conversation.agentId}</Typography>
+                  <Typography variant="body2" color="text.secondary">Agent</Typography>
+                  <Typography variant="body1">
+                    {(() => {
+                      if (!conversation.agentId) return '-';
+                      const agent = agentMap.get(conversation.agentId);
+                      return agent ? `${agent.name} (${agent.id})` : conversation.agentId;
+                    })()}
+                  </Typography>
                 </Grid>
               )}
               <Grid item xs={12} md={6}>
@@ -349,7 +371,7 @@ export default function ConversationInspector({
                 ))}
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                Created by {item.provenance.createdBy} • {new Date(item.lifecycle.created).toLocaleString()}
+                Created by {formatWorkspaceCreator(item.provenance, { directorMap, agentMap }) || item.provenance.createdBy} • {new Date(item.lifecycle.created).toLocaleString()}
               </Typography>
             </CardContent>
           </Card>
