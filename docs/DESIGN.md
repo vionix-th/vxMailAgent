@@ -291,21 +291,21 @@ data/
 - **Shared Types** (`src/shared/types.ts`):
   - `WorkspaceItem` (MIME-first, provenance in `context`):
     - Shape:
-      `{ id: string; label?: string; description?: string; mimeType?: string; encoding?: 'utf8'|'base64'|'binary'; data?: string; tags?: string[]; created: string; updated: string; revision?: number; deleted?: boolean; context: { email: { id: string; subject?: string; from?: string; date?: string }; director: { id: string; name?: string }; agent?: { id?: string; name?: string }; createdBy: 'director'|'agent'|'tool'; agentId?: string; tool?: string; conversationId?: string } }`.
+      `{ id: string; label?: string; description?: string; mimeType?: string; encoding?: 'utf8'|'base64'|'binary'; data?: string; tags?: string[]; created: string; updated: string; deleted?: boolean; context: { email: { id: string; subject?: string; from?: string; date?: string }; director: { id: string; name?: string }; agent?: { id?: string; name?: string }; createdBy: 'director'|'agent'|'tool'; agentId?: string; tool?: string; conversationId?: string } }`.
     - MIME-first model: no `type` enum; rendering is driven by `mimeType` and `encoding`. Unknown MIME types fall back to raw views.
     - Encoding and data: `data` holds the payload when present. If `encoding === 'base64'`, `data` is base64-encoded. If `encoding === 'utf8'` or omitted, `data` is UTF-8 text. There is no `filename`, `sizeBytes`, or `url`.
     - Titles/display: derive labels from `mimeType` and/or `tags` rather than filenames.
   - `WorkspaceItemInput` supports optional `context` snapshot and a `provenance` override that the backend collapses into `context` on write.
   - Note: While `ConversationThread` has an optional `workspaceItems?: WorkspaceItem[]`, the persisted source of truth is the Workspaces repository via `src/backend/routes/workspaces.ts`. Do not embed items in conversations; use the Workspaces API.
 - **API Endpoints (Workspace)**:
-  - `GET /api/workspaces/:id/items` — list items (supports filter/paging). Use `?includeDeleted=true` to include soft-deleted items.
+  - `GET /api/workspaces/:id/items` — list items.
   - `GET /api/workspaces/:id/items/:itemId` — get one item.
-  - `PUT /api/workspaces/:id/items/:itemId` — update with `expectedRevision`.
-  - `DELETE /api/workspaces/:id/items/:itemId` — remove item; `?hard=true` for hard-delete (default soft).
+  - `PUT /api/workspaces/:id/items/:itemId` — update an existing item.
+  - `DELETE /api/workspaces/:id/items/:itemId` — remove an item.
   - Note: Creation of items is performed by orchestration only. There is no REST create endpoint.
 - **OpenAI Tools (Workspace)**:
-  - Common (director + agents): `workspace_add_item`, `workspace_list_items`, `workspace_get_item`, `workspace_update_item`, `workspace_remove_item(hardDelete?)`.
-    - Access: All participants (director and agents) may add/list/update/remove any workspace item; `hardDelete` is available to all participants.
+  - Common (director + agents): `workspace_add_item`, `workspace_list_items`, `workspace_get_item`, `workspace_update_item`, `workspace_remove_item`.
+    - Access: All participants (director and agents) may add/list/update/remove any workspace item.
 - **Semantics**:
   - No accept/reject; the workspace is the result. There is no fallback to the director’s last assistant message; user-facing results are strictly `WorkspaceItem`s.
 - **Permissions**:
@@ -466,9 +466,9 @@ data/
     - `workspace_add_item(label?, description?, mimeType?, encoding?, data?, tags?)` → `{ item }`
     - `workspace_list_items()` → `{ items[] }`
     - `workspace_get_item(id)` → `{ item }`
-    - `workspace_update_item(id, patch, expectedRevision?)` → `{ item }`
-    - `workspace_remove_item(id, hardDelete?)` → `{ removed: true }`
-    - Access: All participants (director and agents) may add, list, update, and remove any workspace item. `hardDelete` is available to all participants.
+    - `workspace_update_item(id, patch)` → `{ item }`
+    - `workspace_remove_item(id)` → `{ removed: true }`
+    - Access: All participants (director and agents) may add, list, update, and remove any workspace item.
   - Tool message content uses `JSON.stringify(result)` for transcript tool messages. Canonical result shapes:
     - Success: `{ ok: true, item }` or `{ ok: true, items }`.
     - Error: `{ ok: false, error }`.

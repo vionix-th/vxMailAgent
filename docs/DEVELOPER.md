@@ -569,23 +569,22 @@ PUT /api/workspaces/:id/items/:itemId
 Content-Type: application/json
 
 {
-  "expectedRevision": 1,
-  "updates": {
-    "label": "Updated",
+  "metadata": {
+    "label": "Updated"
+  },
+  "content": {
     "data": "..."
   }
 }
 ```
 - Updates an existing workspace item
-- `expectedRevision`: Required for optimistic concurrency control
 - Returns: Updated `WorkspaceItem`
 
 #### Delete Item
 ```
-DELETE /api/workspaces/:id/items/:itemId?hard=true
+DELETE /api/workspaces/:id/items/:itemId
 ```
-- Soft-deletes an item by default
-- `hard=true`: Permanently deletes the item
+- Permanently deletes the item
 - Returns: `{ success: boolean }`
 
 Note: Workspace items are created by orchestration only. There is no REST endpoint to create items directly.
