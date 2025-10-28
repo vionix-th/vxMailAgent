@@ -22,6 +22,13 @@ import { loadSettings } from './services/settings';
 import { ValidationError, NotFoundError } from './services/error-handler';
 import { validateFetcherLogEntry, validateFetcherLogEntries } from './services/fetcher-log-validation';
 import { assertThreadTimestamps } from './services/conversation-mutations';
+
+const requireArrayInput = <T>(value: unknown, label: string): readonly T[] => {
+  if (!Array.isArray(value)) {
+    throw new ValidationError(`${label} must be an array`, 'LIVE_REPO_ARRAY_REQUIRED');
+  }
+  return value as readonly T[];
+};
 export interface LiveRepos {
   getPrompts(context?: ContextInput): Promise<Prompt[]>;
   getAgents(context?: ContextInput): Promise<Agent[]>;
@@ -222,7 +229,8 @@ export function createLiveRepos(): LiveRepos {
     },
     upsertEmails: async (context: ContextInput, next: EmailEnvelope[]) => {
       const repo = getEmailsRepo(ensureContext(context));
-      await repo.upsertMany(Array.isArray(next) ? next : []);
+      const envelopes = requireArrayInput<EmailEnvelope>(next, 'LiveRepos.upsertEmails');
+      await repo.upsertMany(envelopes);
     },
     deleteEmail: async (context: ContextInput, id: string) => {
       const repo = getEmailsRepo(ensureContext(context));
@@ -242,7 +250,8 @@ export function createLiveRepos(): LiveRepos {
     },
     getProviderEventsByConversationIds: async (context: ContextInput, conversationIds: readonly string[]) => {
       const repo = getProviderEventsRepo(ensureContext(context));
-      return await repo.getByConversationIds(Array.isArray(conversationIds) ? conversationIds : []);
+      const ids = requireArrayInput<string>(conversationIds, 'LiveRepos.getProviderEventsByConversationIds');
+      return await repo.getByConversationIds(ids);
     },
     getConversationById: async (context: ContextInput, id: string) => {
       const repo = getConversationsRepo(ensureContext(context));
@@ -250,7 +259,8 @@ export function createLiveRepos(): LiveRepos {
     },
     getConversationsByEmailIds: async (context: ContextInput, emailIds: readonly string[]) => {
       const repo = getConversationsRepo(ensureContext(context));
-      return await repo.listByEmailIds(Array.isArray(emailIds) ? emailIds : []);
+      const ids = requireArrayInput<string>(emailIds, 'LiveRepos.getConversationsByEmailIds');
+      return await repo.listByEmailIds(ids);
     },
     getOrchestrationLogByConversation: async (context: ContextInput, conversationId: string) => {
       const repo = getOrchestrationLogRepo(ensureContext(context));
@@ -258,7 +268,8 @@ export function createLiveRepos(): LiveRepos {
     },
     getOrchestrationLogByConversationIds: async (context: ContextInput, conversationIds: readonly string[]) => {
       const repo = getOrchestrationLogRepo(ensureContext(context));
-      return await repo.getByConversationIds(Array.isArray(conversationIds) ? conversationIds : []);
+      const ids = requireArrayInput<string>(conversationIds, 'LiveRepos.getOrchestrationLogByConversationIds');
+      return await repo.getByConversationIds(ids);
     },
     getWorkspaceItemsByConversation: async (context: ContextInput, conversationId: string) => {
       const repo = getWorkspaceItemsRepo(ensureContext(context));
