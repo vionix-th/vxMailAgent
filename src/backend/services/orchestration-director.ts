@@ -1,5 +1,6 @@
 import { Filter } from '../../shared/types';
 import logger from './logger';
+import { ValidationError } from './error-handler';
 
 export interface EmailContext {
   from: string;
@@ -37,12 +38,16 @@ export function evaluateFilters(filters: Filter[], ctx: EmailContext): FilterEva
       }
       match = new RegExp(f.regex, 'i').test(fieldValue);
     } catch (e: any) {
-      logger.warn('ORCHESTRATION evaluateFilters regex error', {
-        error: e?.message || String(e),
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      logger.error('ORCHESTRATION evaluateFilters regex error', {
+        error: errorMessage,
         filterId: f.id,
         field: f.field,
         regex: f.regex,
       });
+      const validationError = new ValidationError(`Invalid regex for filter '${f.id}': ${errorMessage}`, 'FILTER_REGEX_INVALID');
+      (validationError as ValidationError & { filterId: string }).filterId = f.id;
+      throw validationError;
     }
     return { filter: f, match, fieldValue };
   });

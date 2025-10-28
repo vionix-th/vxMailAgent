@@ -1,4 +1,4 @@
-import { ConversationThread, Agent, Director, Filter, Prompt, EmailEnvelope } from '../../shared/types';
+import { ConversationThread, Agent, Director, Filter, Prompt, EmailEnvelope, AccountProvider } from '../../shared/types';
 import { LiveRepos } from '../liveRepos';
 import { evaluateFilters, selectDirectorTriggers, EmailContext, FilterEvaluation } from './orchestration-director';
 import { ConversationOrchestrator, createUserRequest } from './conversation-orchestrator';
@@ -52,20 +52,27 @@ export class EmailProcessor {
       success: true
     };
 
+    const provider = account?.provider as AccountProvider | undefined;
+
     try {
+      if (provider !== 'gmail' && provider !== 'outlook') {
+        throw new ValidationError('Account provider required for email processing', 'EMAIL_PROCESS_ACCOUNT_PROVIDER_INVALID');
+      }
       // Filter evaluation phase
       const filterEvaluations = await this.evaluateEmailFilters(
-        envelope, 
-        filters, 
-        traceId, 
-        userReq
+        envelope,
+        filters,
+        traceId,
+        userReq,
+        provider
       );
 
       // Director selection phase  
       const directorTriggers = await this.selectTriggeredDirectors(
         filterEvaluations,
         traceId,
-        userReq
+        userReq,
+        provider
       );
 
       result.directorsTriggered = directorTriggers;
@@ -91,7 +98,13 @@ export class EmailProcessor {
       return result;
     } catch (error: any) {
       result.success = false;
-      result.error = error.message;
+      const errorMessage = typeof error?.message === 'string' && error.message
+        ? error.message
+        : String(error ?? 'email_processing_error');
+      result.error = errorMessage;
+      const filterId = typeof error === 'object' && error?.code === 'FILTER_REGEX_INVALID' && typeof (error as any).filterId === 'string'
+        ? (error as any).filterId
+        : undefined;
       this.logFetch({
         id: newId(),
         timestamp: new Date().toISOString(),
@@ -101,7 +114,9 @@ export class EmailProcessor {
         emailId: envelope.id,
         event: 'email_processing_error',
         message: 'Failed to process email',
-        detail: error.message
+        detail: errorMessage,
+        ...(typeof error?.code === 'string' ? { errorCode: error.code } : {}),
+        ...(filterId ? { filterId } : {}),
       });
       return result;
     }
@@ -114,14 +129,15 @@ export class EmailProcessor {
     envelope: EmailEnvelope,
     filters: Filter[],
     traceId: string,
-    userReq: ContextInput
+    userReq: ContextInput,
+    provider: AccountProvider
   ): Promise<FilterEvaluation[]> {
     this.ensureFilterContext(envelope);
 
     const sFilters = beginSpan(traceId, {
       type: 'filters_eval',
       name: 'evaluateFilters',
-      provider: 'gmail',
+      provider,
       emailId: envelope.id,
       request: { filtersCount: filters.length }
     }, userReq);
@@ -174,12 +190,13 @@ export class EmailProcessor {
   private async selectTriggeredDirectors(
     filterEvaluations: FilterEvaluation[],
     traceId: string,
-    userReq: ContextInput
+    userReq: ContextInput,
+    provider: AccountProvider
   ): Promise<string[]> {
     const sSelect = beginSpan(traceId, {
       type: 'director_select',
       name: 'selectDirectorTriggers',
-      provider: 'gmail'
+      provider
     }, userReq);
 
     const directorTriggers = selectDirectorTriggers(filterEvaluations);
@@ -250,11 +267,16 @@ export class EmailProcessor {
     const nowIso = new Date().toISOString();
 
     // Initial transcript = prompt messages + email context as user message
-    const emailContextContent = `Email context
-subject: ${envelope.subject}
-from: ${envelope.from}
-date: ${envelope.date}
-snippet: ${envelope.snippet}`;
+    const contextLines = [
+      'Email context',
+      `subject: ${envelope.subject}`,
+      `from: ${envelope.from}`,
+      `date: ${envelope.date}`,
+    ];
+    if (typeof envelope.snippet === 'string' && envelope.snippet.trim()) {
+      contextLines.push(`snippet: ${envelope.snippet}`);
+    }
+    const emailContextContent = contextLines.join('\n');
     const initialMessages = [
       ...directorPrompt.messages,
       { role: 'user', content: emailContextContent } as any,
