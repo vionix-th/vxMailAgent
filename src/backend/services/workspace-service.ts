@@ -158,12 +158,6 @@ export class WorkspaceService {
     if (!removed) throw new NotFoundError('Item not found');
   }
 
-  async purgeAll(): Promise<number> {
-    const conversationId = this.requireConversationId();
-    await this.ensureConversationExists();
-    return await this.repo.deleteByConversation(conversationId);
-  }
-
   private async getItemOrThrow(id: string): Promise<WorkspaceItem> {
     const item = await this.getItem(id);
     if (!item) {
