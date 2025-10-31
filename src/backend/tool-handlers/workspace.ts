@@ -1,9 +1,10 @@
 import { ToolCallResult } from '../../shared/types';
 import { WorkspaceService } from '../services/workspace-service';
-import { ValidationError } from '../services/error-handler';
+import { ValidationError, NotFoundError } from '../services/error-handler';
 import logger from '../services/logger';
 import type { WorkspaceItemsRepoInstance } from '../repository/wrappers';
 import { ToolHandlerRegistrar, ToolExecutionRuntime, ToolCallExecutionContext } from './types';
+import type { RepoBundle } from '../repository/registry';
 import { normalizeStringTags } from '../utils/tag-normalization';
 
 export function registerWorkspaceHandlers(register: ToolHandlerRegistrar) {
@@ -19,6 +20,7 @@ async function executeWorkspace(toolName: string, runtime: ToolExecutionRuntime,
     handleWorkspaceToolCall(
       { ...runtime.params, action },
       runtime.repos.workspaceItems,
+      runtime.repos.conversations,
       runtime.context?.workspace?.conversationId,
       runtime.context?.workspace
     )
@@ -29,10 +31,10 @@ async function executeWorkspace(toolName: string, runtime: ToolExecutionRuntime,
 async function handleWorkspaceToolCall(
   payload: any,
   workspaceRepo: WorkspaceItemsRepoInstance,
+  conversationsRepo: RepoBundle['conversations'],
   scopedConversationId?: string,
   workspaceContext?: ToolCallExecutionContext['workspace']
 ): Promise<ToolCallResult> {
-  logger.info('[TOOLCALL] workspace', { payload });
   try {
     const conversationId = typeof scopedConversationId === 'string' && scopedConversationId.trim().length > 0
       ? scopedConversationId.trim()
@@ -50,6 +52,23 @@ async function handleWorkspaceToolCall(
     const emailId: string | undefined = workspaceContext?.emailId || legacyProv.emailId;
     const toolName: string | undefined = workspaceContext?.toolName || legacyProv.toolName;
 
+    const logMeta = {
+      action: typeof payload?.action === 'string' ? payload.action : undefined,
+      conversationId,
+      itemId: typeof payload?.id === 'string' ? payload.id : undefined,
+      createdBy,
+      creatorId,
+      toolName,
+    };
+    logger.info('[TOOLCALL] workspace', logMeta);
+
+    const ensureConversation = async () => {
+      const thread = await conversationsRepo.getById(conversationId);
+      if (!thread || thread.status !== 'ongoing') {
+        throw new NotFoundError('Conversation not found');
+      }
+    };
+
     const service = new WorkspaceService({
       repo: workspaceRepo,
       conversationId,
@@ -58,6 +77,7 @@ async function handleWorkspaceToolCall(
       agentId: createdBy === 'agent' ? creatorId : undefined,
       emailId,
       toolName,
+      ensureConversation,
     });
     if (payload.action === 'add') {
       const mimeType = typeof payload.mimeType === 'string' ? payload.mimeType : undefined;

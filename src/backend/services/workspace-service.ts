@@ -120,6 +120,24 @@ export class WorkspaceService {
         });
         metadataPatch.tags = normalizedTags;
       }
+      if (Object.prototype.hasOwnProperty.call(metadataPatch, 'label')) {
+        const label = metadataPatch.label;
+        if (label !== undefined) {
+          if (typeof label !== 'string') {
+            throw new ValidationError('metadata.label must be a string');
+          }
+          metadataPatch.label = label;
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(metadataPatch, 'description')) {
+        const description = metadataPatch.description;
+        if (description !== undefined) {
+          if (typeof description !== 'string') {
+            throw new ValidationError('metadata.description must be a string');
+          }
+          metadataPatch.description = description;
+        }
+      }
       const mergedMetadata = {
         ...current.metadata,
         ...metadataPatch,
@@ -154,6 +172,10 @@ export class WorkspaceService {
   async deleteItem(id: string): Promise<void> {
     this.assertId(id, 'workspace item');
     await this.ensureConversationExists();
+    const item = await this.getItemOrThrow(id);
+    if (item.provenance?.conversationId !== this.conversationId) {
+      throw new NotFoundError('Item not found');
+    }
     const removed = await this.repo.delete(id);
     if (!removed) throw new NotFoundError('Item not found');
   }

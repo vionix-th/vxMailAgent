@@ -65,7 +65,7 @@ export default function registerAccountsRoutes(app: express.Express) {
     const account = await handleGoogleAccountCallback(code, stateToken, cookieHeader, context);
     logger.info('Google account callback completed', { accountId: account.id, email: account.email });
     const origin = (CORS_ORIGIN && CORS_ORIGIN !== '*') ? CORS_ORIGIN : '';
-    const location = origin ?? '/';
+    const location = (origin && origin.trim()) ? origin : '/';
     res.redirect(location);
   }));
 

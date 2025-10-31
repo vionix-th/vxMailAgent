@@ -22,7 +22,7 @@ function createWorkspaceService(req: express.Request, deps?: WorkspacesRoutesDep
     ensureConversation: async () => {
       if (!deps) return;
       const thread = await deps.getConversationById(context, conversationId);
-      if (!thread) {
+      if (!thread || thread.status !== 'ongoing') {
         throw new NotFoundError('Conversation not found');
       }
     },
